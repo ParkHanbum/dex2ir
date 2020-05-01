@@ -1,0 +1,8 @@
+version: "2"
+
+services:
+  aosp:
+    image: kylemanna/aosp:latest
+    volumes:
+      - /tmp/ccache:/ccache
+      - ~/aosp:/aosp
