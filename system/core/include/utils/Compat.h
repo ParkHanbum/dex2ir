@@ -27,9 +27,11 @@
 
 typedef off_t off64_t;
 
+/*
 static inline off64_t lseek64(int fd, off64_t offset, int whence) {
     return lseek(fd, offset, whence);
 }
+*/
 
 #ifdef HAVE_PREAD
 static inline ssize_t pread64(int fd, void* buf, size_t nbytes, off64_t offset) {

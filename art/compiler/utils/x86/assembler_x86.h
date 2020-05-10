@@ -144,7 +144,6 @@ class Address : public Operand {
   }
 
   Address(Register base, FrameOffset disp) {
-    CHECK_EQ(base, ESP);
     Init(ESP, disp.Int32Value());
   }
 
