@@ -1,0 +1,7 @@
+**/*.sw*
+**/cscope.files
+**/cscope.out
+**/tags
+**/*.o
+**/*.a
+**/generated_out.cc
