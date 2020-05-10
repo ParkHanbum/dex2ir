@@ -309,7 +309,7 @@ TARGET := $(notdir $(LIBRUNTIME_ARCHIVE))
 all: $(GENERATED_SRC) $(TARGET)
 
 $(GENERATED_SRC):
-	$(QUIET_GEN) python $(GENERATOR) $(sdir) $(OPERATOR_OUT_HEADER_FILES) > $@
+	$(QUIET_GEN) python $(GENERATOR) $(srcdir) $(OPERATOR_OUT_HEADER_FILES) > $@
 
 #$(LIBART_OBJS): $(GENERATED_SRC)
 #	$(CXX) -c $(@:.o=.cc) -o $@ $(LIBART_CFLAGS)

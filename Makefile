@@ -10,7 +10,7 @@ include art/build/Android.common_path.mk
 include art/build/Android.executable.mk
 include art/build/Android.common_build.mk
 
-GENERATOR := $(srcdir)/art/tools/generate_operator_out.py
+GENERATOR := $(srcdir)/art/tools/generate-operator-out.py
 
 DEX2IR_SRCS := $(srcdir)/dex2oat.cc
 DEX2IR_OBJS := $(patsubst $(srcdir)/%.cc,$(objdir)/%.op,$(DEX2IR_SRCS))

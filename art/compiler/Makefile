@@ -158,7 +158,7 @@ TARGET := $(notdir $(LIBARTC_ARCHIVE))
 all: $(GENERATED_SRC) $(TARGET)
 
 $(GENERATED_SRC):
-	$(QUIET_GEN) python $(GENERATOR) $(sdir) $(OPERATOR_OUT_HEADER_FILES) > $@
+	$(QUIET_GEN) python $(GENERATOR) $(srcdir) $(OPERATOR_OUT_HEADER_FILES) > $@
 
 $(OBJS):
 	$(CXX) -c $(@:.o=.cc) -o $@ $(LIBARTC_CFLAGS)
