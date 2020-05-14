@@ -127,7 +127,7 @@ CompiledMethod* JniCompiler::Compile() {
 
   // Get JNIEnv
   ::llvm::Value* jni_env_object_addr =
-      irb_.Runtime().EmitLoadFromThreadOffset(Thread::JniEnvOffset().Int32Value(),
+      irb_.Runtime().EmitLoadFromThreadOffset(Thread::JniEnvOffset<8>().Int32Value(),
                                               irb_.getJObjectTy(),
                                               kTBAARuntimeInfo);
 
