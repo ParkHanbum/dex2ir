@@ -19,7 +19,6 @@
 
 #include "code_generator.h"
 #include "nodes.h"
-#include "parallel_move_resolver.h"
 #include "utils/x86/assembler_x86.h"
 
 namespace art {
@@ -60,28 +59,6 @@ class InvokeDexCallingConventionVisitor {
   DISALLOW_COPY_AND_ASSIGN(InvokeDexCallingConventionVisitor);
 };
 
-class ParallelMoveResolverX86 : public ParallelMoveResolver {
- public:
-  ParallelMoveResolverX86(ArenaAllocator* allocator, CodeGeneratorX86* codegen)
-      : ParallelMoveResolver(allocator), codegen_(codegen) {}
-
-  virtual void EmitMove(size_t index) OVERRIDE;
-  virtual void EmitSwap(size_t index) OVERRIDE;
-  virtual void SpillScratch(int reg) OVERRIDE;
-  virtual void RestoreScratch(int reg) OVERRIDE;
-
-  X86Assembler* GetAssembler() const;
-
- private:
-  void Exchange(Register reg, int mem);
-  void Exchange(int mem1, int mem2);
-  void MoveMemoryToMemory(int dst, int src);
-
-  CodeGeneratorX86* const codegen_;
-
-  DISALLOW_COPY_AND_ASSIGN(ParallelMoveResolverX86);
-};
-
 class LocationsBuilderX86 : public HGraphVisitor {
  public:
   LocationsBuilderX86(HGraph* graph, CodeGeneratorX86* codegen)
@@ -90,7 +67,7 @@ class LocationsBuilderX86 : public HGraphVisitor {
 #define DECLARE_VISIT_INSTRUCTION(name)     \
   virtual void Visit##name(H##name* instr);
 
-  FOR_EACH_CONCRETE_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
+  FOR_EACH_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
 
 #undef DECLARE_VISIT_INSTRUCTION
 
@@ -108,7 +85,7 @@ class InstructionCodeGeneratorX86 : public HGraphVisitor {
 #define DECLARE_VISIT_INSTRUCTION(name)     \
   virtual void Visit##name(H##name* instr);
 
-  FOR_EACH_CONCRETE_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
+  FOR_EACH_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
 
 #undef DECLARE_VISIT_INSTRUCTION
 
@@ -126,7 +103,7 @@ class InstructionCodeGeneratorX86 : public HGraphVisitor {
 class CodeGeneratorX86 : public CodeGenerator {
  public:
   explicit CodeGeneratorX86(HGraph* graph);
-  virtual ~CodeGeneratorX86() {}
+  virtual ~CodeGeneratorX86() { }
 
   virtual void GenerateFrameEntry() OVERRIDE;
   virtual void GenerateFrameExit() OVERRIDE;
@@ -136,8 +113,6 @@ class CodeGeneratorX86 : public CodeGenerator {
   virtual size_t GetWordSize() const OVERRIDE {
     return kX86WordSize;
   }
-
-  virtual size_t FrameEntrySpillSize() const OVERRIDE;
 
   virtual HGraphVisitor* GetLocationBuilder() OVERRIDE {
     return &location_builder_;
@@ -156,39 +131,17 @@ class CodeGeneratorX86 : public CodeGenerator {
   virtual ManagedRegister AllocateFreeRegister(
       Primitive::Type type, bool* blocked_registers) const OVERRIDE;
 
+  int32_t GetStackSlot(HLocal* local) const;
   virtual Location GetStackLocation(HLoadLocal* load) const OVERRIDE;
 
-  virtual size_t GetNumberOfCoreRegisters() const OVERRIDE {
-    return kNumberOfCpuRegisters;
-  }
-
-  virtual size_t GetNumberOfFloatingPointRegisters() const OVERRIDE {
-    return kNumberOfXmmRegisters;
-  }
-
-  virtual void DumpCoreRegister(std::ostream& stream, int reg) const OVERRIDE;
-  virtual void DumpFloatingPointRegister(std::ostream& stream, int reg) const OVERRIDE;
-
-  ParallelMoveResolverX86* GetMoveResolver() {
-    return &move_resolver_;
-  }
-
-  virtual InstructionSet GetInstructionSet() const OVERRIDE {
-    return InstructionSet::kX86;
-  }
-
+ private:
   // Helper method to move a 32bits value between two locations.
   void Move32(Location destination, Location source);
   // Helper method to move a 64bits value between two locations.
   void Move64(Location destination, Location source);
 
-  // Emit a write barrier.
-  void MarkGCCard(Register temp, Register card, Register object, Register value);
-
- private:
   LocationsBuilderX86 location_builder_;
   InstructionCodeGeneratorX86 instruction_visitor_;
-  ParallelMoveResolverX86 move_resolver_;
   X86Assembler assembler_;
 
   DISALLOW_COPY_AND_ASSIGN(CodeGeneratorX86);

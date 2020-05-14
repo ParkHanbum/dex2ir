@@ -45,7 +45,6 @@ enum opt_control_vector {
   kSuppressLoads,
   kNullCheckElimination,
   kClassInitCheckElimination,
-  kGlobalValueNumbering,
   kPromoteRegs,
   kTrackLiveTemps,
   kSafeOptimizations,
@@ -77,8 +76,7 @@ enum debugControlVector {
   kDebugVerifyBitcode,
   kDebugShowSummaryMemoryUsage,
   kDebugShowFilterStats,
-  kDebugTimings,
-  kDebugCodegenDump
+  kDebugTimings
 };
 
 class LLVMInfo {
@@ -103,10 +101,10 @@ class LLVMInfo {
     }
 
   private:
-    std::unique_ptr< ::llvm::LLVMContext> llvm_context_;
+    UniquePtr< ::llvm::LLVMContext> llvm_context_;
     ::llvm::Module* llvm_module_;  // Managed by context_.
-    std::unique_ptr<art::llvm::IntrinsicHelper> intrinsic_helper_;
-    std::unique_ptr<art::llvm::IRBuilder> ir_builder_;
+    UniquePtr<art::llvm::IntrinsicHelper> intrinsic_helper_;
+    UniquePtr<art::llvm::IRBuilder> ir_builder_;
 };
 
 class CompiledMethod;
@@ -114,7 +112,7 @@ class CompilerDriver;
 
 }  // namespace art
 
-extern "C" art::CompiledMethod* ArtCompileMethod(art::CompilerDriver* driver,
+extern "C" art::CompiledMethod* ArtCompileMethod(art::CompilerDriver& driver,
                                                  const art::DexFile::CodeItem* code_item,
                                                  uint32_t access_flags,
                                                  art::InvokeType invoke_type,

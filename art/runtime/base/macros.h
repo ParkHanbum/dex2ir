@@ -18,17 +18,6 @@
 #define ART_RUNTIME_BASE_MACROS_H_
 
 #include <stddef.h>  // for size_t
-#include <unistd.h>  // for TEMP_FAILURE_RETRY
-
-// bionic and glibc both have TEMP_FAILURE_RETRY, but eg Mac OS' libc doesn't.
-#ifndef TEMP_FAILURE_RETRY
-#define TEMP_FAILURE_RETRY(exp) ({ \
-  decltype(exp) _rc; \
-  do { \
-    _rc = (exp); \
-  } while (_rc == -1 && errno == EINTR); \
-  _rc; })
-#endif
 
 #define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
 
@@ -176,7 +165,16 @@ char (&ArraySizeHelper(T (&array)[N]))[N];
 #endif
 
 #define PURE __attribute__ ((__pure__))
-#define WARN_UNUSED __attribute__((warn_unused_result))
+
+// bionic and glibc both have TEMP_FAILURE_RETRY, but Mac OS' libc doesn't.
+#ifndef TEMP_FAILURE_RETRY
+#define TEMP_FAILURE_RETRY(exp) ({ \
+  typeof(exp) _rc; \
+  do { \
+    _rc = (exp); \
+  } while (_rc == -1 && errno == EINTR); \
+  _rc; })
+#endif
 
 template<typename T> void UNUSED(const T&) {}
 

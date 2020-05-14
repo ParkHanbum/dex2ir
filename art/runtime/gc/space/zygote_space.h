@@ -65,7 +65,7 @@ class ZygoteSpace FINAL : public ContinuousMemMapAllocSpace {
   }
 
   uint64_t GetObjectsAllocated() {
-    return objects_allocated_.LoadSequentiallyConsistent();
+    return objects_allocated_;
   }
 
   void Clear() OVERRIDE;
@@ -73,9 +73,6 @@ class ZygoteSpace FINAL : public ContinuousMemMapAllocSpace {
   bool CanMoveObjects() const OVERRIDE {
     return false;
   }
-
-  void LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes) OVERRIDE
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
  protected:
   virtual accounting::ContinuousSpaceBitmap::SweepCallback* GetSweepCallback() {

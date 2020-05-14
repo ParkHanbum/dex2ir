@@ -16,7 +16,6 @@
 
 #include "string-inl.h"
 
-#include "arch/memcmp16.h"
 #include "array.h"
 #include "class-inl.h"
 #include "gc/accounting/card_table-inl.h"
@@ -31,7 +30,7 @@ namespace art {
 namespace mirror {
 
 // TODO: get global references for these
-GcRoot<Class> String::java_lang_String_;
+Class* String::java_lang_String_ = NULL;
 
 int32_t String::FastIndexOf(int32_t ch, int32_t start) {
   int32_t count = GetLength();
@@ -52,20 +51,29 @@ int32_t String::FastIndexOf(int32_t ch, int32_t start) {
 }
 
 void String::SetClass(Class* java_lang_String) {
-  CHECK(java_lang_String_.IsNull());
+  CHECK(java_lang_String_ == NULL);
   CHECK(java_lang_String != NULL);
-  java_lang_String_ = GcRoot<Class>(java_lang_String);
+  java_lang_String_ = java_lang_String;
 }
 
 void String::ResetClass() {
-  CHECK(!java_lang_String_.IsNull());
-  java_lang_String_ = GcRoot<Class>(nullptr);
+  CHECK(java_lang_String_ != NULL);
+  java_lang_String_ = NULL;
 }
 
-int32_t String::ComputeHashCode() {
-  const int32_t hash_code = ComputeUtf16Hash(GetCharArray(), GetOffset(), GetLength());
-  SetHashCode(hash_code);
-  return hash_code;
+int32_t String::GetHashCode() {
+  int32_t result = GetField32(OFFSET_OF_OBJECT_MEMBER(String, hash_code_));
+  if (UNLIKELY(result == 0)) {
+    ComputeHashCode();
+  }
+  result = GetField32(OFFSET_OF_OBJECT_MEMBER(String, hash_code_));
+  DCHECK(result != 0 || ComputeUtf16Hash(GetCharArray(), GetOffset(), GetLength()) == 0)
+          << ToModifiedUtf8() << " " << result;
+  return result;
+}
+
+void String::ComputeHashCode() {
+  SetHashCode(ComputeUtf16Hash(GetCharArray(), GetOffset(), GetLength()));
 }
 
 int32_t String::GetUtfLength() {
@@ -123,7 +131,7 @@ String* String::Alloc(Thread* self, int32_t utf16_length) {
   return Alloc(self, array);
 }
 
-String* String::Alloc(Thread* self, Handle<CharArray> array) {
+String* String::Alloc(Thread* self, const Handle<CharArray>& array) {
   // Hold reference in case AllocObject causes GC.
   String* string = down_cast<String*>(GetJavaLangString()->AllocObject(self));
   if (LIKELY(string != nullptr)) {
@@ -198,6 +206,21 @@ std::string String::ToModifiedUtf8() {
   return result;
 }
 
+#ifdef HAVE__MEMCMP16
+// "count" is in 16-bit units.
+extern "C" uint32_t __memcmp16(const uint16_t* s0, const uint16_t* s1, size_t count);
+#define MemCmp16 __memcmp16
+#else
+static uint32_t MemCmp16(const uint16_t* s0, const uint16_t* s1, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    if (s0[i] != s1[i]) {
+      return static_cast<int32_t>(s0[i]) - static_cast<int32_t>(s1[i]);
+    }
+  }
+  return 0;
+}
+#endif
+
 int32_t String::CompareTo(String* rhs) {
   // Quick test for comparison of a string with itself.
   String* lhs = this;
@@ -210,13 +233,13 @@ int32_t String::CompareTo(String* rhs) {
   // *without* sign extension before it subtracts them (which makes some
   // sense since "char" is unsigned).  So what we get is the result of
   // 0x000000e9 - 0x0000ffff, which is 0xffff00ea.
-  int32_t lhsCount = lhs->GetLength();
-  int32_t rhsCount = rhs->GetLength();
-  int32_t countDiff = lhsCount - rhsCount;
-  int32_t minCount = (countDiff < 0) ? lhsCount : rhsCount;
+  int lhsCount = lhs->GetLength();
+  int rhsCount = rhs->GetLength();
+  int countDiff = lhsCount - rhsCount;
+  int minCount = (countDiff < 0) ? lhsCount : rhsCount;
   const uint16_t* lhsChars = lhs->GetCharArray()->GetData() + lhs->GetOffset();
   const uint16_t* rhsChars = rhs->GetCharArray()->GetData() + rhs->GetOffset();
-  int32_t otherRes = MemCmp16(lhsChars, rhsChars, minCount);
+  int otherRes = MemCmp16(lhsChars, rhsChars, minCount);
   if (otherRes != 0) {
     return otherRes;
   }
@@ -224,8 +247,8 @@ int32_t String::CompareTo(String* rhs) {
 }
 
 void String::VisitRoots(RootCallback* callback, void* arg) {
-  if (!java_lang_String_.IsNull()) {
-    java_lang_String_.VisitRoot(callback, arg, 0, kRootStickyClass);
+  if (java_lang_String_ != nullptr) {
+    callback(reinterpret_cast<mirror::Object**>(&java_lang_String_), arg, 0, kRootStickyClass);
   }
 }
 

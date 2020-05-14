@@ -16,26 +16,6 @@
 
 #include "asm_support_x86_64.S"
 
-MACRO0(SETUP_FP_CALLEE_SAVE_FRAME)
-    // Create space for ART FP callee-saved registers
-    subq MACRO_LITERAL(4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(4 * 8)
-    movq %xmm12, 0(%rsp)
-    movq %xmm13, 8(%rsp)
-    movq %xmm14, 16(%rsp)
-    movq %xmm15, 24(%rsp)
-END_MACRO
-
-MACRO0(RESTORE_FP_CALLEE_SAVE_FRAME)
-    // Restore ART FP callee-saved registers
-    movq 0(%rsp), %xmm12
-    movq 8(%rsp), %xmm13
-    movq 16(%rsp), %xmm14
-    movq 24(%rsp), %xmm15
-    addq MACRO_LITERAL(4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(- 4 * 8)
-END_MACRO
-
 // For x86, the CFA is esp+4, the address above the pushed return address on the stack.
 
     /*
@@ -43,10 +23,6 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kSaveAll)
      */
 MACRO0(SETUP_SAVE_ALL_CALLEE_SAVE_FRAME)
-#if defined(__APPLE__)
-    int3
-    int3
-#else
     // R10 := Runtime::Current()
     movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), %r10
     movq (%r10), %r10
@@ -57,28 +33,18 @@ MACRO0(SETUP_SAVE_ALL_CALLEE_SAVE_FRAME)
     PUSH r12  // Callee save.
     PUSH rbp  // Callee save.
     PUSH rbx  // Callee save.
-    // Create space for FPR args, plus padding for alignment
-    subq LITERAL(4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(4 * 8)
-    // Save FPRs.
-    movq %xmm12, 0(%rsp)
-    movq %xmm13, 8(%rsp)
-    movq %xmm14, 16(%rsp)
-    movq %xmm15, 24(%rsp)
     subq MACRO_LITERAL(8), %rsp  // Space for Method* (also aligns the frame).
     CFI_ADJUST_CFA_OFFSET(8)
     // R10 := ArtMethod* for save all callee save frame method.
-    THIS_LOAD_REQUIRES_READ_BARRIER
     movq RUNTIME_SAVE_ALL_CALLEE_SAVE_FRAME_OFFSET(%r10), %r10
     // Store ArtMethod* to bottom of stack.
     movq %r10, 0(%rsp)
 
     // Ugly compile-time check, but we only have the preprocessor.
     // Last +8: implicit return address pushed on stack when caller made call.
-#if (FRAME_SIZE_SAVE_ALL_CALLEE_SAVE != 6*8 + 4*8 + 8 + 8)
+#if (FRAME_SIZE_SAVE_ALL_CALLEE_SAVE != 6*8 + 8 + 8)
 #error "SAVE_ALL_CALLEE_SAVE_FRAME(X86_64) size not as expected."
 #endif
-#endif  // __APPLE__
 END_MACRO
 
     /*
@@ -86,10 +52,6 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kRefsOnly)
      */
 MACRO0(SETUP_REF_ONLY_CALLEE_SAVE_FRAME)
-#if defined(__APPLE__)
-    int3
-    int3
-#else
     // R10 := Runtime::Current()
     movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), %r10
     movq (%r10), %r10
@@ -100,35 +62,23 @@ MACRO0(SETUP_REF_ONLY_CALLEE_SAVE_FRAME)
     PUSH r12  // Callee save.
     PUSH rbp  // Callee save.
     PUSH rbx  // Callee save.
-    // Create space for FPR args, plus padding for alignment
-    subq LITERAL(8 + 4*8), %rsp
-    CFI_ADJUST_CFA_OFFSET(8 + 4*8)
-    // Save FPRs.
-    movq %xmm12, 8(%rsp)
-    movq %xmm13, 16(%rsp)
-    movq %xmm14, 24(%rsp)
-    movq %xmm15, 32(%rsp)
+    subq MACRO_LITERAL(8), %rsp  // Space for Method* (also aligns the frame).
+    CFI_ADJUST_CFA_OFFSET(8)
     // R10 := ArtMethod* for refs only callee save frame method.
-    THIS_LOAD_REQUIRES_READ_BARRIER
     movq RUNTIME_REFS_ONLY_CALLEE_SAVE_FRAME_OFFSET(%r10), %r10
     // Store ArtMethod* to bottom of stack.
     movq %r10, 0(%rsp)
 
     // Ugly compile-time check, but we only have the preprocessor.
     // Last +8: implicit return address pushed on stack when caller made call.
-#if (FRAME_SIZE_REFS_ONLY_CALLEE_SAVE != 6*8 + 4*8 + 8 + 8)
+#if (FRAME_SIZE_REFS_ONLY_CALLEE_SAVE != 6*8 + 8 + 8)
 #error "REFS_ONLY_CALLEE_SAVE_FRAME(X86_64) size not as expected."
 #endif
-#endif  // __APPLE__
 END_MACRO
 
 MACRO0(RESTORE_REF_ONLY_CALLEE_SAVE_FRAME)
-    movq 8(%rsp), %xmm12
-    movq 16(%rsp), %xmm13
-    movq 24(%rsp), %xmm14
-    movq 32(%rsp), %xmm15
-    addq LITERAL(8 + 4*8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-8 - 4*8)
+    addq MACRO_LITERAL(8), %rsp
+    CFI_ADJUST_CFA_OFFSET(-8)
     // TODO: optimize by not restoring callee-saves restored by the ABI
     POP rbx
     POP rbp
@@ -143,10 +93,6 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kRefsAndArgs)
      */
 MACRO0(SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME)
-#if defined(__APPLE__)
-    int3
-    int3
-#else
     // R10 := Runtime::Current()
     movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), %r10
     movq (%r10), %r10
@@ -163,10 +109,9 @@ MACRO0(SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME)
     PUSH rdx  // Quick arg 2.
     PUSH rcx  // Quick arg 3.
     // Create space for FPR args and create 2 slots, 1 of padding and 1 for the ArtMethod*.
-    subq MACRO_LITERAL(80 + 4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(80 + 4 * 8)
+    subq MACRO_LITERAL(80), %rsp
+    CFI_ADJUST_CFA_OFFSET(80)
     // R10 := ArtMethod* for ref and args callee save frame method.
-    THIS_LOAD_REQUIRES_READ_BARRIER
     movq RUNTIME_REF_AND_ARGS_CALLEE_SAVE_FRAME_OFFSET(%r10), %r10
     // Save FPRs.
     movq %xmm0, 16(%rsp)
@@ -177,19 +122,14 @@ MACRO0(SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME)
     movq %xmm5, 56(%rsp)
     movq %xmm6, 64(%rsp)
     movq %xmm7, 72(%rsp)
-    movq %xmm12, 80(%rsp)
-    movq %xmm13, 88(%rsp)
-    movq %xmm14, 96(%rsp)
-    movq %xmm15, 104(%rsp)
     // Store ArtMethod* to bottom of stack.
     movq %r10, 0(%rsp)
 
     // Ugly compile-time check, but we only have the preprocessor.
     // Last +8: implicit return address pushed on stack when caller made call.
-#if (FRAME_SIZE_REFS_AND_ARGS_CALLEE_SAVE != 11*8 + 4*8 + 80 + 8)
+#if (FRAME_SIZE_REFS_AND_ARGS_CALLEE_SAVE != 11*8 + 80 + 8)
 #error "REFS_AND_ARGS_CALLEE_SAVE_FRAME(X86_64) size not as expected."
 #endif
-#endif  // __APPLE__
 END_MACRO
 
 MACRO0(RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME)
@@ -202,12 +142,8 @@ MACRO0(RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME)
     movq 56(%rsp), %xmm5
     movq 64(%rsp), %xmm6
     movq 72(%rsp), %xmm7
-    movq 80(%rsp), %xmm12
-    movq 88(%rsp), %xmm13
-    movq 96(%rsp), %xmm14
-    movq 104(%rsp), %xmm15
-    addq MACRO_LITERAL(80 + 4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-(80 + 4 * 8))
+    addq MACRO_LITERAL(80), %rsp
+    CFI_ADJUST_CFA_OFFSET(-80)
     // Restore callee and GPR args, mixed together to agree with core spills bitmap.
     POP rcx
     POP rdx
@@ -232,7 +168,7 @@ MACRO0(DELIVER_PENDING_EXCEPTION)
     // (Thread*, SP) setup
     movq %gs:THREAD_SELF_OFFSET, %rdi
     movq %rsp, %rsi
-    call SYMBOL(artDeliverPendingExceptionFromCode)  // artDeliverPendingExceptionFromCode(Thread*, SP)
+    call PLT_SYMBOL(artDeliverPendingExceptionFromCode)  // artDeliverPendingExceptionFromCode(Thread*, SP)
     UNREACHABLE
 END_MACRO
 
@@ -242,7 +178,7 @@ MACRO2(NO_ARG_RUNTIME_EXCEPTION, c_name, cxx_name)
     // Outgoing argument set up
     movq %rsp, %rsi                    // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rdi  // pass Thread::Current()
-    call VAR(cxx_name, 1)     // cxx_name(Thread*, SP)
+    call PLT_VAR(cxx_name, 1)     // cxx_name(Thread*, SP)
     UNREACHABLE
     END_FUNCTION VAR(c_name, 0)
 END_MACRO
@@ -253,7 +189,7 @@ MACRO2(ONE_ARG_RUNTIME_EXCEPTION, c_name, cxx_name)
     // Outgoing argument set up
     movq %rsp, %rdx                    // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rsi  // pass Thread::Current()
-    call VAR(cxx_name, 1)     // cxx_name(arg1, Thread*, SP)
+    call PLT_VAR(cxx_name, 1)     // cxx_name(arg1, Thread*, SP)
     UNREACHABLE
     END_FUNCTION VAR(c_name, 0)
 END_MACRO
@@ -264,7 +200,7 @@ MACRO2(TWO_ARG_RUNTIME_EXCEPTION, c_name, cxx_name)
     // Outgoing argument set up
     movq %rsp, %rcx                    // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rdx  // pass Thread::Current()
-    call VAR(cxx_name, 1)     // cxx_name(Thread*, SP)
+    call PLT_VAR(cxx_name, 1)     // cxx_name(Thread*, SP)
     UNREACHABLE
     END_FUNCTION VAR(c_name, 0)
 END_MACRO
@@ -303,45 +239,24 @@ TWO_ARG_RUNTIME_EXCEPTION art_quick_throw_array_bounds, artThrowArrayBoundsFromC
 
     /*
      * All generated callsites for interface invokes and invocation slow paths will load arguments
-     * as usual - except instead of loading arg0/rdi with the target Method*, arg0/rdi will contain
+     * as usual - except instead of loading arg0/r0 with the target Method*, arg0/r0 will contain
      * the method_idx.  This wrapper will save arg1-arg3, load the caller's Method*, align the
      * stack and call the appropriate C helper.
-     * NOTE: "this" is first visible argument of the target, and so can be found in arg1/rsi.
+     * NOTE: "this" is first visible argument of the target, and so can be found in arg1/r1.
      *
-     * The helper will attempt to locate the target and return a 128-bit result in rax/rdx consisting
-     * of the target Method* in rax and method->code_ in rdx.
+     * The helper will attempt to locate the target and return a 64-bit result in r0/r1 consisting
+     * of the target Method* in r0 and method->code_ in r1.
      *
-     * If unsuccessful, the helper will return NULL/????. There will be a pending exception in the
+     * If unsuccessful, the helper will return NULL/NULL. There will bea pending exception in the
      * thread and we branch to another stub to deliver it.
      *
-     * On success this wrapper will restore arguments and *jump* to the target, leaving the return
-     * location on the stack.
-     *
-     * Adapted from x86 code.
+     * On success this wrapper will restore arguments and *jump* to the target, leaving the lr
+     * pointing back to the original caller.
      */
 MACRO2(INVOKE_TRAMPOLINE, c_name, cxx_name)
     DEFINE_FUNCTION VAR(c_name, 0)
-    SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME  // save callee saves in case allocation triggers GC
-    // Helper signature is always
-    // (method_idx, *this_object, *caller_method, *self, sp)
-
-    movl FRAME_SIZE_REFS_AND_ARGS_CALLEE_SAVE(%rsp), %edx  // pass caller Method*
-    movq %gs:THREAD_SELF_OFFSET, %rcx                      // pass Thread
-    movq %rsp, %r8                                         // pass SP
-
-    call VAR(cxx_name, 1)                   // cxx_name(arg1, arg2, caller method*, Thread*, SP)
-                                                           // save the code pointer
-    movq %rax, %rdi
-    movq %rdx, %rax
-    RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME
-
-    testq %rdi, %rdi
-    jz 1f
-
-    // Tail call to intended method.
-    jmp *%rax
-1:
-    DELIVER_PENDING_EXCEPTION
+    int3
+    int3
     END_FUNCTION VAR(c_name, 0)
 END_MACRO
 
@@ -430,10 +345,6 @@ END_MACRO
      *   r9 = char* shorty
      */
 DEFINE_FUNCTION art_quick_invoke_stub
-#if defined(__APPLE__)
-    int3
-    int3
-#else
     // Set up argument XMM registers.
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character.
     leaq 4(%rsi), %r11            // R11 := arg_array + 4 ; ie skip this pointer.
@@ -452,24 +363,16 @@ DEFINE_FUNCTION art_quick_invoke_stub
     PUSH r9                       // Save r9/shorty*.
     movq %rsp, %rbp               // Copy value of stack pointer into base pointer.
     CFI_DEF_CFA_REGISTER(rbp)
-
     movl %edx, %r10d
-    addl LITERAL(60), %edx        // Reserve space for return addr, StackReference<method>, rbp,
-                                  // r8 and r9 in frame.
+    addl LITERAL(64), %edx        // Reserve space for return addr, method*, rbp, r8 and r9 in frame.
     andl LITERAL(0xFFFFFFF0), %edx    // Align frame size to 16 bytes.
     subl LITERAL(32), %edx        // Remove space for return address, rbp, r8 and r9.
     subq %rdx, %rsp               // Reserve stack space for argument array.
-
-#if (STACK_REFERENCE_SIZE != 4)
-#error "STACK_REFERENCE_SIZE(X86_64) size not as expected."
-#endif
-    movl LITERAL(0), (%rsp)       // Store NULL for method*
-
+    movq LITERAL(0), (%rsp)       // Store NULL for method*
     movl %r10d, %ecx              // Place size of args in rcx.
     movq %rdi, %rax               // RAX := method to be called
     movq %rsi, %r11               // R11 := arg_array
-    leaq 4(%rsp), %rdi            // Rdi is pointing just above the StackReference<method> in the
-                                  // stack arguments.
+    leaq 8(%rsp), %rdi            // Rdi is pointing just above the method* in the stack arguments.
     // Copy arg array into stack.
     rep movsb                     // while (rcx--) { *rdi++ = *rsi++ }
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character
@@ -499,7 +402,6 @@ DEFINE_FUNCTION art_quick_invoke_stub
 .Lreturn_float_quick:
     movss %xmm0, (%r8)           // Store the floating point result.
     ret
-#endif  // __APPLE__
 END_FUNCTION art_quick_invoke_stub
 
     /*
@@ -514,10 +416,6 @@ END_FUNCTION art_quick_invoke_stub
      *   r9 = char* shorty
      */
 DEFINE_FUNCTION art_quick_invoke_static_stub
-#if defined(__APPLE__)
-    int3
-    int3
-#else
     // Set up argument XMM registers.
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character
     movq %rsi, %r11               // R11 := arg_array
@@ -536,24 +434,16 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     PUSH r9                       // Save r9/shorty*.
     movq %rsp, %rbp               // Copy value of stack pointer into base pointer.
     CFI_DEF_CFA_REGISTER(rbp)
-
     movl %edx, %r10d
-    addl LITERAL(60), %edx        // Reserve space for return addr, StackReference<method>, rbp,
-                                  // r8 and r9 in frame.
+    addl LITERAL(64), %edx        // Reserve space for return addr, method*, rbp, r8 and r9 in frame.
     andl LITERAL(0xFFFFFFF0), %edx    // Align frame size to 16 bytes.
     subl LITERAL(32), %edx        // Remove space for return address, rbp, r8 and r9.
     subq %rdx, %rsp               // Reserve stack space for argument array.
-
-#if (STACK_REFERENCE_SIZE != 4)
-#error "STACK_REFERENCE_SIZE(X86_64) size not as expected."
-#endif
-    movl LITERAL(0), (%rsp)       // Store NULL for method*
-
+    movq LITERAL(0), (%rsp)       // Store NULL for method*
     movl %r10d, %ecx              // Place size of args in rcx.
     movq %rdi, %rax               // RAX := method to be called
     movq %rsi, %r11               // R11 := arg_array
-    leaq 4(%rsp), %rdi            // Rdi is pointing just above the StackReference<method> in the
-                                  // stack arguments.
+    leaq 8(%rsp), %rdi            // Rdi is pointing just above the method* in the stack arguments.
     // Copy arg array into stack.
     rep movsb                     // while (rcx--) { *rdi++ = *rsi++ }
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character
@@ -582,60 +472,7 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
 .Lreturn_float_quick2:
     movss %xmm0, (%r8)           // Store the floating point result.
     ret
-#endif  // __APPLE__
 END_FUNCTION art_quick_invoke_static_stub
-
-    /*
-     * Long jump stub.
-     * On entry:
-     *   rdi = gprs
-     *   rsi = fprs
-     */
-DEFINE_FUNCTION art_quick_do_long_jump
-#if defined(__APPLE__)
-    int3
-    int3
-#else
-    // Restore FPRs.
-    movq 0(%rsi), %xmm0
-    movq 8(%rsi), %xmm1
-    movq 16(%rsi), %xmm2
-    movq 24(%rsi), %xmm3
-    movq 32(%rsi), %xmm4
-    movq 40(%rsi), %xmm5
-    movq 48(%rsi), %xmm6
-    movq 56(%rsi), %xmm7
-    movq 64(%rsi), %xmm8
-    movq 72(%rsi), %xmm9
-    movq 80(%rsi), %xmm10
-    movq 88(%rsi), %xmm11
-    movq 96(%rsi), %xmm12
-    movq 104(%rsi), %xmm13
-    movq 112(%rsi), %xmm14
-    movq 120(%rsi), %xmm15
-    // Restore FPRs.
-    movq %rdi, %rsp   // RSP points to gprs.
-    // Load all registers except RSP and RIP with values in gprs.
-    popq %r15
-    popq %r14
-    popq %r13
-    popq %r12
-    popq %r11
-    popq %r10
-    popq %r9
-    popq %r8
-    popq %rdi
-    popq %rsi
-    popq %rbp
-    addq LITERAL(8), %rsp   // Skip rsp
-    popq %rbx
-    popq %rdx
-    popq %rcx
-    popq %rax
-    popq %rsp      // Load stack pointer.
-    ret            // From higher in the stack pop rip.
-#endif  // __APPLE__
-END_FUNCTION art_quick_do_long_jump
 
 MACRO3(NO_ARG_DOWNCALL, c_name, cxx_name, return_macro)
     DEFINE_FUNCTION VAR(c_name, 0)
@@ -643,7 +480,7 @@ MACRO3(NO_ARG_DOWNCALL, c_name, cxx_name, return_macro)
     // Outgoing argument set up
     movq %rsp, %rsi                   // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rdi // pass Thread::Current()
-    call VAR(cxx_name, 1)         // cxx_name(Thread*, SP)
+    call PLT_VAR(cxx_name, 1)         // cxx_name(Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME  // restore frame up to return address
     CALL_MACRO(return_macro, 2)       // return or deliver exception
     END_FUNCTION VAR(c_name, 0)
@@ -655,7 +492,7 @@ MACRO3(ONE_ARG_DOWNCALL, c_name, cxx_name, return_macro)
     // Outgoing argument set up
     movq %rsp, %rdx                    // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rsi  // pass Thread::Current()
-    call VAR(cxx_name, 1)          // cxx_name(arg0, Thread*, SP)
+    call PLT_VAR(cxx_name, 1)          // cxx_name(arg0, Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME  // restore frame up to return address
     CALL_MACRO(return_macro, 2)        // return or deliver exception
     END_FUNCTION VAR(c_name, 0)
@@ -667,7 +504,7 @@ MACRO3(TWO_ARG_DOWNCALL, c_name, cxx_name, return_macro)
     // Outgoing argument set up
     movq %rsp, %rcx                    // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rdx  // pass Thread::Current()
-    call VAR(cxx_name, 1)          // cxx_name(arg0, arg1, Thread*, SP)
+    call PLT_VAR(cxx_name, 1)          // cxx_name(arg0, arg1, Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME  // restore frame up to return address
     CALL_MACRO(return_macro, 2)       // return or deliver exception
     END_FUNCTION VAR(c_name, 0)
@@ -679,46 +516,7 @@ MACRO3(THREE_ARG_DOWNCALL, c_name, cxx_name, return_macro)
     // Outgoing argument set up
     movq %rsp, %r8                     // pass SP
     movq %gs:THREAD_SELF_OFFSET, %rcx  // pass Thread::Current()
-    call VAR(cxx_name, 1)          // cxx_name(arg0, arg1, arg2, Thread*, SP)
-    RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
-    CALL_MACRO(return_macro, 2)        // return or deliver exception
-    END_FUNCTION VAR(c_name, 0)
-END_MACRO
-
-MACRO3(ONE_ARG_REF_DOWNCALL, c_name, cxx_name, return_macro)
-    DEFINE_FUNCTION VAR(c_name, 0)
-    movl 8(%rsp), %esi                 // pass referrer
-    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
-                                       // arg0 is in rdi
-    movq %gs:THREAD_SELF_OFFSET, %rdx  // pass Thread::Current()
-    movq %rsp, %rcx                    // pass SP
-    call VAR(cxx_name, 1)          // cxx_name(arg0, referrer, Thread*, SP)
-    RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
-    CALL_MACRO(return_macro, 2)
-    END_FUNCTION VAR(c_name, 0)
-END_MACRO
-
-MACRO3(TWO_ARG_REF_DOWNCALL, c_name, cxx_name, return_macro)
-    DEFINE_FUNCTION VAR(c_name, 0)
-    movl 8(%rsp), %edx                 // pass referrer
-    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
-                                       // arg0 and arg1 are in rdi/rsi
-    movq %gs:THREAD_SELF_OFFSET, %rcx  // pass Thread::Current()
-    movq %rsp, %r8                     // pass SP
-    call VAR(cxx_name, 1)          // (arg0, arg1, referrer, Thread*, SP)
-    RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
-    CALL_MACRO(return_macro, 2)
-    END_FUNCTION VAR(c_name, 0)
-END_MACRO
-
-MACRO3(THREE_ARG_REF_DOWNCALL, c_name, cxx_name, return_macro)
-    DEFINE_FUNCTION VAR(c_name, 0)
-    movl 8(%rsp), %ecx                 // pass referrer
-    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
-                                       // arg0, arg1, and arg2 are in rdi/rsi/rdx
-    movq %gs:THREAD_SELF_OFFSET, %r8    // pass Thread::Current()
-    movq %rsp, %r9                     // pass SP
-    call VAR(cxx_name, 1)          // cxx_name(arg0, arg1, arg2, referrer, Thread*, SP)
+    call PLT_VAR(cxx_name, 1)          // cxx_name(arg0, arg1, arg2, Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
     CALL_MACRO(return_macro, 2)        // return or deliver exception
     END_FUNCTION VAR(c_name, 0)
@@ -887,7 +685,7 @@ DEFINE_FUNCTION art_quick_lock_object
     SETUP_REF_ONLY_CALLEE_SAVE_FRAME
     movq %gs:THREAD_SELF_OFFSET, %rsi     // pass Thread::Current()
     movq %rsp, %rdx                       // pass SP
-    call SYMBOL(artLockObjectFromCode)  // artLockObjectFromCode(object, Thread*, SP)
+    call PLT_SYMBOL(artLockObjectFromCode)  // artLockObjectFromCode(object, Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME    // restore frame up to return address
     RETURN_IF_EAX_ZERO
 END_FUNCTION art_quick_lock_object
@@ -913,31 +711,32 @@ DEFINE_FUNCTION art_quick_unlock_object
     SETUP_REF_ONLY_CALLEE_SAVE_FRAME
     movq %gs:THREAD_SELF_OFFSET, %rsi     // pass Thread::Current()
     movq %rsp, %rdx                       // pass SP
-    call SYMBOL(artUnlockObjectFromCode)  // artUnlockObjectFromCode(object, Thread*, SP)
+    call PLT_SYMBOL(artUnlockObjectFromCode)  // artUnlockObjectFromCode(object, Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME    // restore frame up to return address
     RETURN_IF_EAX_ZERO
 END_FUNCTION art_quick_unlock_object
 
+DEFINE_FUNCTION art_quick_is_assignable
+    int3
+    int3
+END_FUNCTION art_quick_is_assignable
+
 DEFINE_FUNCTION art_quick_check_cast
     PUSH rdi                          // Save args for exc
     PUSH rsi
-    SETUP_FP_CALLEE_SAVE_FRAME
-    call SYMBOL(artIsAssignableFromCode)  // (Class* klass, Class* ref_klass)
+    call PLT_SYMBOL(artIsAssignableFromCode)  // (Class* klass, Class* ref_klass)
     testq %rax, %rax
     jz 1f                             // jump forward if not assignable
-    RESTORE_FP_CALLEE_SAVE_FRAME
     addq LITERAL(16), %rsp            // pop arguments
     CFI_ADJUST_CFA_OFFSET(-16)
-
     ret
 1:
-    RESTORE_FP_CALLEE_SAVE_FRAME
     POP rsi                           // Pop arguments
     POP rdi
     SETUP_SAVE_ALL_CALLEE_SAVE_FRAME  // save all registers as basis for long jump context
     mov %rsp, %rcx                    // pass SP
     mov %gs:THREAD_SELF_OFFSET, %rdx  // pass Thread::Current()
-    call SYMBOL(artThrowClassCastException) // (Class* a, Class* b, Thread*, SP)
+    call PLT_SYMBOL(artThrowClassCastException) // (Class* a, Class* b, Thread*, SP)
     int3                              // unreached
 END_FUNCTION art_quick_check_cast
 
@@ -952,33 +751,23 @@ END_FUNCTION art_quick_check_cast
      * rdi(edi) = array, rsi(esi) = index, rdx(edx) = value
      */
 DEFINE_FUNCTION art_quick_aput_obj_with_null_and_bound_check
-#if defined(__APPLE__)
-    int3
-    int3
-#else
     testl %edi, %edi
 //  testq %rdi, %rdi
-    jnz art_quick_aput_obj_with_bound_check
-    jmp art_quick_throw_null_pointer_exception
-#endif  // __APPLE__
+    jnz art_quick_aput_obj_with_bound_check_local
+    jmp art_quick_throw_null_pointer_exception_local
 END_FUNCTION art_quick_aput_obj_with_null_and_bound_check
 
 
 DEFINE_FUNCTION art_quick_aput_obj_with_bound_check
-#if defined(__APPLE__)
-    int3
-    int3
-#else
-    movl ARRAY_LENGTH_OFFSET(%edi), %ecx
-//  movl ARRAY_LENGTH_OFFSET(%rdi), %ecx      // This zero-extends, so value(%rcx)=value(%ecx)
-    cmpl %ecx, %esi
-    jb art_quick_aput_obj
+    movl ARRAY_LENGTH_OFFSET(%edi), %ebx
+//  movl ARRAY_LENGTH_OFFSET(%rdi), %ebx      // This zero-extends, so value(%rbx)=value(%ebx)
+    cmpl %ebx, %esi
+    jb art_quick_aput_obj_local
     mov %esi, %edi
 //  mov %rsi, %rdi
-    mov %ecx, %esi
-//  mov %rcx, %rsi
-    jmp art_quick_throw_array_bounds
-#endif  // __APPLE__
+    mov %ebx, %esi
+//  mov %rbx, %rsi
+    jmp art_quick_throw_array_bounds_local
 END_FUNCTION art_quick_aput_obj_with_bound_check
 
 
@@ -986,12 +775,12 @@ DEFINE_FUNCTION art_quick_aput_obj
     testl %edx, %edx                // store of null
 //  test %rdx, %rdx
     jz .Ldo_aput_null
-    movl CLASS_OFFSET(%edi), %ecx
-//  movq CLASS_OFFSET(%rdi), %rcx
-    movl CLASS_COMPONENT_TYPE_OFFSET(%ecx), %ecx
-//  movq CLASS_COMPONENT_TYPE_OFFSET(%rcx), %rcx
-    cmpl CLASS_OFFSET(%edx), %ecx // value's type == array's component type - trivial assignability
-//  cmpq CLASS_OFFSET(%rdx), %rcx
+    movl CLASS_OFFSET(%edi), %ebx
+//  movq CLASS_OFFSET(%rdi), %rbx
+    movl CLASS_COMPONENT_TYPE_OFFSET(%ebx), %ebx
+//  movq CLASS_COMPONENT_TYPE_OFFSET(%rbx), %rbx
+    cmpl CLASS_OFFSET(%edx), %ebx // value's type == array's component type - trivial assignability
+//  cmpq CLASS_OFFSET(%rdx), %rbx
     jne .Lcheck_assignability
 .Ldo_aput:
     movl %edx, OBJECT_ARRAY_DATA_OFFSET(%edi, %esi, 4)
@@ -1012,19 +801,17 @@ DEFINE_FUNCTION art_quick_aput_obj
     PUSH rdx
     subq LITERAL(8), %rsp        // Alignment padding.
     CFI_ADJUST_CFA_OFFSET(8)
-    SETUP_FP_CALLEE_SAVE_FRAME
 
                                   // "Uncompress" = do nothing, as already zero-extended on load.
     movl CLASS_OFFSET(%edx), %esi // Pass arg2 = value's class.
-    movq %rcx, %rdi               // Pass arg1 = array's component type.
+    movq %rbx, %rdi               // Pass arg1 = array's component type.
 
-    call SYMBOL(artIsAssignableFromCode)  // (Class* a, Class* b)
+    call PLT_SYMBOL(artIsAssignableFromCode)  // (Class* a, Class* b)
 
     // Exception?
     testq %rax, %rax
     jz   .Lthrow_array_store_exception
 
-    RESTORE_FP_CALLEE_SAVE_FRAME
     // Restore arguments.
     addq LITERAL(8), %rsp
     CFI_ADJUST_CFA_OFFSET(-8)
@@ -1041,7 +828,6 @@ DEFINE_FUNCTION art_quick_aput_obj
 //  movb %dl, (%rdx, %rdi)
     ret
 .Lthrow_array_store_exception:
-    RESTORE_FP_CALLEE_SAVE_FRAME
     // Restore arguments.
     addq LITERAL(8), %rsp
     CFI_ADJUST_CFA_OFFSET(-8)
@@ -1057,7 +843,7 @@ DEFINE_FUNCTION art_quick_aput_obj
     movq %gs:THREAD_SELF_OFFSET, %rdx // Pass arg 3 = Thread::Current().
                                             // Pass arg 1 = array.
 
-    call SYMBOL(artThrowArrayStoreException) // (array, value, Thread*, SP)
+    call PLT_SYMBOL(artThrowArrayStoreException) // (array, value, Thread*, SP)
     int3                          // unreached
 END_FUNCTION art_quick_aput_obj
 
@@ -1069,12 +855,60 @@ END_FUNCTION art_quick_memcpy
 
 NO_ARG_DOWNCALL art_quick_test_suspend, artTestSuspendFromCode, ret
 
+UNIMPLEMENTED art_quick_fmod
+UNIMPLEMENTED art_quick_fmodf
+UNIMPLEMENTED art_quick_l2d
+UNIMPLEMENTED art_quick_l2f
+UNIMPLEMENTED art_quick_d2l
+UNIMPLEMENTED art_quick_f2l
+UNIMPLEMENTED art_quick_idivmod
 UNIMPLEMENTED art_quick_ldiv
 UNIMPLEMENTED art_quick_lmod
 UNIMPLEMENTED art_quick_lmul
 UNIMPLEMENTED art_quick_lshl
 UNIMPLEMENTED art_quick_lshr
 UNIMPLEMENTED art_quick_lushr
+
+
+MACRO3(ONE_ARG_REF_DOWNCALL, c_name, cxx_name, return_macro)
+    DEFINE_FUNCTION VAR(c_name, 0)
+    movq 8(%rsp), %rsi                 // pass referrer
+    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
+                                       // arg0 is in rdi
+    movq %gs:THREAD_SELF_OFFSET, %rdx  // pass Thread::Current()
+    movq %rsp, %rcx                    // pass SP
+    call PLT_VAR(cxx_name, 1)          // cxx_name(arg0, referrer, Thread*, SP)
+    RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
+    CALL_MACRO(return_macro, 2)
+    END_FUNCTION VAR(c_name, 0)
+END_MACRO
+
+MACRO3(TWO_ARG_REF_DOWNCALL, c_name, cxx_name, return_macro)
+    DEFINE_FUNCTION VAR(c_name, 0)
+    movq 8(%rsp), %rdx                 // pass referrer
+    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
+                                       // arg0 and arg1 are in rdi/rsi
+    movq %gs:THREAD_SELF_OFFSET, %rcx  // pass Thread::Current()
+    movq %rsp, %r8                     // pass SP
+    call PLT_VAR(cxx_name, 1)          // (arg0, arg1, referrer, Thread*, SP)
+    RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
+    CALL_MACRO(return_macro, 2)
+    END_FUNCTION VAR(c_name, 0)
+END_MACRO
+
+MACRO3(THREE_ARG_REF_DOWNCALL, c_name, cxx_name, return_macro)
+    DEFINE_FUNCTION VAR(c_name, 0)
+    movq 8(%rsp), %rcx                 // pass referrer
+    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
+                                       // arg0, arg1, and arg2 are in rdi/rsi/rdx
+    movq %gs:THREAD_SELF_OFFSET, %r8    // pass Thread::Current()
+    movq %rsp, %r9                     // pass SP
+    call PLT_VAR(cxx_name, 1)          // cxx_name(arg0, arg1, arg2, referrer, Thread*, SP)
+    RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
+    CALL_MACRO(return_macro, 2)        // return or deliver exception
+    END_FUNCTION VAR(c_name, 0)
+END_MACRO
+
 
 THREE_ARG_REF_DOWNCALL art_quick_set32_instance, artSet32InstanceFromCode, RETURN_IF_EAX_ZERO
 THREE_ARG_DOWNCALL art_quick_set64_instance, artSet64InstanceFromCode, RETURN_IF_EAX_ZERO
@@ -1094,12 +928,12 @@ ONE_ARG_REF_DOWNCALL art_quick_get_obj_static, artGetObjStaticFromCode, RETURN_O
 // This is singled out as the argument order is different.
 DEFINE_FUNCTION art_quick_set64_static
     movq %rsi, %rdx                    // pass new_val
-    movl 8(%rsp), %esi                 // pass referrer
+    movq 8(%rsp), %rsi                 // pass referrer
     SETUP_REF_ONLY_CALLEE_SAVE_FRAME
                                        // field_idx is in rdi
     movq %gs:THREAD_SELF_OFFSET, %rcx  // pass Thread::Current()
     movq %rsp, %r8                     // pass SP
-    call SYMBOL(artSet64StaticFromCode)  // (field_idx, referrer, new_val, Thread*, SP)
+    call PLT_SYMBOL(artSet64StaticFromCode)  // (field_idx, referrer, new_val, Thread*, SP)
     RESTORE_REF_ONLY_CALLEE_SAVE_FRAME // restore frame up to return address
     RETURN_IF_EAX_ZERO                 // return or deliver exception
 END_FUNCTION art_quick_set64_static
@@ -1120,8 +954,8 @@ DEFINE_FUNCTION art_quick_proxy_invoke_handler
     PUSH rdx  // Quick arg 2.
     PUSH rcx  // Quick arg 3.
     // Create space for FPR args and create 2 slots, 1 of padding and 1 for the ArtMethod*.
-    subq LITERAL(80 + 4*8), %rsp
-    CFI_ADJUST_CFA_OFFSET(80 + 4*8)
+    subq LITERAL(80), %rsp
+    CFI_ADJUST_CFA_OFFSET(80)
     // Save FPRs.
     movq %xmm0, 16(%rsp)
     movq %xmm1, 24(%rsp)
@@ -1131,42 +965,27 @@ DEFINE_FUNCTION art_quick_proxy_invoke_handler
     movq %xmm5, 56(%rsp)
     movq %xmm6, 64(%rsp)
     movq %xmm7, 72(%rsp)
-    movq %xmm12, 80(%rsp)
-    movq %xmm13, 88(%rsp)
-    movq %xmm14, 96(%rsp)
-    movq %xmm15, 104(%rsp)
     // Store proxy method to bottom of stack.
     movq %rdi, 0(%rsp)
     movq %gs:THREAD_SELF_OFFSET, %rdx  // Pass Thread::Current().
     movq %rsp, %rcx                    // Pass SP.
-    call SYMBOL(artQuickProxyInvokeHandler) // (proxy method, receiver, Thread*, SP)
+    call PLT_SYMBOL(artQuickProxyInvokeHandler) // (proxy method, receiver, Thread*, SP)
     movq %rax, %xmm0                   // Copy return value in case of float returns.
-    addq LITERAL(168 + 4*8), %rsp            // Pop arguments.
-    CFI_ADJUST_CFA_OFFSET(-168 - 4*8)
+    addq LITERAL(168), %rsp            // Pop arguments.
+    CFI_ADJUST_CFA_OFFSET(-168)
     RETURN_OR_DELIVER_PENDING_EXCEPTION
 END_FUNCTION art_quick_proxy_invoke_handler
 
     /*
      * Called to resolve an imt conflict.
-     * rax is a hidden argument that holds the target method's dex method index.
      */
-DEFINE_FUNCTION art_quick_imt_conflict_trampoline
-#if defined(__APPLE__)
-    int3
-    int3
-#else
-    movl 8(%rsp), %edi            // load caller Method*
-    movl METHOD_DEX_CACHE_METHODS_OFFSET(%rdi), %edi  // load dex_cache_resolved_methods
-    movl OBJECT_ARRAY_DATA_OFFSET(%rdi, %rax, 4), %edi  // load the target method
-    jmp art_quick_invoke_interface_trampoline
-#endif  // __APPLE__
-END_FUNCTION art_quick_imt_conflict_trampoline
+UNIMPLEMENTED art_quick_imt_conflict_trampoline
 
 DEFINE_FUNCTION art_quick_resolution_trampoline
     SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME
     movq %gs:THREAD_SELF_OFFSET, %rdx
     movq %rsp, %rcx
-    call SYMBOL(artQuickResolutionTrampoline) // (called, receiver, Thread*, SP)
+    call PLT_SYMBOL(artQuickResolutionTrampoline) // (called, receiver, Thread*, SP)
     movq %rax, %r10               // Remember returned code pointer in R10.
     movq (%rsp), %rdi             // Load called method into RDI.
     RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME
@@ -1254,7 +1073,7 @@ END_FUNCTION art_quick_resolution_trampoline
     /*
      * Called to do a generic JNI down-call
      */
-DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
+DEFINE_FUNCTION art_quick_generic_jni_trampoline
     // Save callee and GPR args, mixed together to agree with core spills bitmap.
     PUSH r15  // Callee save.
     PUSH r14  // Callee save.
@@ -1268,8 +1087,8 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     PUSH rdx  // Quick arg 2.
     PUSH rcx  // Quick arg 3.
     // Create space for FPR args and create 2 slots, 1 of padding and 1 for the ArtMethod*.
-    subq LITERAL(80 + 4*8), %rsp
-    CFI_ADJUST_CFA_OFFSET(80 + 4*8)
+    subq LITERAL(80), %rsp
+    CFI_ADJUST_CFA_OFFSET(80)
     // Save FPRs.
     movq %xmm0, 16(%rsp)
     movq %xmm1, 24(%rsp)
@@ -1279,13 +1098,11 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     movq %xmm5, 56(%rsp)
     movq %xmm6, 64(%rsp)
     movq %xmm7, 72(%rsp)
-    movq %xmm12, 80(%rsp)
-    movq %xmm13, 88(%rsp)
-    movq %xmm14, 96(%rsp)
-    movq %xmm15, 104(%rsp)
-    movq %rdi, 0(%rsp)              // Store native ArtMethod* to bottom of stack.
-    movq %rsp, %rbp                 // save SP at (old) callee-save frame
-    CFI_DEF_CFA_REGISTER(rbp)
+    // Store native ArtMethod* to bottom of stack.
+    movq %rdi, 0(%rsp)
+    movq %rsp, %rbp                 // save SP at callee-save frame
+    movq %rsp, %rbx
+    CFI_DEF_CFA_REGISTER(rbx)
     //
     // reserve a lot of space
     //
@@ -1310,19 +1127,19 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     //  gs:...   rbp      <= where they are
     movq %gs:THREAD_SELF_OFFSET, %rdi
     movq %rbp, %rsi
-    call SYMBOL(artQuickGenericJniTrampoline)  // (Thread*, sp)
+    call PLT_SYMBOL(artQuickGenericJniTrampoline)  // (Thread*, sp)
 
-    // The C call will have registered the complete save-frame on success.
-    // The result of the call is:
-    // %rax: pointer to native code, 0 on error.
-    // %rdx: pointer to the bottom of the used area of the alloca, can restore stack till there.
+    // At the bottom of the alloca we now have the name pointer to the method=bottom of callee-save
+    // get the adjusted frame pointer
+    popq %rbp
 
-    // Check for error = 0.
+    // Check for error, negative value.
     test %rax, %rax
-    jz .Lentry_error
+    js .Lentry_error
 
-    // Release part of the alloca.
-    movq %rdx, %rsp
+    // release part of the alloca, get the code pointer
+    addq %rax, %rsp
+    popq %rax
 
     // pop from the register-passing alloca region
     // what's the right layout?
@@ -1342,22 +1159,21 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     movq 48(%rsp), %xmm6
     movq 56(%rsp), %xmm7
     addq LITERAL(64), %rsp          // floating-point done
-
     // native call
-    call *%rax
-
+    call *%rax                      // Stack should be aligned 16B without the return addr?
     // result sign extension is handled in C code
     // prepare for artQuickGenericJniEndTrampoline call
-    // (Thread*,  result, result_f)
-    //   rdi      rsi   rdx       <= C calling convention
-    //  gs:...    rax   xmm0      <= where they are
+    // (Thread*,  SP, result, result_f)
+    //   rdi      rsi   rdx   rcx       <= C calling convention
+    //  gs:...    rbp   rax   xmm0      <= where they are
     movq %gs:THREAD_SELF_OFFSET, %rdi
-    movq %rax, %rsi
-    movq %xmm0, %rdx
-    call SYMBOL(artQuickGenericJniEndTrampoline)
+    movq %rbp, %rsi
+    movq %rax, %rdx
+    movq %xmm0, %rcx
+    call PLT_SYMBOL(artQuickGenericJniEndTrampoline)
 
     // Tear down the alloca.
-    movq %rbp, %rsp
+    movq %rbx, %rsp
     CFI_DEF_CFA_REGISTER(rsp)
 
     // Pending exceptions possible.
@@ -1376,13 +1192,9 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     movq 56(%rsp), %xmm5
     movq 64(%rsp), %xmm6
     movq 72(%rsp), %xmm7
-    movq 80(%rsp), %xmm12
-    movq 88(%rsp), %xmm13
-    movq 96(%rsp), %xmm14
-    movq 104(%rsp), %xmm15
     // was 80 bytes
-    addq LITERAL(80 + 4*8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-80 - 4*8)
+    addq LITERAL(80), %rsp
+    CFI_ADJUST_CFA_OFFSET(-80)
     // Save callee and GPR args, mixed together to agree with core spills bitmap.
     POP rcx  // Arg.
     POP rdx  // Arg.
@@ -1399,7 +1211,7 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     movq %rax, %xmm0
     ret
 .Lentry_error:
-    movq %rbp, %rsp
+    movq %rbx, %rsp
     CFI_DEF_CFA_REGISTER(rsp)
 .Lexception_in_native:
     // TODO: the handle scope contains the this pointer which is used by the debugger for exception
@@ -1412,13 +1224,9 @@ DEFINE_FUNCTION_NO_HIDE art_quick_generic_jni_trampoline
     movq 56(%rsp), %xmm5
     movq 64(%rsp), %xmm6
     movq 72(%rsp), %xmm7
-    movq 80(%rsp), %xmm12
-    movq 88(%rsp), %xmm13
-    movq 96(%rsp), %xmm14
-    movq 104(%rsp), %xmm15
-    // was 80 + 32 bytes
-    addq LITERAL(80 + 4*8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-80 - 4*8)
+    // was 80 bytes
+    addq LITERAL(80), %rsp
+    CFI_ADJUST_CFA_OFFSET(-80)
     // Save callee and GPR args, mixed together to agree with core spills bitmap.
     POP rcx  // Arg.
     POP rdx  // Arg.
@@ -1441,11 +1249,11 @@ END_FUNCTION art_quick_generic_jni_trampoline
      * RDI = method being called / to bridge to.
      * RSI, RDX, RCX, R8, R9 are arguments to that method.
      */
-DEFINE_FUNCTION_NO_HIDE art_quick_to_interpreter_bridge
+DEFINE_FUNCTION art_quick_to_interpreter_bridge
     SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME   // Set up frame and save arguments.
     movq %gs:THREAD_SELF_OFFSET, %rsi      // RSI := Thread::Current()
     movq %rsp, %rdx                        // RDX := sp
-    call SYMBOL(artQuickToInterpreterBridge)  // (method, Thread*, SP)
+    call PLT_SYMBOL(artQuickToInterpreterBridge)  // (method, Thread*, SP)
     RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME  // TODO: no need to restore arguments in this case.
     movq %rax, %xmm0                   // Place return value also into floating point return value.
     RETURN_OR_DELIVER_PENDING_EXCEPTION    // return or deliver exception
@@ -1454,82 +1262,16 @@ END_FUNCTION art_quick_to_interpreter_bridge
     /*
      * Routine that intercepts method calls and returns.
      */
-DEFINE_FUNCTION art_quick_instrumentation_entry
-#if defined(__APPLE__)
-    int3
-    int3
-#else
-    SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME
-
-    movq %rdi, %r12               // Preserve method pointer in a callee-save.
-
-    movq %gs:THREAD_SELF_OFFSET, %rdx   // Pass thread.
-    movq %rsp, %rcx                     // Pass SP.
-    movq FRAME_SIZE_REFS_AND_ARGS_CALLEE_SAVE-8(%rsp), %r8   // Pass return PC.
-
-    call SYMBOL(artInstrumentationMethodEntryFromCode) // (Method*, Object*, Thread*, SP, LR)
-
-                                  // %rax = result of call.
-    movq %r12, %rdi               // Reload method pointer.
-
-    leaq art_quick_instrumentation_exit(%rip), %r12   // Set up return through instrumentation
-    movq %r12, FRAME_SIZE_REFS_AND_ARGS_CALLEE_SAVE-8(%rsp) // exit.
-
-    RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME
-
-    jmp *%rax                     // Tail call to intended method.
-#endif  // __APPLE__
-END_FUNCTION art_quick_instrumentation_entry
-
-DEFINE_FUNCTION art_quick_instrumentation_exit
-    pushq LITERAL(0)          // Push a fake return PC as there will be none on the stack.
-
-    SETUP_REF_ONLY_CALLEE_SAVE_FRAME
-
-    // We need to save rax and xmm0. We could use a callee-save from SETUP_REF_ONLY, but then
-    // we would need to fully restore it. As there are a good number of callee-save registers, it
-    // seems easier to have an extra small stack area. But this should be revisited.
-
-    movq  %rsp, %rsi                          // Pass SP.
-
-    PUSH rax                  // Save integer result.
-    subq LITERAL(8), %rsp     // Save floating-point result.
-    CFI_ADJUST_CFA_OFFSET(8)
-    movq %xmm0, (%rsp)
-
-    movq  %gs:THREAD_SELF_OFFSET, %rdi        // Pass Thread.
-    movq  %rax, %rdx                          // Pass integer result.
-    movq  %xmm0, %rcx                         // Pass floating-point result.
-
-    call SYMBOL(artInstrumentationMethodExitFromCode)   // (Thread*, SP, gpr_res, fpr_res)
-
-    movq  %rax, %rdi          // Store return PC
-    movq  %rdx, %rsi          // Store second return PC in hidden arg.
-
-    movq (%rsp), %xmm0        // Restore floating-point result.
-    addq LITERAL(8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-8)
-    POP rax                   // Restore integer result.
-
-    addq LITERAL(FRAME_SIZE_REFS_ONLY_CALLEE_SAVE), %rsp   // Drop save frame and fake return pc.
-
-    jmp   *%rdi               // Return.
-END_FUNCTION art_quick_instrumentation_exit
+UNIMPLEMENTED art_quick_instrumentation_entry
+UNIMPLEMENTED art_quick_instrumentation_exit
 
     /*
      * Instrumentation has requested that we deoptimize into the interpreter. The deoptimization
      * will long jump to the upcall with a special exception of -1.
      */
-DEFINE_FUNCTION art_quick_deoptimize
-    pushq %rsi                     // Fake that we were called. Use hidden arg.
-    SETUP_SAVE_ALL_CALLEE_SAVE_FRAME
-                                   // Stack should be aligned now.
-    movq %rsp, %rsi                           // Pass SP.
-    movq %gs:THREAD_SELF_OFFSET, %rdi         // Pass Thread.
-    call SYMBOL(artDeoptimize) // artDeoptimize(Thread*, SP)
-    int3                           // Unreachable.
-END_FUNCTION art_quick_deoptimize
+UNIMPLEMENTED art_quick_deoptimize
 
+UNIMPLEMENTED art_quick_indexof
 
     /*
      * String's compareTo.
@@ -1574,24 +1316,3 @@ DEFINE_FUNCTION art_quick_string_compareto
 END_FUNCTION art_quick_string_compareto
 
 UNIMPLEMENTED art_quick_memcmp16
-
-DEFINE_FUNCTION art_quick_assignable_from_code
-    SETUP_FP_CALLEE_SAVE_FRAME
-    call SYMBOL(artIsAssignableFromCode)       // (const mirror::Class*, const mirror::Class*)
-    RESTORE_FP_CALLEE_SAVE_FRAME
-    ret
-END_FUNCTION art_quick_assignable_from_code
-
-
-// Return from a nested signal:
-// Entry:
-//  rdi: address of jmp_buf in TLS
-
-DEFINE_FUNCTION art_nested_signal_return
-                                    // first arg to longjmp is already in correct register
-    movq LITERAL(1), %rsi           // second arg to longjmp (1)
-    call PLT_SYMBOL(longjmp)
-    int3                            // won't get here
-END_FUNCTION art_nested_signal_return
-
-

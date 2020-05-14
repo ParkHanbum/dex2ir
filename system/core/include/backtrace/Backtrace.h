@@ -47,13 +47,7 @@ struct backtrace_frame_data_t {
 // Forward declarations.
 class BacktraceImpl;
 
-#if defined(__APPLE__)
-struct __darwin_ucontext;
-typedef __darwin_ucontext ucontext_t;
-#else
-struct ucontext;
-typedef ucontext ucontext_t;
-#endif
+struct ucontext_t;
 
 class Backtrace {
 public:

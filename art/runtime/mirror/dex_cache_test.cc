@@ -24,7 +24,6 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/object-inl.h"
 #include "handle_scope-inl.h"
-#include "scoped_thread_state_change.h"
 
 namespace art {
 namespace mirror {

@@ -15,480 +15,10 @@
  */
 
 #include "interpreter_common.h"
-
-#include "field_helper.h"
 #include "mirror/array-inl.h"
 
 namespace art {
 namespace interpreter {
-
-void ThrowNullPointerExceptionFromInterpreter(const ShadowFrame& shadow_frame) {
-  ThrowNullPointerExceptionFromDexPC(shadow_frame.GetCurrentLocationForThrow());
-}
-
-template<FindFieldType find_type, Primitive::Type field_type, bool do_access_check>
-bool DoFieldGet(Thread* self, ShadowFrame& shadow_frame, const Instruction* inst,
-                uint16_t inst_data) {
-  const bool is_static = (find_type == StaticObjectRead) || (find_type == StaticPrimitiveRead);
-  const uint32_t field_idx = is_static ? inst->VRegB_21c() : inst->VRegC_22c();
-  ArtField* f = FindFieldFromCode<find_type, do_access_check>(field_idx, shadow_frame.GetMethod(), self,
-                                                              Primitive::FieldSize(field_type));
-  if (UNLIKELY(f == nullptr)) {
-    CHECK(self->IsExceptionPending());
-    return false;
-  }
-  Object* obj;
-  if (is_static) {
-    obj = f->GetDeclaringClass();
-  } else {
-    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-    if (UNLIKELY(obj == nullptr)) {
-      ThrowNullPointerExceptionForFieldAccess(shadow_frame.GetCurrentLocationForThrow(), f, true);
-      return false;
-    }
-  }
-  f->GetDeclaringClass()->AssertInitializedOrInitializingInThread(self);
-  // Report this field access to instrumentation if needed.
-  instrumentation::Instrumentation* instrumentation = Runtime::Current()->GetInstrumentation();
-  if (UNLIKELY(instrumentation->HasFieldReadListeners())) {
-    Object* this_object = f->IsStatic() ? nullptr : obj;
-    instrumentation->FieldReadEvent(self, this_object, shadow_frame.GetMethod(),
-                                    shadow_frame.GetDexPC(), f);
-  }
-  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
-  switch (field_type) {
-    case Primitive::kPrimBoolean:
-      shadow_frame.SetVReg(vregA, f->GetBoolean(obj));
-      break;
-    case Primitive::kPrimByte:
-      shadow_frame.SetVReg(vregA, f->GetByte(obj));
-      break;
-    case Primitive::kPrimChar:
-      shadow_frame.SetVReg(vregA, f->GetChar(obj));
-      break;
-    case Primitive::kPrimShort:
-      shadow_frame.SetVReg(vregA, f->GetShort(obj));
-      break;
-    case Primitive::kPrimInt:
-      shadow_frame.SetVReg(vregA, f->GetInt(obj));
-      break;
-    case Primitive::kPrimLong:
-      shadow_frame.SetVRegLong(vregA, f->GetLong(obj));
-      break;
-    case Primitive::kPrimNot:
-      shadow_frame.SetVRegReference(vregA, f->GetObject(obj));
-      break;
-    default:
-      LOG(FATAL) << "Unreachable: " << field_type;
-  }
-  return true;
-}
-
-// Explicitly instantiate all DoFieldGet functions.
-#define EXPLICIT_DO_FIELD_GET_TEMPLATE_DECL(_find_type, _field_type, _do_check) \
-  template bool DoFieldGet<_find_type, _field_type, _do_check>(Thread* self, \
-                                                               ShadowFrame& shadow_frame, \
-                                                               const Instruction* inst, \
-                                                               uint16_t inst_data)
-
-#define EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(_find_type, _field_type)  \
-    EXPLICIT_DO_FIELD_GET_TEMPLATE_DECL(_find_type, _field_type, false);  \
-    EXPLICIT_DO_FIELD_GET_TEMPLATE_DECL(_find_type, _field_type, true);
-
-// iget-XXX
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstancePrimitiveRead, Primitive::kPrimBoolean);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstancePrimitiveRead, Primitive::kPrimByte);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstancePrimitiveRead, Primitive::kPrimChar);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstancePrimitiveRead, Primitive::kPrimShort);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstancePrimitiveRead, Primitive::kPrimInt);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstancePrimitiveRead, Primitive::kPrimLong);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(InstanceObjectRead, Primitive::kPrimNot);
-
-// sget-XXX
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticPrimitiveRead, Primitive::kPrimBoolean);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticPrimitiveRead, Primitive::kPrimByte);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticPrimitiveRead, Primitive::kPrimChar);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticPrimitiveRead, Primitive::kPrimShort);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticPrimitiveRead, Primitive::kPrimInt);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticPrimitiveRead, Primitive::kPrimLong);
-EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL(StaticObjectRead, Primitive::kPrimNot);
-
-#undef EXPLICIT_DO_FIELD_GET_ALL_TEMPLATE_DECL
-#undef EXPLICIT_DO_FIELD_GET_TEMPLATE_DECL
-
-// Handles iget-quick, iget-wide-quick and iget-object-quick instructions.
-// Returns true on success, otherwise throws an exception and returns false.
-template<Primitive::Type field_type>
-bool DoIGetQuick(ShadowFrame& shadow_frame, const Instruction* inst, uint16_t inst_data) {
-  Object* obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-  if (UNLIKELY(obj == nullptr)) {
-    // We lost the reference to the field index so we cannot get a more
-    // precised exception message.
-    ThrowNullPointerExceptionFromDexPC(shadow_frame.GetCurrentLocationForThrow());
-    return false;
-  }
-  MemberOffset field_offset(inst->VRegC_22c());
-  // Report this field access to instrumentation if needed. Since we only have the offset of
-  // the field from the base of the object, we need to look for it first.
-  instrumentation::Instrumentation* instrumentation = Runtime::Current()->GetInstrumentation();
-  if (UNLIKELY(instrumentation->HasFieldReadListeners())) {
-    ArtField* f = ArtField::FindInstanceFieldWithOffset(obj->GetClass(),
-                                                        field_offset.Uint32Value());
-    DCHECK(f != nullptr);
-    DCHECK(!f->IsStatic());
-    instrumentation->FieldReadEvent(Thread::Current(), obj, shadow_frame.GetMethod(),
-                                    shadow_frame.GetDexPC(), f);
-  }
-  // Note: iget-x-quick instructions are only for non-volatile fields.
-  const uint32_t vregA = inst->VRegA_22c(inst_data);
-  switch (field_type) {
-    case Primitive::kPrimInt:
-      shadow_frame.SetVReg(vregA, static_cast<int32_t>(obj->GetField32(field_offset)));
-      break;
-    case Primitive::kPrimLong:
-      shadow_frame.SetVRegLong(vregA, static_cast<int64_t>(obj->GetField64(field_offset)));
-      break;
-    case Primitive::kPrimNot:
-      shadow_frame.SetVRegReference(vregA, obj->GetFieldObject<mirror::Object>(field_offset));
-      break;
-    default:
-      LOG(FATAL) << "Unreachable: " << field_type;
-  }
-  return true;
-}
-
-// Explicitly instantiate all DoIGetQuick functions.
-#define EXPLICIT_DO_IGET_QUICK_TEMPLATE_DECL(_field_type) \
-  template bool DoIGetQuick<_field_type>(ShadowFrame& shadow_frame, const Instruction* inst, \
-                                         uint16_t inst_data)
-
-EXPLICIT_DO_IGET_QUICK_TEMPLATE_DECL(Primitive::kPrimInt);    // iget-quick.
-EXPLICIT_DO_IGET_QUICK_TEMPLATE_DECL(Primitive::kPrimLong);   // iget-wide-quick.
-EXPLICIT_DO_IGET_QUICK_TEMPLATE_DECL(Primitive::kPrimNot);    // iget-object-quick.
-#undef EXPLICIT_DO_IGET_QUICK_TEMPLATE_DECL
-
-template<Primitive::Type field_type>
-static JValue GetFieldValue(const ShadowFrame& shadow_frame, uint32_t vreg)
-    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-  JValue field_value;
-  switch (field_type) {
-    case Primitive::kPrimBoolean:
-      field_value.SetZ(static_cast<uint8_t>(shadow_frame.GetVReg(vreg)));
-      break;
-    case Primitive::kPrimByte:
-      field_value.SetB(static_cast<int8_t>(shadow_frame.GetVReg(vreg)));
-      break;
-    case Primitive::kPrimChar:
-      field_value.SetC(static_cast<uint16_t>(shadow_frame.GetVReg(vreg)));
-      break;
-    case Primitive::kPrimShort:
-      field_value.SetS(static_cast<int16_t>(shadow_frame.GetVReg(vreg)));
-      break;
-    case Primitive::kPrimInt:
-      field_value.SetI(shadow_frame.GetVReg(vreg));
-      break;
-    case Primitive::kPrimLong:
-      field_value.SetJ(shadow_frame.GetVRegLong(vreg));
-      break;
-    case Primitive::kPrimNot:
-      field_value.SetL(shadow_frame.GetVRegReference(vreg));
-      break;
-    default:
-      LOG(FATAL) << "Unreachable: " << field_type;
-      break;
-  }
-  return field_value;
-}
-
-template<FindFieldType find_type, Primitive::Type field_type, bool do_access_check,
-         bool transaction_active>
-bool DoFieldPut(Thread* self, const ShadowFrame& shadow_frame, const Instruction* inst,
-                uint16_t inst_data) {
-  bool do_assignability_check = do_access_check;
-  bool is_static = (find_type == StaticObjectWrite) || (find_type == StaticPrimitiveWrite);
-  uint32_t field_idx = is_static ? inst->VRegB_21c() : inst->VRegC_22c();
-  ArtField* f = FindFieldFromCode<find_type, do_access_check>(field_idx, shadow_frame.GetMethod(), self,
-                                                              Primitive::FieldSize(field_type));
-  if (UNLIKELY(f == nullptr)) {
-    CHECK(self->IsExceptionPending());
-    return false;
-  }
-  Object* obj;
-  if (is_static) {
-    obj = f->GetDeclaringClass();
-  } else {
-    obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-    if (UNLIKELY(obj == nullptr)) {
-      ThrowNullPointerExceptionForFieldAccess(shadow_frame.GetCurrentLocationForThrow(),
-                                              f, false);
-      return false;
-    }
-  }
-  f->GetDeclaringClass()->AssertInitializedOrInitializingInThread(self);
-  uint32_t vregA = is_static ? inst->VRegA_21c(inst_data) : inst->VRegA_22c(inst_data);
-  // Report this field access to instrumentation if needed. Since we only have the offset of
-  // the field from the base of the object, we need to look for it first.
-  instrumentation::Instrumentation* instrumentation = Runtime::Current()->GetInstrumentation();
-  if (UNLIKELY(instrumentation->HasFieldWriteListeners())) {
-    JValue field_value = GetFieldValue<field_type>(shadow_frame, vregA);
-    Object* this_object = f->IsStatic() ? nullptr : obj;
-    instrumentation->FieldWriteEvent(self, this_object, shadow_frame.GetMethod(),
-                                     shadow_frame.GetDexPC(), f, field_value);
-  }
-  switch (field_type) {
-    case Primitive::kPrimBoolean:
-      f->SetBoolean<transaction_active>(obj, shadow_frame.GetVReg(vregA));
-      break;
-    case Primitive::kPrimByte:
-      f->SetByte<transaction_active>(obj, shadow_frame.GetVReg(vregA));
-      break;
-    case Primitive::kPrimChar:
-      f->SetChar<transaction_active>(obj, shadow_frame.GetVReg(vregA));
-      break;
-    case Primitive::kPrimShort:
-      f->SetShort<transaction_active>(obj, shadow_frame.GetVReg(vregA));
-      break;
-    case Primitive::kPrimInt:
-      f->SetInt<transaction_active>(obj, shadow_frame.GetVReg(vregA));
-      break;
-    case Primitive::kPrimLong:
-      f->SetLong<transaction_active>(obj, shadow_frame.GetVRegLong(vregA));
-      break;
-    case Primitive::kPrimNot: {
-      Object* reg = shadow_frame.GetVRegReference(vregA);
-      if (do_assignability_check && reg != nullptr) {
-        // FieldHelper::GetType can resolve classes, use a handle wrapper which will restore the
-        // object in the destructor.
-        Class* field_class;
-        {
-          StackHandleScope<3> hs(self);
-          HandleWrapper<mirror::ArtField> h_f(hs.NewHandleWrapper(&f));
-          HandleWrapper<mirror::Object> h_reg(hs.NewHandleWrapper(&reg));
-          HandleWrapper<mirror::Object> h_obj(hs.NewHandleWrapper(&obj));
-          FieldHelper fh(h_f);
-          field_class = fh.GetType();
-        }
-        if (!reg->VerifierInstanceOf(field_class)) {
-          // This should never happen.
-          std::string temp1, temp2, temp3;
-          self->ThrowNewExceptionF(self->GetCurrentLocationForThrow(),
-                                   "Ljava/lang/VirtualMachineError;",
-                                   "Put '%s' that is not instance of field '%s' in '%s'",
-                                   reg->GetClass()->GetDescriptor(&temp1),
-                                   field_class->GetDescriptor(&temp2),
-                                   f->GetDeclaringClass()->GetDescriptor(&temp3));
-          return false;
-        }
-      }
-      f->SetObj<transaction_active>(obj, reg);
-      break;
-    }
-    default:
-      LOG(FATAL) << "Unreachable: " << field_type;
-  }
-  return true;
-}
-
-// Explicitly instantiate all DoFieldPut functions.
-#define EXPLICIT_DO_FIELD_PUT_TEMPLATE_DECL(_find_type, _field_type, _do_check, _transaction_active) \
-  template bool DoFieldPut<_find_type, _field_type, _do_check, _transaction_active>(Thread* self, \
-      const ShadowFrame& shadow_frame, const Instruction* inst, uint16_t inst_data)
-
-#define EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(_find_type, _field_type)  \
-    EXPLICIT_DO_FIELD_PUT_TEMPLATE_DECL(_find_type, _field_type, false, false);  \
-    EXPLICIT_DO_FIELD_PUT_TEMPLATE_DECL(_find_type, _field_type, true, false);  \
-    EXPLICIT_DO_FIELD_PUT_TEMPLATE_DECL(_find_type, _field_type, false, true);  \
-    EXPLICIT_DO_FIELD_PUT_TEMPLATE_DECL(_find_type, _field_type, true, true);
-
-// iput-XXX
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstancePrimitiveWrite, Primitive::kPrimBoolean);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstancePrimitiveWrite, Primitive::kPrimByte);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstancePrimitiveWrite, Primitive::kPrimChar);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstancePrimitiveWrite, Primitive::kPrimShort);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstancePrimitiveWrite, Primitive::kPrimInt);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstancePrimitiveWrite, Primitive::kPrimLong);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(InstanceObjectWrite, Primitive::kPrimNot);
-
-// sput-XXX
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticPrimitiveWrite, Primitive::kPrimBoolean);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticPrimitiveWrite, Primitive::kPrimByte);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticPrimitiveWrite, Primitive::kPrimChar);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticPrimitiveWrite, Primitive::kPrimShort);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticPrimitiveWrite, Primitive::kPrimInt);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticPrimitiveWrite, Primitive::kPrimLong);
-EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL(StaticObjectWrite, Primitive::kPrimNot);
-
-#undef EXPLICIT_DO_FIELD_PUT_ALL_TEMPLATE_DECL
-#undef EXPLICIT_DO_FIELD_PUT_TEMPLATE_DECL
-
-template<Primitive::Type field_type, bool transaction_active>
-bool DoIPutQuick(const ShadowFrame& shadow_frame, const Instruction* inst, uint16_t inst_data) {
-  Object* obj = shadow_frame.GetVRegReference(inst->VRegB_22c(inst_data));
-  if (UNLIKELY(obj == nullptr)) {
-    // We lost the reference to the field index so we cannot get a more
-    // precised exception message.
-    ThrowNullPointerExceptionFromDexPC(shadow_frame.GetCurrentLocationForThrow());
-    return false;
-  }
-  MemberOffset field_offset(inst->VRegC_22c());
-  const uint32_t vregA = inst->VRegA_22c(inst_data);
-  // Report this field modification to instrumentation if needed. Since we only have the offset of
-  // the field from the base of the object, we need to look for it first.
-  instrumentation::Instrumentation* instrumentation = Runtime::Current()->GetInstrumentation();
-  if (UNLIKELY(instrumentation->HasFieldWriteListeners())) {
-    ArtField* f = ArtField::FindInstanceFieldWithOffset(obj->GetClass(),
-                                                        field_offset.Uint32Value());
-    DCHECK(f != nullptr);
-    DCHECK(!f->IsStatic());
-    JValue field_value = GetFieldValue<field_type>(shadow_frame, vregA);
-    instrumentation->FieldWriteEvent(Thread::Current(), obj, shadow_frame.GetMethod(),
-                                     shadow_frame.GetDexPC(), f, field_value);
-  }
-  // Note: iput-x-quick instructions are only for non-volatile fields.
-  switch (field_type) {
-    case Primitive::kPrimInt:
-      obj->SetField32<transaction_active>(field_offset, shadow_frame.GetVReg(vregA));
-      break;
-    case Primitive::kPrimLong:
-      obj->SetField64<transaction_active>(field_offset, shadow_frame.GetVRegLong(vregA));
-      break;
-    case Primitive::kPrimNot:
-      obj->SetFieldObject<transaction_active>(field_offset, shadow_frame.GetVRegReference(vregA));
-      break;
-    default:
-      LOG(FATAL) << "Unreachable: " << field_type;
-  }
-  return true;
-}
-
-// Explicitly instantiate all DoIPutQuick functions.
-#define EXPLICIT_DO_IPUT_QUICK_TEMPLATE_DECL(_field_type, _transaction_active) \
-  template bool DoIPutQuick<_field_type, _transaction_active>(const ShadowFrame& shadow_frame, \
-                                                              const Instruction* inst, \
-                                                              uint16_t inst_data)
-
-#define EXPLICIT_DO_IPUT_QUICK_ALL_TEMPLATE_DECL(_field_type)   \
-  EXPLICIT_DO_IPUT_QUICK_TEMPLATE_DECL(_field_type, false);     \
-  EXPLICIT_DO_IPUT_QUICK_TEMPLATE_DECL(_field_type, true);
-
-EXPLICIT_DO_IPUT_QUICK_ALL_TEMPLATE_DECL(Primitive::kPrimInt);    // iget-quick.
-EXPLICIT_DO_IPUT_QUICK_ALL_TEMPLATE_DECL(Primitive::kPrimLong);   // iget-wide-quick.
-EXPLICIT_DO_IPUT_QUICK_ALL_TEMPLATE_DECL(Primitive::kPrimNot);    // iget-object-quick.
-#undef EXPLICIT_DO_IPUT_QUICK_ALL_TEMPLATE_DECL
-#undef EXPLICIT_DO_IPUT_QUICK_TEMPLATE_DECL
-
-/**
- * Finds the location where this exception will be caught. We search until we reach either the top
- * frame or a native frame, in which cases this exception is considered uncaught.
- */
-class CatchLocationFinder : public StackVisitor {
- public:
-  explicit CatchLocationFinder(Thread* self, Handle<mirror::Throwable>* exception)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-    : StackVisitor(self, nullptr), self_(self), handle_scope_(self), exception_(exception),
-      catch_method_(handle_scope_.NewHandle<mirror::ArtMethod>(nullptr)),
-      catch_dex_pc_(DexFile::kDexNoIndex), clear_exception_(false) {
-  }
-
-  bool VisitFrame() OVERRIDE SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    mirror::ArtMethod* method = GetMethod();
-    if (method == nullptr) {
-      return true;
-    }
-    if (method->IsRuntimeMethod()) {
-      // Ignore callee save method.
-      DCHECK(method->IsCalleeSaveMethod());
-      return true;
-    }
-    if (method->IsNative()) {
-      return false;  // End stack walk.
-    }
-    DCHECK(!method->IsNative());
-    uint32_t dex_pc = GetDexPc();
-    if (dex_pc != DexFile::kDexNoIndex) {
-      uint32_t found_dex_pc;
-      {
-        StackHandleScope<3> hs(self_);
-        Handle<mirror::Class> exception_class(hs.NewHandle((*exception_)->GetClass()));
-        Handle<mirror::ArtMethod> h_method(hs.NewHandle(method));
-        found_dex_pc = mirror::ArtMethod::FindCatchBlock(h_method, exception_class, dex_pc,
-                                                         &clear_exception_);
-      }
-      if (found_dex_pc != DexFile::kDexNoIndex) {
-        catch_method_.Assign(method);
-        catch_dex_pc_ = found_dex_pc;
-        return false;  // End stack walk.
-      }
-    }
-    return true;  // Continue stack walk.
-  }
-
-  ArtMethod* GetCatchMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return catch_method_.Get();
-  }
-
-  uint32_t GetCatchDexPc() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return catch_dex_pc_;
-  }
-
-  bool NeedClearException() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return clear_exception_;
-  }
-
- private:
-  Thread* const self_;
-  StackHandleScope<1> handle_scope_;
-  Handle<mirror::Throwable>* exception_;
-  Handle<mirror::ArtMethod> catch_method_;
-  uint32_t catch_dex_pc_;
-  bool clear_exception_;
-
-
-  DISALLOW_COPY_AND_ASSIGN(CatchLocationFinder);
-};
-
-uint32_t FindNextInstructionFollowingException(Thread* self,
-                                               ShadowFrame& shadow_frame,
-                                               uint32_t dex_pc,
-                                               const instrumentation::Instrumentation* instrumentation) {
-  self->VerifyStack();
-  ThrowLocation throw_location;
-  StackHandleScope<3> hs(self);
-  Handle<mirror::Throwable> exception(hs.NewHandle(self->GetException(&throw_location)));
-  if (!self->IsExceptionReportedToInstrumentation() && instrumentation->HasExceptionCaughtListeners()) {
-    CatchLocationFinder clf(self, &exception);
-    clf.WalkStack(false);
-    instrumentation->ExceptionCaughtEvent(self, throw_location, clf.GetCatchMethod(),
-                                          clf.GetCatchDexPc(), exception.Get());
-    self->SetExceptionReportedToInstrumentation(true);
-  }
-  bool clear_exception = false;
-  uint32_t found_dex_pc;
-  {
-    Handle<mirror::Class> exception_class(hs.NewHandle(exception->GetClass()));
-    Handle<mirror::ArtMethod> h_method(hs.NewHandle(shadow_frame.GetMethod()));
-    found_dex_pc = mirror::ArtMethod::FindCatchBlock(h_method, exception_class, dex_pc,
-                                                     &clear_exception);
-  }
-  if (found_dex_pc == DexFile::kDexNoIndex) {
-    instrumentation->MethodUnwindEvent(self, shadow_frame.GetThisObject(),
-                                       shadow_frame.GetMethod(), dex_pc);
-  } else {
-    if (self->IsExceptionReportedToInstrumentation()) {
-      instrumentation->MethodUnwindEvent(self, shadow_frame.GetThisObject(),
-                                         shadow_frame.GetMethod(), dex_pc);
-    }
-    if (clear_exception) {
-      self->ClearException();
-    }
-  }
-  return found_dex_pc;
-}
-
-void UnexpectedOpcode(const Instruction* inst, MethodHelper& mh) {
-  LOG(FATAL) << "Unexpected instruction: " << inst->DumpString(mh.GetMethod()->GetDexFile());
-  exit(0);  // Unreachable, keep GCC happy.
-}
 
 static void UnstartedRuntimeInvoke(Thread* self, MethodHelper& mh,
                                    const DexFile::CodeItem* code_item, ShadowFrame* shadow_frame,
@@ -524,7 +54,8 @@ template<bool is_range, bool do_assignability_check>
 bool DoCall(ArtMethod* method, Thread* self, ShadowFrame& shadow_frame,
             const Instruction* inst, uint16_t inst_data, JValue* result) {
   // Compute method information.
-  const DexFile::CodeItem* code_item = method->GetCodeItem();
+  MethodHelper mh(method);
+  const DexFile::CodeItem* code_item = mh.GetCodeItem();
   const uint16_t num_ins = (is_range) ? inst->VRegA_3rc(inst_data) : inst->VRegA_35c(inst_data);
   uint16_t num_regs;
   if (LIKELY(code_item != NULL)) {
@@ -542,20 +73,11 @@ bool DoCall(ArtMethod* method, Thread* self, ShadowFrame& shadow_frame,
 
   // Initialize new shadow frame.
   const size_t first_dest_reg = num_regs - num_ins;
-  StackHandleScope<1> hs(self);
-  MethodHelper mh(hs.NewHandle(method));
   if (do_assignability_check) {
-    // Slow path.
-    // We might need to do class loading, which incurs a thread state change to kNative. So
-    // register the shadow frame as under construction and allow suspension again.
-    self->SetShadowFrameUnderConstruction(new_shadow_frame);
-    self->EndAssertNoThreadSuspension(old_cause);
-
-    // We need to do runtime check on reference assignment. We need to load the shorty
+    // Slow path: we need to do runtime check on reference assignment. We need to load the shorty
     // to get the exact type of each reference argument.
-    const DexFile::TypeList* params = method->GetParameterTypeList();
-    uint32_t shorty_len = 0;
-    const char* shorty = method->GetShorty(&shorty_len);
+    const DexFile::TypeList* params = mh.GetParameterTypeList();
+    const char* shorty = mh.GetShorty();
 
     // TODO: find a cleaner way to separate non-range and range information without duplicating code.
     uint32_t arg[5];  // only used in invoke-XXX.
@@ -570,13 +92,13 @@ bool DoCall(ArtMethod* method, Thread* self, ShadowFrame& shadow_frame,
     size_t dest_reg = first_dest_reg;
     size_t arg_offset = 0;
     if (!method->IsStatic()) {
-      size_t receiver_reg = is_range ? vregC : arg[0];
+      size_t receiver_reg = (is_range) ? vregC : arg[0];
       new_shadow_frame->SetVRegReference(dest_reg, shadow_frame.GetVRegReference(receiver_reg));
       ++dest_reg;
       ++arg_offset;
     }
     for (uint32_t shorty_pos = 0; dest_reg < num_regs; ++shorty_pos, ++dest_reg, ++arg_offset) {
-      DCHECK_LT(shorty_pos + 1, shorty_len);
+      DCHECK_LT(shorty_pos + 1, mh.GetShortyLength());
       const size_t src_reg = (is_range) ? vregC + arg_offset : arg[arg_offset];
       switch (shorty[shorty_pos + 1]) {
         case 'L': {
@@ -585,17 +107,18 @@ bool DoCall(ArtMethod* method, Thread* self, ShadowFrame& shadow_frame,
             Class* arg_type = mh.GetClassFromTypeIdx(params->GetTypeItem(shorty_pos).type_idx_);
             if (arg_type == NULL) {
               CHECK(self->IsExceptionPending());
+              self->EndAssertNoThreadSuspension(old_cause);
               return false;
             }
             if (!o->VerifierInstanceOf(arg_type)) {
+              self->EndAssertNoThreadSuspension(old_cause);
               // This should never happen.
-              std::string temp1, temp2;
               self->ThrowNewExceptionF(self->GetCurrentLocationForThrow(),
                                        "Ljava/lang/VirtualMachineError;",
                                        "Invoking %s with bad arg %d, type '%s' not instance of '%s'",
-                                       method->GetName(), shorty_pos,
-                                       o->GetClass()->GetDescriptor(&temp1),
-                                       arg_type->GetDescriptor(&temp2));
+                                       mh.GetName(), shorty_pos,
+                                       ClassHelper(o->GetClass()).GetDescriptor(),
+                                       ClassHelper(arg_type).GetDescriptor());
               return false;
             }
           }
@@ -615,8 +138,6 @@ bool DoCall(ArtMethod* method, Thread* self, ShadowFrame& shadow_frame,
           break;
       }
     }
-    // We're done with the construction.
-    self->ClearShadowFrameUnderConstruction();
   } else {
     // Fast path: no extra checks.
     if (is_range) {
@@ -637,8 +158,8 @@ bool DoCall(ArtMethod* method, Thread* self, ShadowFrame& shadow_frame,
         AssignRegister(new_shadow_frame, shadow_frame, first_dest_reg + arg_index, regList & 0x0f);
       }
     }
-    self->EndAssertNoThreadSuspension(old_cause);
   }
+  self->EndAssertNoThreadSuspension(old_cause);
 
   // Do the call now.
   if (LIKELY(Runtime::Current()->IsStarted())) {
@@ -763,64 +284,37 @@ void RecordArrayElementsInTransaction(mirror::Array* array, int32_t count)
   }
 }
 
-// Helper function to deal with class loading in an unstarted runtime.
-static void UnstartedRuntimeFindClass(Thread* self, Handle<mirror::String> className,
-                                      Handle<mirror::ClassLoader> class_loader, JValue* result,
-                                      const std::string& method_name, bool initialize_class,
-                                      bool abort_if_not_found)
-    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-  CHECK(className.Get() != nullptr);
-  std::string descriptor(DotToDescriptor(className->ToModifiedUtf8().c_str()));
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-
-  Class* found = class_linker->FindClass(self, descriptor.c_str(), class_loader);
-  if (found == nullptr && abort_if_not_found) {
-    if (!self->IsExceptionPending()) {
-      AbortTransaction(self, "%s failed in un-started runtime for class: %s",
-                       method_name.c_str(), PrettyDescriptor(descriptor.c_str()).c_str());
-    }
-    return;
-  }
-  if (found != nullptr && initialize_class) {
-    StackHandleScope<1> hs(self);
-    Handle<mirror::Class> h_class(hs.NewHandle(found));
-    if (!class_linker->EnsureInitialized(h_class, true, true)) {
-      CHECK(self->IsExceptionPending());
-      return;
-    }
-  }
-  result->SetL(found);
-}
-
 static void UnstartedRuntimeInvoke(Thread* self, MethodHelper& mh,
                                    const DexFile::CodeItem* code_item, ShadowFrame* shadow_frame,
                                    JValue* result, size_t arg_offset) {
   // In a runtime that's not started we intercept certain methods to avoid complicated dependency
   // problems in core libraries.
   std::string name(PrettyMethod(shadow_frame->GetMethod()));
-  if (name == "java.lang.Class java.lang.Class.forName(java.lang.String)") {
-    // TODO: Support for the other variants that take more arguments should also be added.
-    mirror::String* class_name = shadow_frame->GetVRegReference(arg_offset)->AsString();
+  if (name == "java.lang.Class java.lang.Class.forName(java.lang.String)"
+      || name == "java.lang.Class java.lang.VMClassLoader.loadClass(java.lang.String, boolean)") {
+    // TODO Class#forName should actually call Class::EnsureInitialized always. Support for the
+    // other variants that take more arguments should also be added.
+    std::string descriptor(DotToDescriptor(shadow_frame->GetVRegReference(arg_offset)->AsString()->ToModifiedUtf8().c_str()));
+
     StackHandleScope<1> hs(self);
-    Handle<mirror::String> h_class_name(hs.NewHandle(class_name));
-    UnstartedRuntimeFindClass(self, h_class_name, NullHandle<mirror::ClassLoader>(), result, name,
-                              true, true);
-  } else if (name == "java.lang.Class java.lang.VMClassLoader.loadClass(java.lang.String, boolean)") {
-    mirror::String* class_name = shadow_frame->GetVRegReference(arg_offset)->AsString();
-    StackHandleScope<1> hs(self);
-    Handle<mirror::String> h_class_name(hs.NewHandle(class_name));
-    UnstartedRuntimeFindClass(self, h_class_name, NullHandle<mirror::ClassLoader>(), result, name,
-                              false, true);
-  } else if (name == "java.lang.Class java.lang.VMClassLoader.findLoadedClass(java.lang.ClassLoader, java.lang.String)") {
-    mirror::String* class_name = shadow_frame->GetVRegReference(arg_offset + 1)->AsString();
-    mirror::ClassLoader* class_loader =
-        down_cast<mirror::ClassLoader*>(shadow_frame->GetVRegReference(arg_offset));
-    StackHandleScope<2> hs(self);
-    Handle<mirror::String> h_class_name(hs.NewHandle(class_name));
-    Handle<mirror::ClassLoader> h_class_loader(hs.NewHandle(class_loader));
-    UnstartedRuntimeFindClass(self, h_class_name, h_class_loader, result, name, false, false);
+    // shadow_frame.GetMethod()->GetDeclaringClass()->GetClassLoader();
+    auto class_loader = hs.NewHandle<ClassLoader>(nullptr);
+    Class* found = Runtime::Current()->GetClassLinker()->FindClass(self, descriptor.c_str(),
+                                                                   class_loader);
+    CHECK(found != NULL) << "Class.forName failed in un-started runtime for class: "
+        << PrettyDescriptor(descriptor);
+    result->SetL(found);
   } else if (name == "java.lang.Class java.lang.Void.lookupType()") {
     result->SetL(Runtime::Current()->GetClassLinker()->FindPrimitiveClass('V'));
+  } else if (name == "java.lang.Class java.lang.VMClassLoader.findLoadedClass(java.lang.ClassLoader, java.lang.String)") {
+    StackHandleScope<1> hs(self);
+    Handle<ClassLoader> class_loader(
+        hs.NewHandle(down_cast<mirror::ClassLoader*>(shadow_frame->GetVRegReference(arg_offset))));
+    std::string descriptor(DotToDescriptor(shadow_frame->GetVRegReference(arg_offset + 1)->AsString()->ToModifiedUtf8().c_str()));
+
+    Class* found = Runtime::Current()->GetClassLinker()->FindClass(self, descriptor.c_str(),
+                                                                   class_loader);
+    result->SetL(found);
   } else if (name == "java.lang.Object java.lang.Class.newInstance()") {
     Class* klass = shadow_frame->GetVRegReference(arg_offset)->AsClass();
     ArtMethod* c = klass->FindDeclaredDirectMethod("<init>", "()V");
@@ -836,10 +330,12 @@ static void UnstartedRuntimeInvoke(Thread* self, MethodHelper& mh,
     Class* klass = shadow_frame->GetVRegReference(arg_offset)->AsClass();
     String* name = shadow_frame->GetVRegReference(arg_offset + 1)->AsString();
     ArtField* found = NULL;
+    FieldHelper fh;
     ObjectArray<ArtField>* fields = klass->GetIFields();
     for (int32_t i = 0; i < fields->GetLength() && found == NULL; ++i) {
       ArtField* f = fields->Get(i);
-      if (name->Equals(f->GetName())) {
+      fh.ChangeField(f);
+      if (name->Equals(fh.GetName())) {
         found = f;
       }
     }
@@ -847,7 +343,8 @@ static void UnstartedRuntimeInvoke(Thread* self, MethodHelper& mh,
       fields = klass->GetSFields();
       for (int32_t i = 0; i < fields->GetLength() && found == NULL; ++i) {
         ArtField* f = fields->Get(i);
-        if (name->Equals(f->GetName())) {
+        fh.ChangeField(f);
+        if (name->Equals(fh.GetName())) {
           found = f;
         }
       }
@@ -870,9 +367,8 @@ static void UnstartedRuntimeInvoke(Thread* self, MethodHelper& mh,
     Object* obj = shadow_frame->GetVRegReference(arg_offset);
     result->SetI(obj->IdentityHashCode());
   } else if (name == "java.lang.String java.lang.reflect.ArtMethod.getMethodName(java.lang.reflect.ArtMethod)") {
-    StackHandleScope<1> hs(self);
-    MethodHelper mh(hs.NewHandle(shadow_frame->GetVRegReference(arg_offset)->AsArtMethod()));
-    result->SetL(mh.GetNameAsString(self));
+    ArtMethod* method = shadow_frame->GetVRegReference(arg_offset)->AsArtMethod();
+    result->SetL(MethodHelper(method).GetNameAsString());
   } else if (name == "void java.lang.System.arraycopy(java.lang.Object, int, java.lang.Object, int, int)" ||
              name == "void java.lang.System.arraycopy(char[], int, char[], int, int)") {
     // Special case array copying without initializing System.

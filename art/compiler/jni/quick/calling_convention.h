@@ -19,7 +19,6 @@
 
 #include <vector>
 #include "handle_scope.h"
-#include "primitive.h"
 #include "thread.h"
 #include "utils/managed_register.h"
 
@@ -320,8 +319,7 @@ class JniCallingConvention : public CallingConvention {
 
   // Position of handle scope and interior fields
   FrameOffset HandleScopeOffset() const {
-    return FrameOffset(this->displacement_.Int32Value() + sizeof(StackReference<mirror::ArtMethod>));
-    // above Method reference
+    return FrameOffset(this->displacement_.Int32Value() + frame_pointer_size_);  // above Method*
   }
 
   FrameOffset HandleScopeLinkOffset() const {

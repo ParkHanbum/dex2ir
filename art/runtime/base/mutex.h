@@ -54,53 +54,41 @@ class Thread;
 // [1] http://www.drdobbs.com/parallel/use-lock-hierarchies-to-avoid-deadlock/204801163
 enum LockLevel {
   kLoggingLock = 0,
-  kMemMapsLock,
-  kSwapMutexesLock,
   kUnexpectedSignalLock,
   kThreadSuspendCountLock,
   kAbortLock,
   kJdwpSocketLock,
-  kReferenceQueueSoftReferencesLock,
-  kReferenceQueuePhantomReferencesLock,
-  kReferenceQueueFinalizerReferencesLock,
-  kReferenceQueueWeakReferencesLock,
-  kReferenceQueueClearedReferencesLock,
-  kReferenceProcessorLock,
   kRosAllocGlobalLock,
   kRosAllocBracketLock,
   kRosAllocBulkFreeLock,
   kAllocSpaceLock,
+  kReferenceProcessorLock,
   kDexFileMethodInlinerLock,
   kDexFileToMethodInlinerMapLock,
   kMarkSweepMarkStackLock,
   kTransactionLogLock,
   kInternTableLock,
-  kOatFileSecondaryLookupLock,
+  kMonitorPoolLock,
   kDefaultMutexLevel,
   kMarkSweepLargeObjectLock,
   kPinTableLock,
   kLoadLibraryLock,
   kJdwpObjectRegistryLock,
-  kModifyLdtLock,
-  kAllocatedThreadIdsLock,
-  kMonitorPoolLock,
   kClassLinkerClassesLock,
   kBreakpointLock,
   kMonitorLock,
   kMonitorListLock,
   kThreadListLock,
   kBreakpointInvokeLock,
-  kAllocTrackerLock,
   kDeoptimizationLock,
+  kTraceLock,
   kProfilerLock,
   kJdwpEventListLock,
   kJdwpAttachLock,
   kJdwpStartLock,
   kRuntimeShutdownLock,
-  kTraceLock,
   kHeapBitmapLock,
   kMutatorLock,
-  kThreadListSuspendThreadLock,
   kZygoteCreationLock,
 
   kLockLevelCount  // Must come last.
@@ -168,16 +156,16 @@ class BaseMutex {
     // Number of times the Mutex has been contended.
     AtomicInteger contention_count;
     // Sum of time waited by all contenders in ns.
-    Atomic<uint64_t> wait_time;
+    volatile uint64_t wait_time;
     void AddToWaitTime(uint64_t value);
     ContentionLogData() : wait_time(0) {}
   };
-  ContentionLogData contention_log_data_[kContentionLogDataSize];
+  ContentionLogData contetion_log_data_[kContentionLogDataSize];
 
  public:
   bool HasEverContended() const {
     if (kLogLockContentions) {
-      return contention_log_data_->contention_count.LoadSequentiallyConsistent() > 0;
+      return contetion_log_data_->contention_count > 0;
     }
     return false;
   }
@@ -234,8 +222,7 @@ class LOCKABLE Mutex : public BaseMutex {
   }
   void AssertNotHeld(const Thread* self) { AssertNotHeldExclusive(self); }
 
-  // Id associated with exclusive owner. No memory ordering semantics if called from a thread other
-  // than the owner.
+  // Id associated with exclusive owner.
   uint64_t GetExclusiveOwnerTid() const;
 
   // Returns how many times this Mutex has been locked, it is better to use AssertHeld/NotHeld.
@@ -248,14 +235,13 @@ class LOCKABLE Mutex : public BaseMutex {
  private:
 #if ART_USE_FUTEXES
   // 0 is unheld, 1 is held.
-  AtomicInteger state_;
+  volatile int32_t state_;
   // Exclusive owner.
   volatile uint64_t exclusive_owner_;
   // Number of waiting contenders.
   AtomicInteger num_contenders_;
 #else
   pthread_mutex_t mutex_;
-  volatile uint64_t exclusive_owner_;  // Guarded by mutex_.
 #endif
   const bool recursive_;  // Can the lock be recursively held?
   unsigned int recursion_count_;
@@ -352,8 +338,7 @@ class LOCKABLE ReaderWriterMutex : public BaseMutex {
     }
   }
 
-  // Id associated with exclusive owner. No memory ordering semantics if called from a thread other
-  // than the owner.
+  // Id associated with exclusive owner.
   uint64_t GetExclusiveOwnerTid() const;
 
   virtual void Dump(std::ostream& os) const;
@@ -361,16 +346,15 @@ class LOCKABLE ReaderWriterMutex : public BaseMutex {
  private:
 #if ART_USE_FUTEXES
   // -1 implies held exclusive, +ve shared held by state_ many owners.
-  AtomicInteger state_;
-  // Exclusive owner. Modification guarded by this mutex.
+  volatile int32_t state_;
+  // Exclusive owner.
   volatile uint64_t exclusive_owner_;
-  // Number of contenders waiting for a reader share.
-  AtomicInteger num_pending_readers_;
-  // Number of contenders waiting to be the writer.
+  // Pending readers.
+  volatile int32_t num_pending_readers_;
+  // Pending writers.
   AtomicInteger num_pending_writers_;
 #else
   pthread_rwlock_t rwlock_;
-  volatile uint64_t exclusive_owner_;  // Guarded by rwlock_.
 #endif
   DISALLOW_COPY_AND_ASSIGN(ReaderWriterMutex);
 };
@@ -482,15 +466,6 @@ class Locks {
  public:
   static void Init();
 
-  // There's a potential race for two threads to try to suspend each other and for both of them
-  // to succeed and get blocked becoming runnable. This lock ensures that only one thread is
-  // requesting suspension of another at any time. As the the thread list suspend thread logic
-  // transitions to runnable, if the current thread were tried to be suspended then this thread
-  // would block holding this lock until it could safely request thread suspension of the other
-  // thread without that thread having a suspension request against this thread. This avoids a
-  // potential deadlock cycle.
-  static Mutex* thread_list_suspend_thread_lock_;
-
   // The mutator_lock_ is used to allow mutators to execute in a shared (reader) mode or to block
   // mutators by having an exclusive (writer) owner. In normal execution each mutator thread holds
   // a share on the mutator_lock_. The garbage collector may also execute with shared access but
@@ -549,7 +524,7 @@ class Locks {
   // else                                          |  .. running ..
   //   Goto x                                      |  .. running ..
   //  .. running ..                                |  .. running ..
-  static ReaderWriterMutex* mutator_lock_ ACQUIRED_AFTER(thread_list_suspend_thread_lock_);
+  static ReaderWriterMutex* mutator_lock_;
 
   // Allow reader-writer mutual exclusion on the mark and live bitmaps of the heap.
   static ReaderWriterMutex* heap_bitmap_lock_ ACQUIRED_AFTER(mutator_lock_);
@@ -557,65 +532,31 @@ class Locks {
   // Guards shutdown of the runtime.
   static Mutex* runtime_shutdown_lock_ ACQUIRED_AFTER(heap_bitmap_lock_);
 
-  // Guards background profiler global state.
-  static Mutex* profiler_lock_ ACQUIRED_AFTER(runtime_shutdown_lock_);
-
-  // Guards trace (ie traceview) requests.
-  static Mutex* trace_lock_ ACQUIRED_AFTER(profiler_lock_);
-
-  // Guards debugger recent allocation records.
-  static Mutex* alloc_tracker_lock_ ACQUIRED_AFTER(trace_lock_);
-
-  // Guards updates to instrumentation to ensure mutual exclusion of
-  // events like deoptimization requests.
-  // TODO: improve name, perhaps instrumentation_update_lock_.
-  static Mutex* deoptimization_lock_ ACQUIRED_AFTER(alloc_tracker_lock_);
-
   // The thread_list_lock_ guards ThreadList::list_. It is also commonly held to stop threads
   // attaching and detaching.
-  static Mutex* thread_list_lock_ ACQUIRED_AFTER(deoptimization_lock_);
+  static Mutex* thread_list_lock_ ACQUIRED_AFTER(runtime_shutdown_lock_);
 
   // Guards breakpoints.
-  static ReaderWriterMutex* breakpoint_lock_ ACQUIRED_AFTER(trace_lock_);
+  static Mutex* breakpoint_lock_ ACQUIRED_AFTER(thread_list_lock_);
+
+  // Guards trace requests.
+  static Mutex* trace_lock_ ACQUIRED_AFTER(breakpoint_lock_);
+
+  // Guards profile objects.
+  static Mutex* profiler_lock_ ACQUIRED_AFTER(trace_lock_);
 
   // Guards lists of classes within the class linker.
-  static ReaderWriterMutex* classlinker_classes_lock_ ACQUIRED_AFTER(breakpoint_lock_);
+  static ReaderWriterMutex* classlinker_classes_lock_ ACQUIRED_AFTER(profiler_lock_);
 
   // When declaring any Mutex add DEFAULT_MUTEX_ACQUIRED_AFTER to use annotalysis to check the code
   // doesn't try to hold a higher level Mutex.
   #define DEFAULT_MUTEX_ACQUIRED_AFTER ACQUIRED_AFTER(Locks::classlinker_classes_lock_)
 
-  static Mutex* allocated_monitor_ids_lock_ ACQUIRED_AFTER(classlinker_classes_lock_);
-
-  // Guard the allocation/deallocation of thread ids.
-  static Mutex* allocated_thread_ids_lock_ ACQUIRED_AFTER(allocated_monitor_ids_lock_);
-
-  // Guards modification of the LDT on x86.
-  static Mutex* modify_ldt_lock_ ACQUIRED_AFTER(allocated_thread_ids_lock_);
-
   // Guards intern table.
-  static Mutex* intern_table_lock_ ACQUIRED_AFTER(modify_ldt_lock_);
-
-  // Guards reference processor.
-  static Mutex* reference_processor_lock_ ACQUIRED_AFTER(intern_table_lock_);
-
-  // Guards cleared references queue.
-  static Mutex* reference_queue_cleared_references_lock_ ACQUIRED_AFTER(reference_processor_lock_);
-
-  // Guards weak references queue.
-  static Mutex* reference_queue_weak_references_lock_ ACQUIRED_AFTER(reference_queue_cleared_references_lock_);
-
-  // Guards finalizer references queue.
-  static Mutex* reference_queue_finalizer_references_lock_ ACQUIRED_AFTER(reference_queue_weak_references_lock_);
-
-  // Guards phantom references queue.
-  static Mutex* reference_queue_phantom_references_lock_ ACQUIRED_AFTER(reference_queue_finalizer_references_lock_);
-
-  // Guards soft references queue.
-  static Mutex* reference_queue_soft_references_lock_ ACQUIRED_AFTER(reference_queue_phantom_references_lock_);
+  static Mutex* intern_table_lock_ ACQUIRED_AFTER(classlinker_classes_lock_);
 
   // Have an exclusive aborting thread.
-  static Mutex* abort_lock_ ACQUIRED_AFTER(reference_queue_soft_references_lock_);
+  static Mutex* abort_lock_ ACQUIRED_AFTER(classlinker_classes_lock_);
 
   // Allow mutual exclusion when manipulating Thread::suspend_count_.
   // TODO: Does the trade-off of a per-thread lock make sense?
@@ -623,9 +564,6 @@ class Locks {
 
   // One unexpected signal at a time lock.
   static Mutex* unexpected_signal_lock_ ACQUIRED_AFTER(thread_suspend_count_lock_);
-
-  // Guards the maps in mem_map.
-  static Mutex* mem_maps_lock_ ACQUIRED_AFTER(unexpected_signal_lock_);
 
   // Have an exclusive logging thread.
   static Mutex* logging_lock_ ACQUIRED_AFTER(unexpected_signal_lock_);

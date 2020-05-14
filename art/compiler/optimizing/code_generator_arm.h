@@ -19,8 +19,7 @@
 
 #include "code_generator.h"
 #include "nodes.h"
-#include "parallel_move_resolver.h"
-#include "utils/arm/assembler_thumb2.h"
+#include "utils/arm/assembler_arm.h"
 
 namespace art {
 namespace arm {
@@ -60,27 +59,6 @@ class InvokeDexCallingConventionVisitor {
   DISALLOW_COPY_AND_ASSIGN(InvokeDexCallingConventionVisitor);
 };
 
-class ParallelMoveResolverARM : public ParallelMoveResolver {
- public:
-  ParallelMoveResolverARM(ArenaAllocator* allocator, CodeGeneratorARM* codegen)
-      : ParallelMoveResolver(allocator), codegen_(codegen) {}
-
-  virtual void EmitMove(size_t index) OVERRIDE;
-  virtual void EmitSwap(size_t index) OVERRIDE;
-  virtual void SpillScratch(int reg) OVERRIDE;
-  virtual void RestoreScratch(int reg) OVERRIDE;
-
-  ArmAssembler* GetAssembler() const;
-
- private:
-  void Exchange(Register reg, int mem);
-  void Exchange(int mem1, int mem2);
-
-  CodeGeneratorARM* const codegen_;
-
-  DISALLOW_COPY_AND_ASSIGN(ParallelMoveResolverARM);
-};
-
 class LocationsBuilderARM : public HGraphVisitor {
  public:
   explicit LocationsBuilderARM(HGraph* graph, CodeGeneratorARM* codegen)
@@ -89,7 +67,7 @@ class LocationsBuilderARM : public HGraphVisitor {
 #define DECLARE_VISIT_INSTRUCTION(name)     \
   virtual void Visit##name(H##name* instr);
 
-  FOR_EACH_CONCRETE_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
+  FOR_EACH_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
 
 #undef DECLARE_VISIT_INSTRUCTION
 
@@ -107,7 +85,7 @@ class InstructionCodeGeneratorARM : public HGraphVisitor {
 #define DECLARE_VISIT_INSTRUCTION(name)     \
   virtual void Visit##name(H##name* instr);
 
-  FOR_EACH_CONCRETE_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
+  FOR_EACH_INSTRUCTION(DECLARE_VISIT_INSTRUCTION)
 
 #undef DECLARE_VISIT_INSTRUCTION
 
@@ -135,8 +113,6 @@ class CodeGeneratorARM : public CodeGenerator {
     return kArmWordSize;
   }
 
-  virtual size_t FrameEntrySpillSize() const OVERRIDE;
-
   virtual HGraphVisitor* GetLocationBuilder() OVERRIDE {
     return &location_builder_;
   }
@@ -154,40 +130,18 @@ class CodeGeneratorARM : public CodeGenerator {
       Primitive::Type type, bool* blocked_registers) const OVERRIDE;
   virtual size_t GetNumberOfRegisters() const OVERRIDE;
 
+  int32_t GetStackSlot(HLocal* local) const;
   virtual Location GetStackLocation(HLoadLocal* load) const OVERRIDE;
 
-  virtual size_t GetNumberOfCoreRegisters() const OVERRIDE {
-    return kNumberOfCoreRegisters;
-  }
-
-  virtual size_t GetNumberOfFloatingPointRegisters() const OVERRIDE {
-    return kNumberOfDRegisters;
-  }
-
-  virtual void DumpCoreRegister(std::ostream& stream, int reg) const OVERRIDE;
-  virtual void DumpFloatingPointRegister(std::ostream& stream, int reg) const OVERRIDE;
-
-  ParallelMoveResolverARM* GetMoveResolver() {
-    return &move_resolver_;
-  }
-
-  virtual InstructionSet GetInstructionSet() const OVERRIDE {
-    return InstructionSet::kThumb2;
-  }
-
+ private:
   // Helper method to move a 32bits value between two locations.
   void Move32(Location destination, Location source);
   // Helper method to move a 64bits value between two locations.
   void Move64(Location destination, Location source);
 
-  // Emit a write barrier.
-  void MarkGCCard(Register temp, Register card, Register object, Register value);
-
- private:
   LocationsBuilderARM location_builder_;
   InstructionCodeGeneratorARM instruction_visitor_;
-  ParallelMoveResolverARM move_resolver_;
-  Thumb2Assembler assembler_;
+  ArmAssembler assembler_;
 
   DISALLOW_COPY_AND_ASSIGN(CodeGeneratorARM);
 };

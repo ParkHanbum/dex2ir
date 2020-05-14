@@ -143,7 +143,7 @@ bool JdwpState::IsConnected() {
 }
 
 void JdwpState::SendBufferedRequest(uint32_t type, const std::vector<iovec>& iov) {
-  if (!IsConnected()) {
+  if (netState->clientSock < 0) {
     // Can happen with some DDMS events.
     VLOG(jdwp) << "Not sending JDWP packet: no debugger attached!";
     return;
@@ -167,7 +167,7 @@ void JdwpState::SendBufferedRequest(uint32_t type, const std::vector<iovec>& iov
 }
 
 void JdwpState::SendRequest(ExpandBuf* pReq) {
-  if (!IsConnected()) {
+  if (netState->clientSock < 0) {
     // Can happen with some DDMS events.
     VLOG(jdwp) << "Not sending JDWP packet: no debugger attached!";
     return;
@@ -235,7 +235,7 @@ JdwpState::JdwpState(const JdwpOptions* options)
 JdwpState* JdwpState::Create(const JdwpOptions* options) {
   Thread* self = Thread::Current();
   Locks::mutator_lock_->AssertNotHeld(self);
-  std::unique_ptr<JdwpState> state(new JdwpState(options));
+  UniquePtr<JdwpState> state(new JdwpState(options));
   switch (options->transport) {
     case kJdwpTransportSocket:
       InitSocketTransport(state.get(), options);
@@ -283,9 +283,7 @@ JdwpState* JdwpState::Create(const JdwpOptions* options) {
     {
       ScopedThreadStateChange tsc(self, kWaitingForDebuggerToAttach);
       MutexLock attach_locker(self, state->attach_lock_);
-      while (state->debug_thread_id_ == 0) {
-        state->attach_cond_.Wait(self);
-      }
+      state->attach_cond_.Wait(self);
     }
     if (!state->IsActive()) {
       LOG(ERROR) << "JDWP connection failed";
@@ -337,6 +335,10 @@ void JdwpState::ResetState() {
  */
 JdwpState::~JdwpState() {
   if (netState != NULL) {
+    if (IsConnected()) {
+      PostVMDeath();
+    }
+
     /*
      * Close down the network to inspire the thread to halt.
      */
@@ -456,7 +458,6 @@ void JdwpState::Run() {
       if (!netState->Establish(options_)) {
         /* wake anybody who was waiting for us to succeed */
         MutexLock mu(thread_, attach_lock_);
-        debug_thread_id_ = static_cast<ObjectId>(-1);
         attach_cond_.Broadcast(thread_);
         break;
       }
@@ -576,7 +577,7 @@ int64_t JdwpState::LastDebuggerActivity() {
     return -1;
   }
 
-  int64_t last = last_activity_time_ms_.LoadSequentiallyConsistent();
+  int64_t last = QuasiAtomic::Read64(&last_activity_time_ms_);
 
   /* initializing or in the middle of something? */
   if (last == 0) {

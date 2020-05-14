@@ -16,13 +16,6 @@
 
 #include "space_bitmap-inl.h"
 
-#include "base/stringprintf.h"
-#include "mem_map.h"
-#include "mirror/object-inl.h"
-#include "mirror/class.h"
-#include "mirror/art_field.h"
-#include "mirror/object_array.h"
-
 namespace art {
 namespace gc {
 namespace accounting {
@@ -53,16 +46,13 @@ SpaceBitmap<kAlignment>::SpaceBitmap(const std::string& name, MemMap* mem_map, u
 }
 
 template<size_t kAlignment>
-SpaceBitmap<kAlignment>::~SpaceBitmap() {}
-
-template<size_t kAlignment>
 SpaceBitmap<kAlignment>* SpaceBitmap<kAlignment>::Create(
     const std::string& name, byte* heap_begin, size_t heap_capacity) {
   // Round up since heap_capacity is not necessarily a multiple of kAlignment * kBitsPerWord.
   const size_t bitmap_size = ComputeBitmapSize(heap_capacity);
   std::string error_msg;
-  std::unique_ptr<MemMap> mem_map(MemMap::MapAnonymous(name.c_str(), nullptr, bitmap_size,
-                                                       PROT_READ | PROT_WRITE, false, &error_msg));
+  UniquePtr<MemMap> mem_map(MemMap::MapAnonymous(name.c_str(), nullptr, bitmap_size,
+                                                 PROT_READ | PROT_WRITE, false, &error_msg));
   if (UNLIKELY(mem_map.get() == nullptr)) {
     LOG(ERROR) << "Failed to allocate bitmap " << name << ": " << error_msg;
     return nullptr;
@@ -82,15 +72,13 @@ void SpaceBitmap<kAlignment>::SetHeapLimit(uintptr_t new_end) {
 }
 
 template<size_t kAlignment>
-std::string SpaceBitmap<kAlignment>::Dump() const {
-  return StringPrintf("%s: %p-%p", name_.c_str(), reinterpret_cast<void*>(HeapBegin()),
-                      reinterpret_cast<void*>(HeapLimit()));
-}
-
-template<size_t kAlignment>
 void SpaceBitmap<kAlignment>::Clear() {
-  if (bitmap_begin_ != nullptr) {
-    mem_map_->MadviseDontNeedAndZero();
+  if (bitmap_begin_ != NULL) {
+    // This returns the memory to the system.  Successive page faults will return zeroed memory.
+    int result = madvise(bitmap_begin_, bitmap_size_, MADV_DONTNEED);
+    if (result == -1) {
+      PLOG(FATAL) << "madvise failed";
+    }
   }
 }
 
@@ -139,17 +127,9 @@ void SpaceBitmap<kAlignment>::SweepWalk(const SpaceBitmap<kAlignment>& live_bitm
   }
 
   // TODO: rewrite the callbacks to accept a std::vector<mirror::Object*> rather than a mirror::Object**?
-  constexpr size_t buffer_size = kWordSize * kBitsPerWord;
-#ifdef __LP64__
-  // Heap-allocate for smaller stack frame.
-  std::unique_ptr<mirror::Object*[]> pointer_buf_ptr(new mirror::Object*[buffer_size]);
-  mirror::Object** pointer_buf = pointer_buf_ptr.get();
-#else
-  // Stack-allocate buffer as it's small enough.
+  const size_t buffer_size = kWordSize * kBitsPerWord;
   mirror::Object* pointer_buf[buffer_size];
-#endif
   mirror::Object** pb = &pointer_buf[0];
-
   size_t start = OffsetToIndex(sweep_begin - live_bitmap.heap_begin_);
   size_t end = OffsetToIndex(sweep_end - live_bitmap.heap_begin_ - 1);
   CHECK_LT(end, live_bitmap.Size() / kWordSize);
@@ -192,10 +172,11 @@ void SpaceBitmap<kAlignment>::WalkInstanceFields(SpaceBitmap<kAlignment>* visite
   if (fields != NULL) {
     for (int32_t i = 0; i < fields->GetLength(); i++) {
       mirror::ArtField* field = fields->Get(i);
-      if (!field->IsPrimitiveType()) {
+      FieldHelper fh(field);
+      if (!fh.IsPrimitiveType()) {
         mirror::Object* value = field->GetObj(obj);
         if (value != NULL) {
-          WalkFieldsInOrder(visited, callback, value, arg);
+          WalkFieldsInOrder(visited, callback, value,  arg);
         }
       }
     }
@@ -221,7 +202,8 @@ void SpaceBitmap<kAlignment>::WalkFieldsInOrder(SpaceBitmap<kAlignment>* visited
     if (fields != NULL) {
       for (int32_t i = 0; i < fields->GetLength(); i++) {
         mirror::ArtField* field = fields->Get(i);
-        if (!field->IsPrimitiveType()) {
+        FieldHelper fh(field);
+        if (!fh.IsPrimitiveType()) {
           mirror::Object* value = field->GetObj(NULL);
           if (value != NULL) {
             WalkFieldsInOrder(visited, callback, value, arg);
@@ -244,7 +226,7 @@ void SpaceBitmap<kAlignment>::WalkFieldsInOrder(SpaceBitmap<kAlignment>* visited
 
 template<size_t kAlignment>
 void SpaceBitmap<kAlignment>::InOrderWalk(ObjectCallback* callback, void* arg) {
-  std::unique_ptr<SpaceBitmap<kAlignment>> visited(
+  UniquePtr<SpaceBitmap<kAlignment>> visited(
       Create("bitmap for in-order walk", reinterpret_cast<byte*>(heap_begin_),
              IndexToOffset(bitmap_size_ / kWordSize)));
   CHECK(bitmap_begin_ != nullptr);

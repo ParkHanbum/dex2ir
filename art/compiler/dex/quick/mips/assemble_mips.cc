@@ -709,7 +709,7 @@ AssemblerStatus MipsMir2Lir::AssembleInstructions(CodeOffset start_addr) {
   return res;
 }
 
-size_t MipsMir2Lir::GetInsnSize(LIR* lir) {
+int MipsMir2Lir::GetInsnSize(LIR* lir) {
   DCHECK(!IsPseudoLirOp(lir->opcode));
   return EncodingMap[lir->opcode].size;
 }

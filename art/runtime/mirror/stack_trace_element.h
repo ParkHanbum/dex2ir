@@ -17,7 +17,6 @@
 #ifndef ART_RUNTIME_MIRROR_STACK_TRACE_ELEMENT_H_
 #define ART_RUNTIME_MIRROR_STACK_TRACE_ELEMENT_H_
 
-#include "gc_root.h"
 #include "object.h"
 #include "object_callbacks.h"
 
@@ -29,7 +28,7 @@ struct StackTraceElementOffsets;
 namespace mirror {
 
 // C++ mirror of java.lang.StackTraceElement
-class MANAGED StackTraceElement FINAL : public Object {
+class MANAGED StackTraceElement : public Object {
  public:
   String* GetDeclaringClass() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     return GetFieldObject<String>(OFFSET_OF_OBJECT_MEMBER(StackTraceElement, declaring_class_));
@@ -47,8 +46,10 @@ class MANAGED StackTraceElement FINAL : public Object {
     return GetField32(OFFSET_OF_OBJECT_MEMBER(StackTraceElement, line_number_));
   }
 
-  static StackTraceElement* Alloc(Thread* self, Handle<String> declaring_class,
-                                  Handle<String> method_name, Handle<String> file_name,
+  static StackTraceElement* Alloc(Thread* self,
+                                  Handle<String>& declaring_class,
+                                  Handle<String>& method_name,
+                                  Handle<String>& file_name,
                                   int32_t line_number)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -56,9 +57,9 @@ class MANAGED StackTraceElement FINAL : public Object {
   static void ResetClass();
   static void VisitRoots(RootCallback* callback, void* arg)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  static Class* GetStackTraceElement() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    DCHECK(!java_lang_StackTraceElement_.IsNull());
-    return java_lang_StackTraceElement_.Read();
+  static Class* GetStackTraceElement() {
+    DCHECK(java_lang_StackTraceElement_ != NULL);
+    return java_lang_StackTraceElement_;
   }
 
  private:
@@ -69,11 +70,11 @@ class MANAGED StackTraceElement FINAL : public Object {
   int32_t line_number_;
 
   template<bool kTransactionActive>
-  void Init(Handle<String> declaring_class, Handle<String> method_name, Handle<String> file_name,
-            int32_t line_number)
+  void Init(Handle<String>& declaring_class, Handle<String>& method_name,
+            Handle<String>& file_name, int32_t line_number)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  static GcRoot<Class> java_lang_StackTraceElement_;
+  static Class* java_lang_StackTraceElement_;
 
   friend struct art::StackTraceElementOffsets;  // for verifying offset information
   DISALLOW_IMPLICIT_CONSTRUCTORS(StackTraceElement);

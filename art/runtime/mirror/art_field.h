@@ -19,36 +19,22 @@
 
 #include <jni.h>
 
-#include "gc_root.h"
+#include "class.h"
 #include "modifiers.h"
 #include "object.h"
 #include "object_callbacks.h"
-#include "primitive.h"
-#include "read_barrier_option.h"
 
 namespace art {
 
 struct ArtFieldOffsets;
-class DexFile;
-class ScopedObjectAccessAlreadyRunnable;
+class ScopedObjectAccess;
 
 namespace mirror {
 
-class DexCache;
-
 // C++ mirror of java.lang.reflect.ArtField
-class MANAGED ArtField FINAL : public Object {
+class MANAGED ArtField : public Object {
  public:
-  // Size of java.lang.reflect.ArtField.class.
-  static uint32_t ClassSize();
-
-  // Size of an instance of java.lang.reflect.ArtField not including its value array.
-  static constexpr uint32_t InstanceSize() {
-    return sizeof(ArtField);
-  }
-
-  static ArtField* FromReflectedField(const ScopedObjectAccessAlreadyRunnable& soa,
-                                      jobject jlr_field)
+  static ArtField* FromReflectedField(const ScopedObjectAccess& soa, jobject jlr_field)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   Class* GetDeclaringClass() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -134,10 +120,9 @@ class MANAGED ArtField FINAL : public Object {
   template<bool kTransactionActive>
   void SetObj(Object* object, Object* new_value) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  template<ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
-  static Class* GetJavaLangReflectArtField()  SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    DCHECK(!java_lang_reflect_ArtField_.IsNull());
-    return java_lang_reflect_ArtField_.Read<kReadBarrierOption>();
+  static Class* GetJavaLangReflectArtField() {
+    DCHECK(java_lang_reflect_ArtField_ != NULL);
+    return java_lang_reflect_ArtField_;
   }
 
   static void SetClass(Class* java_lang_reflect_ArtField);
@@ -153,20 +138,6 @@ class MANAGED ArtField FINAL : public Object {
   static ArtField* FindInstanceFieldWithOffset(mirror::Class* klass, uint32_t field_offset)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  const char* GetName() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const char* GetTypeDescriptor() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  Primitive::Type GetTypeAsPrimitiveType() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  bool IsPrimitiveType() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  size_t FieldSize() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  mirror::DexCache* GetDexCache() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const DexFile* GetDexFile() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
  private:
   // Field order required by test "ValidateFieldOrderOfJavaCppUnionClasses".
   // The class we are a part of
@@ -180,10 +151,15 @@ class MANAGED ArtField FINAL : public Object {
   // Offset of field within an instance or in the Class' static fields
   uint32_t offset_;
 
-  static GcRoot<Class> java_lang_reflect_ArtField_;
+  static Class* java_lang_reflect_ArtField_;
 
   friend struct art::ArtFieldOffsets;  // for verifying offset information
   DISALLOW_IMPLICIT_CONSTRUCTORS(ArtField);
+};
+
+class MANAGED ArtFieldClass : public Class {
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ArtFieldClass);
 };
 
 }  // namespace mirror

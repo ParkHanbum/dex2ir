@@ -19,7 +19,6 @@
 #include "codegen_mips.h"
 #include "dex/quick/mir_to_lir-inl.h"
 #include "entrypoints/quick/quick_entrypoints.h"
-#include "gc/accounting/card_table.h"
 #include "mips_lir.h"
 
 namespace art {
@@ -61,7 +60,8 @@ bool MipsMir2Lir::GenSpecialCase(BasicBlock* bb, MIR* mir,
  * done:
  *
  */
-void MipsMir2Lir::GenLargeSparseSwitch(MIR* mir, DexOffset table_offset, RegLocation rl_src) {
+void MipsMir2Lir::GenSparseSwitch(MIR* mir, DexOffset table_offset,
+                                  RegLocation rl_src) {
   const uint16_t* table = cu_->insns + current_dalvik_offset_ + table_offset;
   if (cu_->verbose) {
     DumpSparseSwitchTable(table);
@@ -138,7 +138,8 @@ void MipsMir2Lir::GenLargeSparseSwitch(MIR* mir, DexOffset table_offset, RegLoca
  *   jr    rRA
  * done:
  */
-void MipsMir2Lir::GenLargePackedSwitch(MIR* mir, DexOffset table_offset, RegLocation rl_src) {
+void MipsMir2Lir::GenPackedSwitch(MIR* mir, DexOffset table_offset,
+                                  RegLocation rl_src) {
   const uint16_t* table = cu_->insns + current_dalvik_offset_ + table_offset;
   if (cu_->verbose) {
     DumpPackedSwitchTable(table);
@@ -243,7 +244,7 @@ void MipsMir2Lir::GenFillArrayData(DexOffset table_offset, RegLocation rl_src) {
   GenBarrier();
   NewLIR0(kMipsCurrPC);  // Really a jal to .+8
   // Now, fill the branch delay slot with the helper load
-  RegStorage r_tgt = LoadHelper(kQuickHandleFillArrayData);
+  RegStorage r_tgt = LoadHelper(QUICK_ENTRYPOINT_OFFSET(4, pHandleFillArrayData));
   GenBarrier();  // Scheduling barrier
 
   // Construct BaseLabel and set up table base register
@@ -260,11 +261,11 @@ void MipsMir2Lir::GenFillArrayData(DexOffset table_offset, RegLocation rl_src) {
 
 void MipsMir2Lir::GenMoveException(RegLocation rl_dest) {
   int ex_offset = Thread::ExceptionOffset<4>().Int32Value();
-  RegLocation rl_result = EvalLoc(rl_dest, kRefReg, true);
-  RegStorage reset_reg = AllocTempRef();
-  LoadRefDisp(rs_rMIPS_SELF, ex_offset, rl_result.reg, kNotVolatile);
+  RegLocation rl_result = EvalLoc(rl_dest, kCoreReg, true);
+  RegStorage reset_reg = AllocTemp();
+  Load32Disp(rs_rMIPS_SELF, ex_offset, rl_result.reg);
   LoadConstant(reset_reg, 0);
-  StoreRefDisp(rs_rMIPS_SELF, ex_offset, reset_reg, kNotVolatile);
+  Store32Disp(rs_rMIPS_SELF, ex_offset, reset_reg);
   FreeTemp(reset_reg);
   StoreValue(rl_dest, rl_result);
 }
@@ -303,7 +304,8 @@ void MipsMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) 
    * We can safely skip the stack overflow check if we're
    * a leaf *and* our frame size < fudge factor.
    */
-  bool skip_overflow_check = mir_graph_->MethodIsLeaf() && !FrameNeedsStackCheck(frame_size_, kMips);
+  bool skip_overflow_check = (mir_graph_->MethodIsLeaf() &&
+      (static_cast<size_t>(frame_size_) < Thread::kStackOverflowReservedBytes));
   NewLIR0(kPseudoMethodEntry);
   RegStorage check_reg = AllocTemp();
   RegStorage new_sp = AllocTemp();
@@ -330,9 +332,9 @@ void MipsMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) 
         m2l_->Load32Disp(rs_rMIPS_SP, 0, rs_rRA);
         m2l_->OpRegImm(kOpAdd, rs_rMIPS_SP, sp_displace_);
         m2l_->ClobberCallerSave();
-        RegStorage r_tgt = m2l_->CallHelperSetup(kQuickThrowStackOverflow);  // Doesn't clobber LR.
-        m2l_->CallHelper(r_tgt, kQuickThrowStackOverflow, false /* MarkSafepointPC */,
-                         false /* UseLink */);
+        ThreadOffset<4> func_offset = QUICK_ENTRYPOINT_OFFSET(4, pThrowStackOverflow);
+        RegStorage r_tgt = m2l_->CallHelperSetup(func_offset);  // Doesn't clobber LR.
+        m2l_->CallHelper(r_tgt, func_offset, false /* MarkSafepointPC */, false /* UseLink */);
       }
 
      private:

@@ -22,10 +22,8 @@
 namespace art {
 
 enum RegisterClass {
-  kInvalidRegClass,
   kCoreReg,
   kFPReg,
-  kRefReg,
   kAnyReg,
 };
 
@@ -48,18 +46,10 @@ enum SpecialTargetRegister {
   kArg1,
   kArg2,
   kArg3,
-  kArg4,
-  kArg5,
-  kArg6,
-  kArg7,
   kFArg0,
   kFArg1,
   kFArg2,
   kFArg3,
-  kFArg4,
-  kFArg5,
-  kFArg6,
-  kFArg7,
   kRet0,
   kRet1,
   kInvokeTgt,
@@ -82,6 +72,22 @@ enum BBType {
   kExitBlock,
   kExceptionHandling,
   kDead,
+};
+
+/*
+ * Def/Use encoding in 64-bit use_mask/def_mask.  Low positions used for target-specific
+ * registers (and typically use the register number as the position).  High positions
+ * reserved for common and abstract resources.
+ */
+
+enum ResourceEncodingPos {
+  kMustNotAlias = 63,
+  kHeapRef = 62,          // Default memory reference type.
+  kLiteral = 61,          // Literal pool memory reference.
+  kDalvikReg = 60,        // Dalvik v_reg memory reference.
+  kFPStatus = 59,
+  kCCode = 58,
+  kLowestCommonResource = kCCode
 };
 
 // Shared pseudo opcodes - must be < 0.
@@ -120,114 +126,6 @@ enum ExtendedMIROpcode {
   kMirOpCheck,
   kMirOpCheckPart2,
   kMirOpSelect,
-
-  // Vector opcodes:
-  // TypeSize is an encoded field giving the element type and the vector size.
-  // It is encoded as OpSize << 16 | (number of bits in vector)
-  //
-  // Destination and source are integers that will be interpreted by the
-  // backend that supports Vector operations.  Backends are permitted to support only
-  // certain vector register sizes.
-  //
-  // At this point, only two operand instructions are supported.  Three operand instructions
-  // could be supported by using a bit in TypeSize and arg[0] where needed.
-
-  // @brief MIR to move constant data to a vector register
-  // vA: destination
-  // vB: number of bits in register
-  // args[0]~args[3]: up to 128 bits of data for initialization
-  kMirOpConstVector,
-
-  // @brief MIR to move a vectorized register to another
-  // vA: destination
-  // vB: source
-  // vC: TypeSize
-  kMirOpMoveVector,
-
-  // @brief Packed multiply of units in two vector registers: vB = vB .* vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: source
-  // vC: TypeSize
-  kMirOpPackedMultiply,
-
-  // @brief Packed addition of units in two vector registers: vB = vB .+ vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: source
-  // vC: TypeSize
-  kMirOpPackedAddition,
-
-  // @brief Packed subtraction of units in two vector registers: vB = vB .- vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: source
-  // vC: TypeSize
-  kMirOpPackedSubtract,
-
-  // @brief Packed shift left of units in two vector registers: vB = vB .<< vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: amount to shift
-  // vC: TypeSize
-  kMirOpPackedShiftLeft,
-
-  // @brief Packed signed shift right of units in two vector registers: vB = vB .>> vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: amount to shift
-  // vC: TypeSize
-  kMirOpPackedSignedShiftRight,
-
-  // @brief Packed unsigned shift right of units in two vector registers: vB = vB .>>> vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: amount to shift
-  // vC: TypeSize
-  kMirOpPackedUnsignedShiftRight,
-
-  // @brief Packed bitwise and of units in two vector registers: vB = vB .& vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: source
-  // vC: TypeSize
-  kMirOpPackedAnd,
-
-  // @brief Packed bitwise or of units in two vector registers: vB = vB .| vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: source
-  // vC: TypeSize
-  kMirOpPackedOr,
-
-  // @brief Packed bitwise xor of units in two vector registers: vB = vB .^ vC using vA to know the type of the vector.
-  // vA: destination and source
-  // vB: source
-  // vC: TypeSize
-  kMirOpPackedXor,
-
-  // @brief Reduce a 128-bit packed element into a single VR by taking lower bits
-  // @details Instruction does a horizontal addition of the packed elements and then adds it to VR
-  // vA: destination and source VR (not vector register)
-  // vB: source (vector register)
-  // vC: TypeSize
-  kMirOpPackedAddReduce,
-
-  // @brief Extract a packed element into a single VR.
-  // vA: destination VR (not vector register)
-  // vB: source (vector register)
-  // vC: TypeSize
-  // arg[0]: The index to use for extraction from vector register (which packed element)
-  kMirOpPackedReduce,
-
-  // @brief Create a vector value, with all TypeSize values equal to vC
-  // vA: destination vector register
-  // vB: source VR (not vector register)
-  // vC: TypeSize
-  kMirOpPackedSet,
-
-  // @brief Reserve N vector registers (named 0..N-1)
-  // vA: Number of registers
-  // @note: The backend may choose to map vector numbers used in vector opcodes.
-  //  Reserved registers are removed from the list of backend temporary pool.
-  kMirOpReserveVectorRegisters,
-
-  // @brief Free Reserved vector registers
-  // @note: All currently reserved vector registers are returned to the temporary pool.
-  kMirOpReturnVectorRegisters,
-
   kMirOpLast,
 };
 
@@ -425,6 +323,10 @@ enum X86ConditionCode {
 
 std::ostream& operator<<(std::ostream& os, const X86ConditionCode& kind);
 
+enum ThrowKind {
+  kThrowNoSuchMethod,
+};
+
 enum DividePattern {
   DivideNone,
   Divide3,
@@ -436,23 +338,19 @@ std::ostream& operator<<(std::ostream& os, const DividePattern& pattern);
 
 /**
  * @brief Memory barrier types (see "The JSR-133 Cookbook for Compiler Writers").
- * @details We define the combined barrier types that are actually required
- * by the Java Memory Model, rather than using exactly the terminology from
- * the JSR-133 cookbook.  These should, in many cases, be replaced by acquire/release
- * primitives.  Note that the JSR-133 cookbook generally does not deal with
- * store atomicity issues, and the recipes there are not always entirely sufficient.
- * The current recipe is as follows:
- * -# Use AnyStore ~= (LoadStore | StoreStore) ~= release barrier before volatile store.
- * -# Use AnyAny barrier after volatile store.  (StoreLoad is as expensive.)
- * -# Use LoadAny barrier ~= (LoadLoad | LoadStore) ~= acquire barrierafter each volatile load.
+ * @details Without context sensitive analysis, the most conservative set of barriers
+ * must be issued to ensure the Java Memory Model. Thus the recipe is as follows:
+ * -# Use StoreStore barrier before volatile store.
+ * -# Use StoreLoad barrier after volatile store.
+ * -# Use LoadLoad and LoadStore barrier after each volatile load.
  * -# Use StoreStore barrier after all stores but before return from any constructor whose
- *    class has final fields.
+ * class has final fields.
  */
 enum MemBarrierKind {
-  kAnyStore,
-  kLoadAny,
+  kLoadStore,
+  kLoadLoad,
   kStoreStore,
-  kAnyAny
+  kStoreLoad
 };
 
 std::ostream& operator<<(std::ostream& os, const MemBarrierKind& kind);
@@ -467,13 +365,8 @@ enum OpFeatureFlags {
   kIsQuinOp,
   kIsSextupleOp,
   kIsIT,
-  kIsMoveOp,
   kMemLoad,
   kMemStore,
-  kMemVolatile,
-  kMemScaledx0,
-  kMemScaledx2,
-  kMemScaledx4,
   kPCRelFixup,  // x86 FIXME: add NEEDS_FIXUP to instruction attributes.
   kRegDef0,
   kRegDef1,
@@ -541,21 +434,6 @@ enum FixupKind {
 };
 
 std::ostream& operator<<(std::ostream& os, const FixupKind& kind);
-
-enum VolatileKind {
-  kNotVolatile,      // Load/Store is not volatile
-  kVolatile          // Load/Store is volatile
-};
-
-std::ostream& operator<<(std::ostream& os, const VolatileKind& kind);
-
-enum WideKind {
-  kNotWide,      // Non-wide view
-  kWide,         // Wide view
-  kRef           // Ref width
-};
-
-std::ostream& operator<<(std::ostream& os, const WideKind& kind);
 
 }  // namespace art
 

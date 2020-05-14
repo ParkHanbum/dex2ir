@@ -17,7 +17,7 @@
 #ifndef ART_RUNTIME_HANDLE_SCOPE_INL_H_
 #define ART_RUNTIME_HANDLE_SCOPE_INL_H_
 
-#include "handle_scope.h"
+#include "handle_scope-inl.h"
 
 #include "handle.h"
 #include "thread.h"
@@ -28,7 +28,8 @@ template<size_t kNumReferences>
 inline StackHandleScope<kNumReferences>::StackHandleScope(Thread* self)
     : HandleScope(kNumReferences), self_(self), pos_(0) {
   // TODO: Figure out how to use a compile assert.
-  DCHECK_EQ(&references_[0], &references_storage_[0]);
+  DCHECK_EQ(OFFSETOF_MEMBER(HandleScope, references_),
+            OFFSETOF_MEMBER(StackHandleScope<1>, references_storage_));
   for (size_t i = 0; i < kNumReferences; ++i) {
     SetReference(i, nullptr);
   }

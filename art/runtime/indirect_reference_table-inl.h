@@ -46,7 +46,7 @@ inline bool IndirectReferenceTable::GetChecked(IndirectRef iref) const {
     AbortIfNoCheckJNI();
     return false;
   }
-  if (UNLIKELY(table_[idx].IsNull())) {
+  if (UNLIKELY(table_[idx] == nullptr)) {
     LOG(ERROR) << "JNI ERROR (app bug): accessed deleted " << kind_ << " " << iref;
     AbortIfNoCheckJNI();
     return false;
@@ -59,7 +59,8 @@ inline bool IndirectReferenceTable::GetChecked(IndirectRef iref) const {
 
 // Make sure that the entry at "idx" is correctly paired with "iref".
 inline bool IndirectReferenceTable::CheckEntry(const char* what, IndirectRef iref, int idx) const {
-  IndirectRef checkRef = ToIndirectRef(idx);
+  const mirror::Object* obj = table_[idx];
+  IndirectRef checkRef = ToIndirectRef(obj, idx);
   if (UNLIKELY(checkRef != iref)) {
     LOG(ERROR) << "JNI ERROR (app bug): attempt to " << what
                << " stale " << kind_ << " " << iref
@@ -70,16 +71,12 @@ inline bool IndirectReferenceTable::CheckEntry(const char* what, IndirectRef ire
   return true;
 }
 
-template<ReadBarrierOption kReadBarrierOption>
 inline mirror::Object* IndirectReferenceTable::Get(IndirectRef iref) const {
   if (!GetChecked(iref)) {
     return kInvalidIndirectRefObject;
   }
-  uint32_t idx = ExtractIndex(iref);
-  mirror::Object* obj = table_[idx].Read<kWithoutReadBarrier>();
+  mirror::Object* obj = table_[ExtractIndex(iref)];
   if (LIKELY(obj != kClearedJniWeakGlobal)) {
-    // The read barrier or VerifyObject won't handle kClearedJniWeakGlobal.
-    obj = table_[idx].Read();
     VerifyObject(obj);
   }
   return obj;

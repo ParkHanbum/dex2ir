@@ -17,12 +17,12 @@
 #ifndef ART_COMPILER_COMPILED_METHOD_H_
 #define ART_COMPILER_COMPILED_METHOD_H_
 
-#include <memory>
 #include <string>
 #include <vector>
 
 #include "instruction_set.h"
 #include "utils.h"
+#include "UniquePtr.h"
 
 namespace llvm {
   class Function;
@@ -67,7 +67,6 @@ class CompiledCode {
   // returns the difference between the code address and a usable PC.
   // mainly to cope with kThumb2 where the lower bit must be set.
   size_t CodeDelta() const;
-  static size_t CodeDelta(InstructionSet instruction_set);
 
   // Returns a pointer suitable for invoking the code at the argument
   // code_pointer address.  Mainly to cope with kThumb2 where the

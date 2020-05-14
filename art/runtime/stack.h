@@ -17,15 +17,19 @@
 #ifndef ART_RUNTIME_STACK_H_
 #define ART_RUNTIME_STACK_H_
 
-#include <stdint.h>
-#include <string>
-
 #include "dex_file.h"
+#include "instrumentation.h"
+#include "arch/context.h"
+#include "base/casts.h"
+#include "base/macros.h"
 #include "instruction_set.h"
+#include "mirror/object.h"
 #include "mirror/object_reference.h"
-#include "throw_location.h"
 #include "utils.h"
 #include "verify_object.h"
+
+#include <stdint.h>
+#include <string>
 
 namespace art {
 
@@ -302,11 +306,6 @@ class ShadowFrame {
     return method_;
   }
 
-  mirror::ArtMethod** GetMethodAddress() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    DCHECK(method_ != nullptr);
-    return &method_;
-  }
-
   mirror::Object* GetThisObject() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   mirror::Object* GetThisObject(uint16_t num_ins) const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -390,7 +389,12 @@ class ShadowFrame {
 #endif
   // Link to previous shadow frame or NULL.
   ShadowFrame* link_;
+#if defined(ART_USE_PORTABLE_COMPILER)
+  // TODO: make const in the portable case.
   mirror::ArtMethod* method_;
+#else
+  mirror::ArtMethod* const method_;
+#endif
   uint32_t dex_pc_;
   uint32_t vregs_[0];
 
@@ -425,11 +429,11 @@ class PACKED(4) ManagedStack {
     return link_;
   }
 
-  StackReference<mirror::ArtMethod>* GetTopQuickFrame() const {
+  mirror::ArtMethod** GetTopQuickFrame() const {
     return top_quick_frame_;
   }
 
-  void SetTopQuickFrame(StackReference<mirror::ArtMethod>* top) {
+  void SetTopQuickFrame(mirror::ArtMethod** top) {
     DCHECK(top_shadow_frame_ == NULL);
     top_quick_frame_ = top;
   }
@@ -487,7 +491,7 @@ class PACKED(4) ManagedStack {
  private:
   ManagedStack* link_;
   ShadowFrame* top_shadow_frame_;
-  StackReference<mirror::ArtMethod>* top_quick_frame_;
+  mirror::ArtMethod** top_quick_frame_;
   uintptr_t top_quick_frame_pc_;
 };
 
@@ -508,7 +512,7 @@ class StackVisitor {
     if (cur_shadow_frame_ != nullptr) {
       return cur_shadow_frame_->GetMethod();
     } else if (cur_quick_frame_ != nullptr) {
-      return cur_quick_frame_->AsMirrorPtr();
+      return *cur_quick_frame_;
     } else {
       return nullptr;
     }
@@ -553,50 +557,18 @@ class StackVisitor {
     return num_frames_;
   }
 
-  size_t GetFrameDepth() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return cur_depth_;
-  }
-
-  // Get the method and dex pc immediately after the one that's currently being visited.
-  bool GetNextMethodAndDexPc(mirror::ArtMethod** next_method, uint32_t* next_dex_pc)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  bool GetVReg(mirror::ArtMethod* m, uint16_t vreg, VRegKind kind, uint32_t* val) const
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
   uint32_t GetVReg(mirror::ArtMethod* m, uint16_t vreg, VRegKind kind) const
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    uint32_t val;
-    bool success = GetVReg(m, vreg, kind, &val);
-    CHECK(success) << "Failed to read vreg " << vreg << " of kind " << kind;
-    return val;
-  }
-
-  bool GetVRegPair(mirror::ArtMethod* m, uint16_t vreg, VRegKind kind_lo, VRegKind kind_hi,
-                   uint64_t* val) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  uint64_t GetVRegPair(mirror::ArtMethod* m, uint16_t vreg, VRegKind kind_lo,
-                       VRegKind kind_hi) const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    uint64_t val;
-    bool success = GetVRegPair(m, vreg, kind_lo, kind_hi, &val);
-    CHECK(success) << "Failed to read vreg pair " << vreg
-                   << " of kind [" << kind_lo << "," << kind_hi << "]";
-    return val;
-  }
-
-  bool SetVReg(mirror::ArtMethod* m, uint16_t vreg, uint32_t new_value, VRegKind kind)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  bool SetVRegPair(mirror::ArtMethod* m, uint16_t vreg, uint64_t new_value,
-                   VRegKind kind_lo, VRegKind kind_hi)
+  void SetVReg(mirror::ArtMethod* m, uint16_t vreg, uint32_t new_value, VRegKind kind)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   uintptr_t* GetGPRAddress(uint32_t reg) const;
+  uintptr_t GetGPR(uint32_t reg) const;
+  void SetGPR(uint32_t reg, uintptr_t value);
 
   // This is a fast-path for getting/setting values in a quick frame.
-  uint32_t* GetVRegAddr(StackReference<mirror::ArtMethod>* cur_quick_frame,
-                        const DexFile::CodeItem* code_item,
+  uint32_t* GetVRegAddr(mirror::ArtMethod** cur_quick_frame, const DexFile::CodeItem* code_item,
                         uint32_t core_spills, uint32_t fp_spills, size_t frame_size,
                         uint16_t vreg) const {
     int offset = GetVRegOffset(code_item, core_spills, fp_spills, frame_size, vreg, kRuntimeISA);
@@ -622,37 +594,37 @@ class StackVisitor {
    * on location in frame as long as code generator itself knows how
    * to access them.
    *
-   *     +---------------------------+
-   *     | IN[ins-1]                 |  {Note: resides in caller's frame}
-   *     |       .                   |
-   *     | IN[0]                     |
-   *     | caller's ArtMethod        |  ... StackReference<ArtMethod>
-   *     +===========================+  {Note: start of callee's frame}
-   *     | core callee-save spill    |  {variable sized}
-   *     +---------------------------+
-   *     | fp callee-save spill      |
-   *     +---------------------------+
-   *     | filler word               |  {For compatibility, if V[locals-1] used as wide
-   *     +---------------------------+
-   *     | V[locals-1]               |
-   *     | V[locals-2]               |
-   *     |      .                    |
-   *     |      .                    |  ... (reg == 2)
-   *     | V[1]                      |  ... (reg == 1)
-   *     | V[0]                      |  ... (reg == 0) <---- "locals_start"
-   *     +---------------------------+
-   *     | Compiler temp region      |  ... (reg <= -3)
-   *     |                           |
-   *     |                           |
-   *     +---------------------------+
-   *     | stack alignment padding   |  {0 to (kStackAlignWords-1) of padding}
-   *     +---------------------------+
-   *     | OUT[outs-1]               |
-   *     | OUT[outs-2]               |
-   *     |       .                   |
-   *     | OUT[0]                    |
-   *     | StackReference<ArtMethod> |  ... (reg == -2) <<== sp, 16-byte aligned
-   *     +===========================+
+   *     +------------------------+
+   *     | IN[ins-1]              |  {Note: resides in caller's frame}
+   *     |       .                |
+   *     | IN[0]                  |
+   *     | caller's Method*       |
+   *     +========================+  {Note: start of callee's frame}
+   *     | core callee-save spill |  {variable sized}
+   *     +------------------------+
+   *     | fp callee-save spill   |
+   *     +------------------------+
+   *     | filler word            |  {For compatibility, if V[locals-1] used as wide
+   *     +------------------------+
+   *     | V[locals-1]            |
+   *     | V[locals-2]            |
+   *     |      .                 |
+   *     |      .                 |  ... (reg == 2)
+   *     | V[1]                   |  ... (reg == 1)
+   *     | V[0]                   |  ... (reg == 0) <---- "locals_start"
+   *     +------------------------+
+   *     | Compiler temp region   |  ... (reg <= -3)
+   *     |                        |
+   *     |                        |
+   *     +------------------------+
+   *     | stack alignment padding|  {0 to (kStackAlignWords-1) of padding}
+   *     +------------------------+
+   *     | OUT[outs-1]            |
+   *     | OUT[outs-2]            |
+   *     |       .                |
+   *     | OUT[0]                 |
+   *     | curMethod*             |  ... (reg == -2) <<== sp, 16-byte aligned
+   *     +========================+
    */
   static int GetVRegOffset(const DexFile::CodeItem* code_item,
                            uint32_t core_spills, uint32_t fp_spills,
@@ -684,21 +656,20 @@ class StackVisitor {
       return locals_start + (reg * sizeof(uint32_t));
     } else {
       // Handle ins.
-      return frame_size + ((reg - num_regs) * sizeof(uint32_t)) +
-          sizeof(StackReference<mirror::ArtMethod>);
+      return frame_size + ((reg - num_regs) * sizeof(uint32_t)) + GetBytesPerGprSpillLocation(isa);
     }
   }
 
   static int GetOutVROffset(uint16_t out_num, InstructionSet isa) {
-    // According to stack model, the first out is above the Method referernce.
-    return sizeof(StackReference<mirror::ArtMethod>) + (out_num * sizeof(uint32_t));
+    // According to stack model, the first out is above the Method ptr.
+    return GetBytesPerGprSpillLocation(isa) + (out_num * sizeof(uint32_t));
   }
 
   uintptr_t GetCurrentQuickFramePc() const {
     return cur_quick_frame_pc_;
   }
 
-  StackReference<mirror::ArtMethod>* GetCurrentQuickFrame() const {
+  mirror::ArtMethod** GetCurrentQuickFrame() const {
     return cur_quick_frame_;
   }
 
@@ -707,7 +678,7 @@ class StackVisitor {
   }
 
   HandleScope* GetCurrentHandleScope() const {
-    StackReference<mirror::ArtMethod>* sp = GetCurrentQuickFrame();
+    mirror::ArtMethod** sp = GetCurrentQuickFrame();
     ++sp;  // Skip Method*; handle scope comes next;
     return reinterpret_cast<HandleScope*>(sp);
   }
@@ -719,20 +690,13 @@ class StackVisitor {
   static void DescribeStack(Thread* thread) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
  private:
-  // Private constructor known in the case that num_frames_ has already been computed.
-  StackVisitor(Thread* thread, Context* context, size_t num_frames)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  bool GetGPR(uint32_t reg, uintptr_t* val) const;
-  bool SetGPR(uint32_t reg, uintptr_t value);
-  bool GetFPR(uint32_t reg, uintptr_t* val) const;
-  bool SetFPR(uint32_t reg, uintptr_t value);
+  instrumentation::InstrumentationStackFrame& GetInstrumentationStackFrame(uint32_t depth) const;
 
   void SanityCheckFrame() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   Thread* const thread_;
   ShadowFrame* cur_shadow_frame_;
-  StackReference<mirror::ArtMethod>* cur_quick_frame_;
+  mirror::ArtMethod** cur_quick_frame_;
   uintptr_t cur_quick_frame_pc_;
   // Lazily computed, number of frames in the stack.
   size_t num_frames_;

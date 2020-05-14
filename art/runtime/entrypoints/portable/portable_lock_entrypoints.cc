@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "entrypoints/entrypoint_utils-inl.h"
+#include "entrypoints/entrypoint_utils.h"
 #include "mirror/object-inl.h"
 
 namespace art {

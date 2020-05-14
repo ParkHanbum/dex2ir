@@ -18,8 +18,6 @@
 #define ART_RUNTIME_ATOMIC_H_
 
 #include <stdint.h>
-#include <atomic>
-#include <limits>
 #include <vector>
 
 #include "base/logging.h"
@@ -29,14 +27,69 @@ namespace art {
 
 class Mutex;
 
-// QuasiAtomic encapsulates two separate facilities that we are
-// trying to move away from:  "quasiatomic" 64 bit operations
-// and custom memory fences.  For the time being, they remain
-// exposed.  Clients should be converted to use either class Atomic
-// below whenever possible, and should eventually use C++11 atomics.
-// The two facilities that do not have a good C++11 analog are
-// ThreadFenceForConstructor and Atomic::*JavaData.
-//
+template<typename T>
+class Atomic {
+ public:
+  Atomic<T>() : value_(0) { }
+
+  explicit Atomic<T>(T value) : value_(value) { }
+
+  Atomic<T>& operator=(T desired) {
+    Store(desired);
+    return *this;
+  }
+
+  T Load() const {
+    return value_;
+  }
+
+  operator T() const {
+    return Load();
+  }
+
+  T FetchAndAdd(const T value) {
+    return __sync_fetch_and_add(&value_, value);  // Return old_value.
+  }
+
+  T FetchAndSub(const T value) {
+    return __sync_fetch_and_sub(&value_, value);  // Return old value.
+  }
+
+  T operator++() {  // Prefix operator.
+    return __sync_add_and_fetch(&value_, 1);  // Return new value.
+  }
+
+  T operator++(int) {  // Postfix operator.
+    return __sync_fetch_and_add(&value_, 1);  // Return old value.
+  }
+
+  T operator--() {  // Prefix operator.
+    return __sync_sub_and_fetch(&value_, 1);  // Return new value.
+  }
+
+  T operator--(int) {  // Postfix operator.
+    return __sync_fetch_and_sub(&value_, 1);  // Return old value.
+  }
+
+  bool CompareAndSwap(T expected_value, T desired_value) {
+    return __sync_bool_compare_and_swap(&value_, expected_value, desired_value);
+  }
+
+  volatile T* Address() {
+    return &value_;
+  }
+
+ private:
+  // Unsafe = operator for non atomic operations on the integer.
+  void Store(T desired) {
+    value_ = desired;
+  }
+
+  volatile T value_;
+};
+
+typedef Atomic<int32_t> AtomicInteger;
+
 // NOTE: Two "quasiatomic" operations on the exact same memory address
 // are guaranteed to operate atomically with respect to each other,
 // but no guarantees are made about quasiatomic operations mixed with
@@ -133,11 +186,6 @@ class QuasiAtomic {
 
   // Atomically compare the value at "addr" to "old_value", if equal replace it with "new_value"
   // and return true. Otherwise, don't swap, and return false.
-  // This is fully ordered, i.e. it has C++11 memory_order_seq_cst
-  // semantics (assuming all other accesses use a mutex if this one does).
-  // This has "strong" semantics; if it fails then it is guaranteed that
-  // at some point during the execution of Cas64, *addr was not equal to
-  // old_value.
   static bool Cas64(int64_t old_value, int64_t new_value, volatile int64_t* addr) {
     if (!kNeedSwapMutexes) {
       return __sync_bool_compare_and_swap(addr, old_value, new_value);
@@ -148,27 +196,55 @@ class QuasiAtomic {
 
   // Does the architecture provide reasonable atomic long operations or do we fall back on mutexes?
   static bool LongAtomicsUseMutexes() {
-    return kNeedSwapMutexes;
+    return !kNeedSwapMutexes;
   }
 
-  static void ThreadFenceAcquire() {
-    std::atomic_thread_fence(std::memory_order_acquire);
+  static void MembarLoadStore() {
+  #if defined(__arm__) || defined(__aarch64__)
+    __asm__ __volatile__("dmb ish" : : : "memory");
+  #elif defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__("" : : : "memory");
+  #elif defined(__mips__)
+    __asm__ __volatile__("sync" : : : "memory");
+  #else
+  #error Unexpected architecture
+  #endif
   }
 
-  static void ThreadFenceRelease() {
-    std::atomic_thread_fence(std::memory_order_release);
+  static void MembarLoadLoad() {
+  #if defined(__arm__) || defined(__aarch64__)
+    __asm__ __volatile__("dmb ish" : : : "memory");
+  #elif defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__("" : : : "memory");
+  #elif defined(__mips__)
+    __asm__ __volatile__("sync" : : : "memory");
+  #else
+  #error Unexpected architecture
+  #endif
   }
 
-  static void ThreadFenceForConstructor() {
-    #if defined(__aarch64__)
-      __asm__ __volatile__("dmb ishst" : : : "memory");
-    #else
-      std::atomic_thread_fence(std::memory_order_release);
-    #endif
+  static void MembarStoreStore() {
+  #if defined(__arm__) || defined(__aarch64__)
+    __asm__ __volatile__("dmb ishst" : : : "memory");
+  #elif defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__("" : : : "memory");
+  #elif defined(__mips__)
+    __asm__ __volatile__("sync" : : : "memory");
+  #else
+  #error Unexpected architecture
+  #endif
   }
 
-  static void ThreadFenceSequentiallyConsistent() {
-    std::atomic_thread_fence(std::memory_order_seq_cst);
+  static void MembarStoreLoad() {
+  #if defined(__arm__) || defined(__aarch64__)
+    __asm__ __volatile__("dmb ish" : : : "memory");
+  #elif defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__("mfence" : : : "memory");
+  #elif defined(__mips__)
+    __asm__ __volatile__("sync" : : : "memory");
+  #else
+  #error Unexpected architecture
+  #endif
   }
 
  private:
@@ -183,128 +259,6 @@ class QuasiAtomic {
 
   DISALLOW_COPY_AND_ASSIGN(QuasiAtomic);
 };
-
-template<typename T>
-class PACKED(sizeof(T)) Atomic : public std::atomic<T> {
- public:
-  Atomic<T>() : std::atomic<T>(0) { }
-
-  explicit Atomic<T>(T value) : std::atomic<T>(value) { }
-
-  // Load from memory without ordering or synchronization constraints.
-  T LoadRelaxed() const {
-    return this->load(std::memory_order_relaxed);
-  }
-
-  // Word tearing allowed, but may race.
-  // TODO: Optimize?
-  // There has been some discussion of eventually disallowing word
-  // tearing for Java data loads.
-  T LoadJavaData() const {
-    return this->load(std::memory_order_relaxed);
-  }
-
-  // Load from memory with a total ordering.
-  // Corresponds exactly to a Java volatile load.
-  T LoadSequentiallyConsistent() const {
-    return this->load(std::memory_order_seq_cst);
-  }
-
-  // Store to memory without ordering or synchronization constraints.
-  void StoreRelaxed(T desired) {
-    this->store(desired, std::memory_order_relaxed);
-  }
-
-  // Word tearing allowed, but may race.
-  void StoreJavaData(T desired) {
-    this->store(desired, std::memory_order_relaxed);
-  }
-
-  // Store to memory with release ordering.
-  void StoreRelease(T desired) {
-    this->store(desired, std::memory_order_release);
-  }
-
-  // Store to memory with a total ordering.
-  void StoreSequentiallyConsistent(T desired) {
-    this->store(desired, std::memory_order_seq_cst);
-  }
-
-  // Atomically replace the value with desired value if it matches the expected value.
-  // Participates in total ordering of atomic operations.
-  bool CompareExchangeStrongSequentiallyConsistent(T expected_value, T desired_value) {
-    return this->compare_exchange_strong(expected_value, desired_value, std::memory_order_seq_cst);
-  }
-
-  // The same, except it may fail spuriously.
-  bool CompareExchangeWeakSequentiallyConsistent(T expected_value, T desired_value) {
-    return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_seq_cst);
-  }
-
-  // Atomically replace the value with desired value if it matches the expected value. Doesn't
-  // imply ordering or synchronization constraints.
-  bool CompareExchangeStrongRelaxed(T expected_value, T desired_value) {
-    return this->compare_exchange_strong(expected_value, desired_value, std::memory_order_relaxed);
-  }
-
-  // The same, except it may fail spuriously.
-  bool CompareExchangeWeakRelaxed(T expected_value, T desired_value) {
-    return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_relaxed);
-  }
-
-  // Atomically replace the value with desired value if it matches the expected value. Prior writes
-  // made to other memory locations by the thread that did the release become visible in this
-  // thread.
-  bool CompareExchangeWeakAcquire(T expected_value, T desired_value) {
-    return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_acquire);
-  }
-
-  // Atomically replace the value with desired value if it matches the expected value. prior writes
-  // to other memory locations become visible to the threads that do a consume or an acquire on the
-  // same location.
-  bool CompareExchangeWeakRelease(T expected_value, T desired_value) {
-    return this->compare_exchange_weak(expected_value, desired_value, std::memory_order_release);
-  }
-
-  T FetchAndAddSequentiallyConsistent(const T value) {
-    return this->fetch_add(value, std::memory_order_seq_cst);  // Return old_value.
-  }
-
-  T FetchAndSubSequentiallyConsistent(const T value) {
-    return this->fetch_sub(value, std::memory_order_seq_cst);  // Return old value.
-  }
-
-  T FetchAndOrSequentiallyConsistent(const T value) {
-    return this->fetch_or(value, std::memory_order_seq_cst);  // Return old_value.
-  }
-
-  T FetchAndAndSequentiallyConsistent(const T value) {
-    return this->fetch_and(value, std::memory_order_seq_cst);  // Return old_value.
-  }
-
-  volatile T* Address() {
-    return reinterpret_cast<T*>(this);
-  }
-
-  static T MaxValue() {
-    return std::numeric_limits<T>::max();
-  }
-};
-
-typedef Atomic<int32_t> AtomicInteger;
-
-COMPILE_ASSERT(sizeof(AtomicInteger) == sizeof(int32_t), weird_atomic_int_size);
-COMPILE_ASSERT(alignof(AtomicInteger) == alignof(int32_t),
-               atomic_int_alignment_differs_from_that_of_underlying_type);
-COMPILE_ASSERT(sizeof(Atomic<int64_t>) == sizeof(int64_t), weird_atomic_int64_size);
-
-// Assert the alignment of 64-bit integers is 64-bit. This isn't true on certain 32-bit
-// architectures (e.g. x86-32) but we know that 64-bit integers here are arranged to be 8-byte
-// aligned.
-#if defined(__LP64__)
-  COMPILE_ASSERT(alignof(Atomic<int64_t>) == alignof(int64_t),
-                 atomic_int64_alignment_differs_from_that_of_underlying_type);
-#endif
 
 }  // namespace art
 

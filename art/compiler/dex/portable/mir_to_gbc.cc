@@ -35,6 +35,7 @@
 #include "llvm/utils_llvm.h"
 #include "mir_to_gbc.h"
 #include "thread-inl.h"
+#include "mir_graph.h"
 
 const char* kLabelFormat = "%c0x%x_%d";
 const char kInvalidBlock = 0xff;
@@ -712,7 +713,7 @@ bool MirConverter::ConvertMIRNode(MIR* mir, BasicBlock* bb,
   int opt_flags = mir->optimization_flags;
 
   if (cu_->verbose) {
-    if (!IsPseudoMirOp(op_val)) {
+    if (op_val < kMirOpFirst) {
       LOG(INFO) << ".. " << Instruction::Name(opcode) << " 0x" << std::hex << op_val;
     } else {
       LOG(INFO) << mir_graph_->extended_mir_op_names_[op_val - kMirOpFirst] << " 0x" << std::hex << op_val;
@@ -722,7 +723,7 @@ bool MirConverter::ConvertMIRNode(MIR* mir, BasicBlock* bb,
   /* Prep Src and Dest locations */
   int next_sreg = 0;
   int next_loc = 0;
-  uint64_t attrs = MirGraph::GetDataFlowAttributes(opcode);
+  uint64_t attrs = MIRGraph::GetDataFlowAttributes(opcode);
   rl_src[0] = rl_src[1] = rl_src[2] = mir_graph_->GetBadLoc();
   if (attrs & DF_UA) {
     if (attrs & DF_A_WIDE) {
@@ -1550,7 +1551,7 @@ void MirConverter::HandlePhiNodes(BasicBlock* bb, ::llvm::BasicBlock* llvm_bb) {
   SetDexOffset(bb->start_offset);
   for (MIR* mir = bb->first_mir_insn; mir != NULL; mir = mir->next) {
     int opcode = mir->dalvikInsn.opcode;
-    if (!IsPseudoMirOp(opcode)) {
+    if (opcode < kMirOpFirst) {
       // Stop after first non-pseudo MIR op.
       continue;
     }
@@ -1759,7 +1760,7 @@ bool MirConverter::BlockBitcodeConversion(BasicBlock* bb) {
       }
     }
 
-    if (IsPseudoMirOp(opcode)) {
+    if (opcode >= kMirOpFirst) {
       ConvertExtendedMIR(bb, mir, llvm_bb);
       continue;
     }

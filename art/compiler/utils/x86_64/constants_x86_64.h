@@ -30,7 +30,6 @@ namespace x86_64 {
 class CpuRegister {
  public:
   explicit CpuRegister(Register r) : reg_(r) {}
-  explicit CpuRegister(int r) : reg_(Register(r)) {}
   Register AsRegister() const {
     return reg_;
   }

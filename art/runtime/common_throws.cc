@@ -16,8 +16,6 @@
 
 #include "common_throws.h"
 
-#include <sstream>
-
 #include "base/logging.h"
 #include "class_linker-inl.h"
 #include "dex_file-inl.h"
@@ -27,15 +25,19 @@
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
+#include "object_utils.h"
 #include "thread.h"
 #include "verifier/method_verifier.h"
+
+#include <sstream>
 
 namespace art {
 
 static void AddReferrerLocation(std::ostream& os, mirror::Class* referrer)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   if (referrer != NULL) {
-    std::string location(referrer->GetLocation());
+    ClassHelper kh(referrer);
+    std::string location(kh.GetLocation());
     if (!location.empty()) {
       os << " (declaration of '" << PrettyDescriptor(referrer)
             << "' appears in " << location << ")";
@@ -295,10 +297,10 @@ void ThrowNegativeArraySizeException(const char* msg) {
 void ThrowNoSuchFieldError(const StringPiece& scope, mirror::Class* c,
                            const StringPiece& type, const StringPiece& name)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  ClassHelper kh(c);
   std::ostringstream msg;
-  std::string temp;
   msg << "No " << scope << "field " << name << " of type " << type
-      << " in class " << c->GetDescriptor(&temp) << " or its superclasses";
+      << " in class " << kh.GetDescriptor() << " or its superclasses";
   ThrowException(NULL, "Ljava/lang/NoSuchFieldError;", c, msg.str().c_str());
 }
 
@@ -307,9 +309,9 @@ void ThrowNoSuchFieldError(const StringPiece& scope, mirror::Class* c,
 void ThrowNoSuchMethodError(InvokeType type, mirror::Class* c, const StringPiece& name,
                             const Signature& signature) {
   std::ostringstream msg;
-  std::string temp;
+  ClassHelper kh(c);
   msg << "No " << type << " method " << name << signature
-      << " in class " << c->GetDescriptor(&temp) << " or its super classes";
+      << " in class " << kh.GetDescriptor() << " or its super classes";
   ThrowException(NULL, "Ljava/lang/NoSuchMethodError;", c, msg.str().c_str());
 }
 
@@ -364,7 +366,7 @@ void ThrowNullPointerExceptionForMethodAccess(const ThrowLocation& throw_locatio
 }
 
 void ThrowNullPointerExceptionFromDexPC(const ThrowLocation& throw_location) {
-  const DexFile::CodeItem* code = throw_location.GetMethod()->GetCodeItem();
+  const DexFile::CodeItem* code = MethodHelper(throw_location.GetMethod()).GetCodeItem();
   uint32_t throw_dex_pc = throw_location.GetDexPc();
   CHECK_LT(throw_dex_pc, code->insns_size_in_code_units_);
   const Instruction* instr = Instruction::At(&code->insns_[throw_dex_pc]);

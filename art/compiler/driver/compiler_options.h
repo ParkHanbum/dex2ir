@@ -24,6 +24,7 @@ class CompilerOptions {
   enum CompilerFilter {
     kVerifyNone,          // Skip verification and compile nothing except JNI stubs.
     kInterpretOnly,       // Compile nothing except JNI stubs.
+    kProfiled,            // Compile based on profile.
     kSpace,               // Maximize space savings.
     kBalanced,            // Try to get the best performance return on compilation investment.
     kSpeed,               // Maximize runtime performance.
@@ -32,7 +33,7 @@ class CompilerOptions {
 
   // Guide heuristics to determine whether to compile method if profile data not available.
 #if ART_SMALL_MODE
-  static const CompilerFilter kDefaultCompilerFilter = kInterpretOnly;
+  static const CompilerFilter kDefaultCompilerFilter = kProfiled;
 #else
   static const CompilerFilter kDefaultCompilerFilter = kSpeed;
 #endif
@@ -41,9 +42,6 @@ class CompilerOptions {
   static const size_t kDefaultSmallMethodThreshold = 60;
   static const size_t kDefaultTinyMethodThreshold = 20;
   static const size_t kDefaultNumDexMethodsThreshold = 900;
-  static constexpr double kDefaultTopKProfileThreshold = 90.0;
-  static const bool kDefaultIncludeDebugSymbols = kIsDebugBuild;
-  static const bool kDefaultIncludePatchInformation = false;
 
   CompilerOptions() :
     compiler_filter_(kDefaultCompilerFilter),
@@ -52,13 +50,7 @@ class CompilerOptions {
     small_method_threshold_(kDefaultSmallMethodThreshold),
     tiny_method_threshold_(kDefaultTinyMethodThreshold),
     num_dex_methods_threshold_(kDefaultNumDexMethodsThreshold),
-    generate_gdb_information_(false),
-    include_patch_information_(kDefaultIncludePatchInformation),
-    top_k_profile_threshold_(kDefaultTopKProfileThreshold),
-    include_debug_symbols_(kDefaultIncludeDebugSymbols),
-    implicit_null_checks_(false),
-    implicit_so_checks_(false),
-    implicit_suspend_checks_(false)
+    generate_gdb_information_(false)
 #ifdef ART_SEA_IR_MODE
     , sea_ir_mode_(false)
 #endif
@@ -70,13 +62,7 @@ class CompilerOptions {
                   size_t small_method_threshold,
                   size_t tiny_method_threshold,
                   size_t num_dex_methods_threshold,
-                  bool generate_gdb_information,
-                  bool include_patch_information,
-                  double top_k_profile_threshold,
-                  bool include_debug_symbols,
-                  bool implicit_null_checks,
-                  bool implicit_so_checks,
-                  bool implicit_suspend_checks
+                  bool generate_gdb_information
 #ifdef ART_SEA_IR_MODE
                   , bool sea_ir_mode
 #endif
@@ -87,13 +73,7 @@ class CompilerOptions {
     small_method_threshold_(small_method_threshold),
     tiny_method_threshold_(tiny_method_threshold),
     num_dex_methods_threshold_(num_dex_methods_threshold),
-    generate_gdb_information_(generate_gdb_information),
-    include_patch_information_(include_patch_information),
-    top_k_profile_threshold_(top_k_profile_threshold),
-    include_debug_symbols_(include_debug_symbols),
-    implicit_null_checks_(implicit_null_checks),
-    implicit_so_checks_(implicit_so_checks),
-    implicit_suspend_checks_(implicit_suspend_checks)
+    generate_gdb_information_(generate_gdb_information)
 #ifdef ART_SEA_IR_MODE
     , sea_ir_mode_(sea_ir_mode)
 #endif
@@ -152,48 +132,12 @@ class CompilerOptions {
     return num_dex_methods_threshold_;
   }
 
-  double GetTopKProfileThreshold() const {
-    return top_k_profile_threshold_;
-  }
-
-  bool GetIncludeDebugSymbols() const {
-    return include_debug_symbols_;
-  }
-
-  bool GetImplicitNullChecks() const {
-    return implicit_null_checks_;
-  }
-
-  void SetImplicitNullChecks(bool new_val) {
-    implicit_null_checks_ = new_val;
-  }
-
-  bool GetImplicitStackOverflowChecks() const {
-    return implicit_so_checks_;
-  }
-
-  void SetImplicitStackOverflowChecks(bool new_val) {
-    implicit_so_checks_ = new_val;
-  }
-
-  bool GetImplicitSuspendChecks() const {
-    return implicit_suspend_checks_;
-  }
-
-  void SetImplicitSuspendChecks(bool new_val) {
-    implicit_suspend_checks_ = new_val;
-  }
-
 #ifdef ART_SEA_IR_MODE
   bool GetSeaIrMode();
 #endif
 
   bool GetGenerateGDBInformation() const {
     return generate_gdb_information_;
-  }
-
-  bool GetIncludePatchInformation() const {
-    return include_patch_information_;
   }
 
  private:
@@ -204,13 +148,7 @@ class CompilerOptions {
   size_t tiny_method_threshold_;
   size_t num_dex_methods_threshold_;
   bool generate_gdb_information_;
-  bool include_patch_information_;
-  // When using a profile file only the top K% of the profiled samples will be compiled.
-  double top_k_profile_threshold_;
-  bool include_debug_symbols_;
-  bool implicit_null_checks_;
-  bool implicit_so_checks_;
-  bool implicit_suspend_checks_;
+
 #ifdef ART_SEA_IR_MODE
   bool sea_ir_mode_;
 #endif

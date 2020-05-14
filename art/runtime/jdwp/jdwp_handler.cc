@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <memory>
+
 #include <string>
 
 #include "atomic.h"
@@ -32,6 +32,7 @@
 #include "jdwp/jdwp_priv.h"
 #include "runtime.h"
 #include "thread-inl.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -106,8 +107,8 @@ static JdwpError FinishInvoke(JdwpState*, Request& request, ExpandBuf* pReply,
                              Dbg::GetMethodName(method_id).c_str());
   VLOG(jdwp) << StringPrintf("        %d args:", arg_count);
 
-  std::unique_ptr<JdwpTag[]> argTypes(arg_count > 0 ? new JdwpTag[arg_count] : NULL);
-  std::unique_ptr<uint64_t[]> argValues(arg_count > 0 ? new uint64_t[arg_count] : NULL);
+  UniquePtr<JdwpTag[]> argTypes(arg_count > 0 ? new JdwpTag[arg_count] : NULL);
+  UniquePtr<uint64_t[]> argValues(arg_count > 0 ? new uint64_t[arg_count] : NULL);
   for (int32_t i = 0; i < arg_count; ++i) {
     argTypes[i] = request.ReadTag();
     size_t width = Dbg::GetTagWidth(argTypes[i]);
@@ -151,12 +152,7 @@ static JdwpError FinishInvoke(JdwpState*, Request& request, ExpandBuf* pReply,
     /* show detailed debug output */
     if (resultTag == JT_STRING && exceptObjId == 0) {
       if (resultValue != 0) {
-        if (VLOG_IS_ON(jdwp)) {
-          std::string result_string;
-          JDWP::JdwpError error = Dbg::StringToUtf8(resultValue, &result_string);
-          CHECK_EQ(error, JDWP::ERR_NONE);
-          VLOG(jdwp) << "      string '" << result_string << "'";
-        }
+        VLOG(jdwp) << "      string '" << Dbg::StringToUtf8(resultValue) << "'";
       } else {
         VLOG(jdwp) << "      string (null)";
       }
@@ -924,13 +920,9 @@ static JdwpError OR_ReferringObjects(JdwpState*, Request& request, ExpandBuf* re
 static JdwpError SR_Value(JdwpState*, Request& request, ExpandBuf* pReply)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   ObjectId stringObject = request.ReadObjectId();
-  std::string str;
-  JDWP::JdwpError error = Dbg::StringToUtf8(stringObject, &str);
-  if (error != JDWP::ERR_NONE) {
-    return error;
-  }
+  std::string str(Dbg::StringToUtf8(stringObject));
 
-  VLOG(jdwp) << StringPrintf("    --> %s", PrintableString(str.c_str()).c_str());
+  VLOG(jdwp) << StringPrintf("    --> %s", PrintableString(str).c_str());
 
   expandBufAddUtf8String(pReply, str);
 
@@ -1680,7 +1672,7 @@ size_t JdwpState::ProcessRequest(Request& request, ExpandBuf* pReply) {
      * so waitForDebugger() doesn't return if we stall for a bit here.
      */
     Dbg::GoActive();
-    last_activity_time_ms_.StoreSequentiallyConsistent(0);
+    QuasiAtomic::Write64(&last_activity_time_ms_, 0);
   }
 
   /*
@@ -1760,7 +1752,7 @@ size_t JdwpState::ProcessRequest(Request& request, ExpandBuf* pReply) {
    * the initial setup.  Only update if this is a non-DDMS packet.
    */
   if (request.GetCommandSet() != kJDWPDdmCmdSet) {
-    last_activity_time_ms_.StoreSequentiallyConsistent(MilliTime());
+    QuasiAtomic::Write64(&last_activity_time_ms_, MilliTime());
   }
 
   /* tell the VM that GC is okay again */

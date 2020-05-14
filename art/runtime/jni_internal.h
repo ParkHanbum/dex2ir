@@ -24,6 +24,7 @@
 #include "indirect_reference_table.h"
 #include "object_callbacks.h"
 #include "reference_table.h"
+#include "runtime.h"
 
 #include <iosfwd>
 #include <string>
@@ -44,7 +45,6 @@ namespace mirror {
 union JValue;
 class Libraries;
 class ParsedOptions;
-class Runtime;
 class ScopedObjectAccess;
 template<class T> class Handle;
 class Thread;
@@ -67,7 +67,7 @@ class JavaVMExt : public JavaVM {
    * Returns 'true' on success. On failure, sets 'detail' to a
    * human-readable description of the error.
    */
-  bool LoadNativeLibrary(const std::string& path, Handle<mirror::ClassLoader> class_loader,
+  bool LoadNativeLibrary(const std::string& path, const Handle<mirror::ClassLoader>& class_loader,
                          std::string* detail)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -85,8 +85,7 @@ class JavaVMExt : public JavaVM {
 
   void SetCheckJniEnabled(bool enabled);
 
-  void VisitRoots(RootCallback* callback, void* arg)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void VisitRoots(RootCallback* callback, void* arg);
 
   void DisallowNewWeakGlobals() EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_);
   void AllowNewWeakGlobals() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -94,8 +93,7 @@ class JavaVMExt : public JavaVM {
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void DeleteWeakGlobalRef(Thread* self, jweak obj)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  void SweepJniWeakGlobals(IsMarkedCallback* callback, void* arg)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void SweepJniWeakGlobals(IsMarkedCallback* callback, void* arg);
   mirror::Object* DecodeWeakGlobal(Thread* self, IndirectRef ref)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -112,6 +110,10 @@ class JavaVMExt : public JavaVM {
   // Extra diagnostics.
   std::string trace;
 
+  // Used to hold references to pinned primitive arrays.
+  Mutex pins_lock DEFAULT_MUTEX_ACQUIRED_AFTER;
+  ReferenceTable pin_table GUARDED_BY(pins_lock);
+
   // JNI global references.
   ReaderWriterMutex globals_lock DEFAULT_MUTEX_ACQUIRED_AFTER;
   // Not guarded by globals_lock since we sometimes use SynchronizedGet in Thread::DecodeJObject.
@@ -127,9 +129,6 @@ class JavaVMExt : public JavaVM {
   // TODO: Make the other members of this class also private.
   // JNI weak global references.
   Mutex weak_globals_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
-  // Since weak_globals_ contain weak roots, be careful not to
-  // directly access the object references in it. Use Get() with the
-  // read barrier enabled.
   IndirectReferenceTable weak_globals_ GUARDED_BY(weak_globals_lock_);
   bool allow_new_weak_globals_ GUARDED_BY(weak_globals_lock_);
   ConditionVariable weak_globals_add_condition_ GUARDED_BY(weak_globals_lock_);
@@ -171,7 +170,7 @@ struct JNIEnvExt : public JNIEnv {
   uint32_t local_ref_cookie;
 
   // JNI local references.
-  IndirectReferenceTable locals GUARDED_BY(Locks::mutator_lock_);
+  IndirectReferenceTable locals;
 
   // Stack of cookies corresponding to PushLocalFrame/PopLocalFrame calls.
   // TODO: to avoid leaks (and bugs), we need to clear this vector on entry (or return)
@@ -213,6 +212,25 @@ class ScopedJniEnvLocalRefState {
   uint32_t saved_local_ref_cookie_;
   DISALLOW_COPY_AND_ASSIGN(ScopedJniEnvLocalRefState);
 };
+
+template<typename T>
+inline T JNIEnvExt::AddLocalReference(mirror::Object* obj) {
+  IndirectRef ref = locals.Add(local_ref_cookie, obj);
+
+  // TODO: fix this to understand PushLocalFrame, so we can turn it on.
+  if (false) {
+    if (check_jni) {
+      size_t entry_count = locals.Capacity();
+      if (entry_count > 16) {
+        locals.Dump(LOG(WARNING) << "Warning: more than 16 JNI local references: "
+            << entry_count << " (most recent was a " << PrettyTypeOf(obj) << ")\n");
+        // TODO: LOG(FATAL) in a later release?
+      }
+    }
+  }
+
+  return reinterpret_cast<T>(ref);
+}
 
 }  // namespace art
 

@@ -67,7 +67,7 @@ class DexFileMethodInliner {
     /**
      * Check whether a particular method index corresponds to an intrinsic function.
      */
-    bool IsIntrinsic(uint32_t method_index, InlineMethod* intrinsic) LOCKS_EXCLUDED(lock_);
+    bool IsIntrinsic(uint32_t method_index) LOCKS_EXCLUDED(lock_);
 
     /**
      * Generate code for an intrinsic function invocation.
@@ -107,7 +107,6 @@ class DexFileMethodInliner {
       kClassCacheDouble,
       kClassCacheVoid,
       kClassCacheJavaLangObject,
-      kClassCacheJavaLangRefReference,
       kClassCacheJavaLangString,
       kClassCacheJavaLangDouble,
       kClassCacheJavaLangFloat,
@@ -119,8 +118,6 @@ class DexFileMethodInliner {
       kClassCacheJavaLangThread,
       kClassCacheLibcoreIoMemory,
       kClassCacheSunMiscUnsafe,
-      kClassCacheJavaLangSystem,
-      kClassCacheJavaLangCharArray,
       kClassCacheLast
     };
 
@@ -131,8 +128,7 @@ class DexFileMethodInliner {
      */
     enum NameCacheIndex : uint8_t {  // unit8_t to save space, make larger if needed
       kNameCacheFirst = 0,
-      kNameCacheReverse =  kNameCacheFirst,
-      kNameCacheReverseBytes,
+      kNameCacheReverseBytes = kNameCacheFirst,
       kNameCacheDoubleToRawLongBits,
       kNameCacheLongBitsToDouble,
       kNameCacheFloatToRawIntBits,
@@ -141,11 +137,6 @@ class DexFileMethodInliner {
       kNameCacheMax,
       kNameCacheMin,
       kNameCacheSqrt,
-      kNameCacheCeil,
-      kNameCacheFloor,
-      kNameCacheRint,
-      kNameCacheRound,
-      kNameCacheReferenceGetReferent,
       kNameCacheCharAt,
       kNameCacheCompareTo,
       kNameCacheIsEmpty,
@@ -178,7 +169,6 @@ class DexFileMethodInliner {
       kNameCachePutObject,
       kNameCachePutObjectVolatile,
       kNameCachePutOrderedObject,
-      kNameCacheArrayCopy,
       kNameCacheLast
     };
 
@@ -193,9 +183,7 @@ class DexFileMethodInliner {
       kProtoCacheJ_J,
       kProtoCacheS_S,
       kProtoCacheD_D,
-      kProtoCacheDD_D,
       kProtoCacheF_F,
-      kProtoCacheFF_F,
       kProtoCacheD_J,
       kProtoCacheJ_D,
       kProtoCacheF_I,
@@ -205,14 +193,12 @@ class DexFileMethodInliner {
       kProtoCacheString_I,
       kProtoCache_Z,
       kProtoCache_I,
-      kProtoCache_Object,
       kProtoCache_Thread,
       kProtoCacheJ_B,
       kProtoCacheJ_I,
       kProtoCacheJ_S,
       kProtoCacheJB_V,
       kProtoCacheJI_V,
-      kProtoCacheJJ_J,
       kProtoCacheJJ_V,
       kProtoCacheJS_V,
       kProtoCacheObjectJII_Z,
@@ -224,7 +210,6 @@ class DexFileMethodInliner {
       kProtoCacheObjectJJ_V,
       kProtoCacheObjectJ_Object,
       kProtoCacheObjectJObject_V,
-      kProtoCacheCharArrayICharArrayII_V,
       kProtoCacheLast
     };
 

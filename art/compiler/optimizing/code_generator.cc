@@ -18,7 +18,6 @@
 
 #include "code_generator_arm.h"
 #include "code_generator_x86.h"
-#include "code_generator_x86_64.h"
 #include "dex/verified_method.h"
 #include "driver/dex_compilation_unit.h"
 #include "gc_map_builder.h"
@@ -30,71 +29,29 @@
 
 namespace art {
 
-void CodeGenerator::CompileBaseline(CodeAllocator* allocator, bool is_leaf) {
+void CodeGenerator::Compile(CodeAllocator* allocator) {
   const GrowableArray<HBasicBlock*>& blocks = GetGraph()->GetBlocks();
   DCHECK(blocks.Get(0) == GetGraph()->GetEntryBlock());
   DCHECK(GoesToNextBlock(GetGraph()->GetEntryBlock(), blocks.Get(1)));
-  block_labels_.SetSize(blocks.Size());
-
-  DCHECK_EQ(frame_size_, kUninitializedFrameSize);
-  if (!is_leaf) {
-    MarkNotLeaf();
-  }
-  ComputeFrameSize(GetGraph()->GetMaximumNumberOfOutVRegs()
-                   + GetGraph()->GetNumberOfLocalVRegs()
-                   + GetGraph()->GetNumberOfTemporaries()
-                   + 1 /* filler */);
   GenerateFrameEntry();
-
   for (size_t i = 0, e = blocks.Size(); i < e; ++i) {
-    HBasicBlock* block = blocks.Get(i);
-    Bind(GetLabelOf(block));
-    HGraphVisitor* location_builder = GetLocationBuilder();
-    HGraphVisitor* instruction_visitor = GetInstructionVisitor();
-    for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
-      HInstruction* current = it.Current();
-      current->Accept(location_builder);
-      InitLocations(current);
-      current->Accept(instruction_visitor);
-    }
+    CompileBlock(blocks.Get(i));
   }
-  GenerateSlowPaths();
-
   size_t code_size = GetAssembler()->CodeSize();
   uint8_t* buffer = allocator->Allocate(code_size);
   MemoryRegion code(buffer, code_size);
   GetAssembler()->FinalizeInstructions(code);
 }
 
-void CodeGenerator::CompileOptimized(CodeAllocator* allocator) {
-  // The frame size has already been computed during register allocation.
-  DCHECK_NE(frame_size_, kUninitializedFrameSize);
-  const GrowableArray<HBasicBlock*>& blocks = GetGraph()->GetBlocks();
-  DCHECK(blocks.Get(0) == GetGraph()->GetEntryBlock());
-  DCHECK(GoesToNextBlock(GetGraph()->GetEntryBlock(), blocks.Get(1)));
-  block_labels_.SetSize(blocks.Size());
-
-  GenerateFrameEntry();
-  for (size_t i = 0, e = blocks.Size(); i < e; ++i) {
-    HBasicBlock* block = blocks.Get(i);
-    Bind(GetLabelOf(block));
-    HGraphVisitor* instruction_visitor = GetInstructionVisitor();
-    for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
-      HInstruction* current = it.Current();
-      current->Accept(instruction_visitor);
-    }
-  }
-  GenerateSlowPaths();
-
-  size_t code_size = GetAssembler()->CodeSize();
-  uint8_t* buffer = allocator->Allocate(code_size);
-  MemoryRegion code(buffer, code_size);
-  GetAssembler()->FinalizeInstructions(code);
-}
-
-void CodeGenerator::GenerateSlowPaths() {
-  for (size_t i = 0, e = slow_paths_.Size(); i < e; ++i) {
-    slow_paths_.Get(i)->EmitNativeCode(this);
+void CodeGenerator::CompileBlock(HBasicBlock* block) {
+  Bind(GetLabelOf(block));
+  HGraphVisitor* location_builder = GetLocationBuilder();
+  HGraphVisitor* instruction_visitor = GetInstructionVisitor();
+  for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
+    HInstruction* current = it.Current();
+    current->Accept(location_builder);
+    InitLocations(current);
+    current->Accept(instruction_visitor);
   }
 }
 
@@ -106,42 +63,10 @@ size_t CodeGenerator::AllocateFreeRegisterInternal(
       return regno;
     }
   }
+  LOG(FATAL) << "Unreachable";
   return -1;
 }
 
-void CodeGenerator::ComputeFrameSize(size_t number_of_spill_slots) {
-  SetFrameSize(RoundUp(
-      number_of_spill_slots * kVRegSize
-      + kVRegSize  // Art method
-      + FrameEntrySpillSize(),
-      kStackAlignment));
-}
-
-Location CodeGenerator::GetTemporaryLocation(HTemporary* temp) const {
-  uint16_t number_of_locals = GetGraph()->GetNumberOfLocalVRegs();
-  // Use the temporary region (right below the dex registers).
-  int32_t slot = GetFrameSize() - FrameEntrySpillSize()
-                                - kVRegSize  // filler
-                                - (number_of_locals * kVRegSize)
-                                - ((1 + temp->GetIndex()) * kVRegSize);
-  return Location::StackSlot(slot);
-}
-
-int32_t CodeGenerator::GetStackSlot(HLocal* local) const {
-  uint16_t reg_number = local->GetRegNumber();
-  uint16_t number_of_locals = GetGraph()->GetNumberOfLocalVRegs();
-  if (reg_number >= number_of_locals) {
-    // Local is a parameter of the method. It is stored in the caller's frame.
-    return GetFrameSize() + kVRegSize  // ART method
-                          + (reg_number - number_of_locals) * kVRegSize;
-  } else {
-    // Local is a temporary in this method. It is stored in this method's frame.
-    return GetFrameSize() - FrameEntrySpillSize()
-                          - kVRegSize  // filler.
-                          - (number_of_locals * kVRegSize)
-                          + (reg_number * kVRegSize);
-  }
-}
 
 void CodeGenerator::AllocateRegistersLocally(HInstruction* instruction) const {
   LocationSummary* locations = instruction->GetLocations();
@@ -206,6 +131,13 @@ void CodeGenerator::AllocateRegistersLocally(HInstruction* instruction) const {
       locations->SetTempAt(i, loc);
     }
   }
+
+  // Make all registers available for the return value.
+  for (size_t i = 0, e = GetNumberOfRegisters(); i < e; ++i) {
+    blocked_registers_[i] = false;
+  }
+  SetupBlockedRegisters(blocked_registers_);
+
   Location result_location = locations->Out();
   if (result_location.IsUnallocated()) {
     switch (result_location.GetPolicy()) {
@@ -224,12 +156,6 @@ void CodeGenerator::AllocateRegistersLocally(HInstruction* instruction) const {
 
 void CodeGenerator::InitLocations(HInstruction* instruction) {
   if (instruction->GetLocations() == nullptr) {
-    if (instruction->IsTemporary()) {
-      HInstruction* previous = instruction->GetPrevious();
-      Location temp_location = GetTemporaryLocation(instruction->AsTemporary());
-      Move(previous, temp_location, instruction);
-      previous->GetLocations()->SetOut(temp_location);
-    }
     return;
   }
   AllocateRegistersLocally(instruction);
@@ -265,7 +191,7 @@ CodeGenerator* CodeGenerator::Create(ArenaAllocator* allocator,
       return new (allocator) x86::CodeGeneratorX86(graph);
     }
     case kX86_64: {
-      return new (allocator) x86_64::CodeGeneratorX86_64(graph);
+      return new (allocator) x86::CodeGeneratorX86(graph);
     }
     default:
       return nullptr;

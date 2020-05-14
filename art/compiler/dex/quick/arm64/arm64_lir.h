@@ -95,21 +95,28 @@ namespace art {
  * +========================+
  */
 
+// Offset to distinguish FP regs.
+#define ARM_FP_REG_OFFSET 32
 // First FP callee save.
-#define A64_FP_CALLEE_SAVE_BASE 8
+#define ARM_FP_CALLEE_SAVE_BASE 16
+
+// Mask to strip off fp flags.
+#define ARM_FP_REG_MASK (ARM_FP_REG_OFFSET - 1)
 
 // Temporary macros, used to mark code which wants to distinguish betweek zr/sp.
 #define A64_REG_IS_SP(reg_num) ((reg_num) == rwsp || (reg_num) == rsp)
 #define A64_REG_IS_ZR(reg_num) ((reg_num) == rwzr || (reg_num) == rxzr)
-#define A64_REGSTORAGE_IS_SP_OR_ZR(rs) (((rs).GetRegNum() & 0x1f) == 0x1f)
 
-enum Arm64ResourceEncodingPos {
-  kArm64GPReg0   = 0,
-  kArm64RegLR    = 30,
-  kArm64RegSP    = 31,
-  kArm64FPReg0   = 32,
-  kArm64RegEnd   = 64,
+enum ArmResourceEncodingPos {
+  kArmGPReg0   = 0,
+  kArmRegLR    = 30,
+  kArmRegSP    = 31,
+  kArmFPReg0   = 32,
+  kArmRegEnd   = 64,
 };
+
+#define ENCODE_ARM_REG_SP           (1ULL << kArmRegSP)
+#define ENCODE_ARM_REG_LR           (1ULL << kArmRegLR)
 
 #define IS_SIGNED_IMM(size, value) \
   ((value) >= -(1 << ((size) - 1)) && (value) < (1 << ((size) - 1)))
@@ -127,36 +134,27 @@ enum Arm64ResourceEncodingPos {
   R(24) R(25) R(26) R(27) R(28) R(29) R(30) R(31)
 
 // Registers (integer) values.
+// TODO(Arm64): for now we define rx##nr identically to rw##nr. We should rather define rx##nr as
+// a k64BitSolo. We should do this once the register allocator is ready.
 enum A64NativeRegisterPool {
 #  define A64_DEFINE_REGISTERS(nr) \
     rw##nr = RegStorage::k32BitSolo | RegStorage::kCoreRegister | nr, \
-    rx##nr = RegStorage::k64BitSolo | RegStorage::kCoreRegister | nr, \
+    rx##nr = RegStorage::k32BitSolo | RegStorage::kCoreRegister | nr, \
     rf##nr = RegStorage::k32BitSolo | RegStorage::kFloatingPoint | nr, \
     rd##nr = RegStorage::k64BitSolo | RegStorage::kFloatingPoint | nr,
   A64_REGISTER_CODE_LIST(A64_DEFINE_REGISTERS)
 #undef A64_DEFINE_REGISTERS
 
-  rxzr = RegStorage::k64BitSolo | RegStorage::kCoreRegister | 0x3f,
-  rwzr = RegStorage::k32BitSolo | RegStorage::kCoreRegister | 0x3f,
-  rsp = rx31,
+  // TODO(Arm64): can we change the lines below such that rwzr != rwsp && rxzr != rsp?
+  //   This would be desirable to allow detecting usage-errors in the assembler.
+  rwzr = rw31,
+  rxzr = rx31,
   rwsp = rw31,
-
-  // Aliases which are not defined in "ARM Architecture Reference, register names".
-  rxIP0 = rx16,
-  rxIP1 = rx17,
-  rxSUSPEND = rx19,
-  rxSELF = rx18,
-  rxLR = rx30,
-  /*
-   * FIXME: It's a bit awkward to define both 32 and 64-bit views of these - we'll only ever use
-   * the 64-bit view. However, for now we'll define a 32-bit view to keep these from being
-   * allocated as 32-bit temp registers.
-   */
-  rwIP0 = rw16,
-  rwIP1 = rw17,
-  rwSUSPEND = rw19,
-  rwSELF = rw18,
-  rwLR = rw30,
+  rsp = rx31,
+  rA64_SUSPEND = rx4,
+  rA64_SELF = rx18,
+  rA64_SP = rx31,
+  rA64_LR = rx30
 };
 
 #define A64_DEFINE_REGSTORAGES(nr) \
@@ -167,34 +165,22 @@ enum A64NativeRegisterPool {
 A64_REGISTER_CODE_LIST(A64_DEFINE_REGSTORAGES)
 #undef A64_DEFINE_REGSTORAGES
 
-constexpr RegStorage rs_xzr(RegStorage::kValid | rxzr);
 constexpr RegStorage rs_wzr(RegStorage::kValid | rwzr);
-constexpr RegStorage rs_xIP0(RegStorage::kValid | rxIP0);
-constexpr RegStorage rs_wIP0(RegStorage::kValid | rwIP0);
-constexpr RegStorage rs_xIP1(RegStorage::kValid | rxIP1);
-constexpr RegStorage rs_wIP1(RegStorage::kValid | rwIP1);
-// Reserved registers.
-constexpr RegStorage rs_xSUSPEND(RegStorage::kValid | rxSUSPEND);
-constexpr RegStorage rs_xSELF(RegStorage::kValid | rxSELF);
-constexpr RegStorage rs_sp(RegStorage::kValid | rsp);
-constexpr RegStorage rs_xLR(RegStorage::kValid | rxLR);
-// TODO: eliminate the need for these.
-constexpr RegStorage rs_wSUSPEND(RegStorage::kValid | rwSUSPEND);
-constexpr RegStorage rs_wSELF(RegStorage::kValid | rwSELF);
-constexpr RegStorage rs_wsp(RegStorage::kValid | rwsp);
-constexpr RegStorage rs_wLR(RegStorage::kValid | rwLR);
+constexpr RegStorage rs_xzr(RegStorage::kValid | rxzr);
+constexpr RegStorage rs_rA64_SUSPEND(RegStorage::kValid | rA64_SUSPEND);
+constexpr RegStorage rs_rA64_SELF(RegStorage::kValid | rA64_SELF);
+constexpr RegStorage rs_rA64_SP(RegStorage::kValid | rA64_SP);
+constexpr RegStorage rs_rA64_LR(RegStorage::kValid | rA64_LR);
 
 // RegisterLocation templates return values (following the hard-float calling convention).
 const RegLocation arm_loc_c_return =
     {kLocPhysReg, 0, 0, 0, 0, 0, 0, 0, 1, rs_w0, INVALID_SREG, INVALID_SREG};
-const RegLocation arm_loc_c_return_ref =
-    {kLocPhysReg, 0, 0, 0, 0, 0, 1, 0, 1, rs_x0, INVALID_SREG, INVALID_SREG};
 const RegLocation arm_loc_c_return_wide =
     {kLocPhysReg, 1, 0, 0, 0, 0, 0, 0, 1, rs_x0, INVALID_SREG, INVALID_SREG};
 const RegLocation arm_loc_c_return_float =
-    {kLocPhysReg, 0, 0, 0, 1, 0, 0, 0, 1, rs_f0, INVALID_SREG, INVALID_SREG};
+    {kLocPhysReg, 0, 0, 0, 0, 0, 0, 0, 1, rs_f0, INVALID_SREG, INVALID_SREG};
 const RegLocation arm_loc_c_return_double =
-    {kLocPhysReg, 1, 0, 0, 1, 0, 0, 0, 1, rs_d0, INVALID_SREG, INVALID_SREG};
+    {kLocPhysReg, 1, 0, 0, 0, 0, 0, 0, 1, rs_d0, INVALID_SREG, INVALID_SREG};
 
 /**
  * @brief Shift-type to be applied to a register via EncodeShift().
@@ -221,7 +207,7 @@ enum A64RegExtEncodings {
 };
 
 #define ENCODE_NO_SHIFT (EncodeShift(kA64Lsl, 0))
-#define ENCODE_NO_EXTEND (EncodeExtend(kA64Uxtx, 0))
+
 /*
  * The following enum defines the list of supported A64 instructions by the
  * assembler. Their corresponding EncodingMap positions will be defined in
@@ -231,8 +217,7 @@ enum ArmOpcode {
   kA64First = 0,
   kA64Adc3rrr = kA64First,  // adc [00011010000] rm[20-16] [000000] rn[9-5] rd[4-0].
   kA64Add4RRdT,      // add [s001000100] imm_12[21-10] rn[9-5] rd[4-0].
-  kA64Add4rrro,      // add [00001011000] rm[20-16] imm_6[15-10] rn[9-5] rd[4-0].
-  kA64Add4RRre,      // add [00001011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] rd[4-0].
+  kA64Add4rrro,      // add [00001011000] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] rd[4-0].
   kA64Adr2xd,        // adr [0] immlo[30-29] [10000] immhi[23-5] rd[4-0].
   kA64And3Rrl,       // and [00010010] N[22] imm_r[21-16] imm_s[15-10] rn[9-5] rd[4-0].
   kA64And4rrro,      // and [00001010] shift[23-22] [N=0] rm[20-16] imm_6[15-10] rn[9-5] rd[4-0].
@@ -245,15 +230,12 @@ enum ArmOpcode {
   kA64B1t,           // b   [00010100] offset_26[25-0].
   kA64Cbnz2rt,       // cbnz[00110101] imm_19[23-5] rt[4-0].
   kA64Cbz2rt,        // cbz [00110100] imm_19[23-5] rt[4-0].
-  kA64Cmn3rro,       // cmn [s0101011] shift[23-22] [0] rm[20-16] imm_6[15-10] rn[9-5] [11111].
-  kA64Cmn3Rre,       // cmn [s0101011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] [11111].
+  kA64Cmn3Rro,       // cmn [s0101011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] [11111].
   kA64Cmn3RdT,       // cmn [00110001] shift[23-22] imm_12[21-10] rn[9-5] [11111].
-  kA64Cmp3rro,       // cmp [s1101011] shift[23-22] [0] rm[20-16] imm_6[15-10] rn[9-5] [11111].
-  kA64Cmp3Rre,       // cmp [s1101011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] [11111].
+  kA64Cmp3Rro,       // cmp [s1101011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] [11111].
   kA64Cmp3RdT,       // cmp [01110001] shift[23-22] imm_12[21-10] rn[9-5] [11111].
   kA64Csel4rrrc,     // csel[s0011010100] rm[20-16] cond[15-12] [00] rn[9-5] rd[4-0].
   kA64Csinc4rrrc,    // csinc [s0011010100] rm[20-16] cond[15-12] [01] rn[9-5] rd[4-0].
-  kA64Csinv4rrrc,    // csinv [s1011010100] rm[20-16] cond[15-12] [00] rn[9-5] rd[4-0].
   kA64Csneg4rrrc,    // csneg [s1011010100] rm[20-16] cond[15-12] [01] rn[9-5] rd[4-0].
   kA64Dmb1B,         // dmb [11010101000000110011] CRm[11-8] [10111111].
   kA64Eor3Rrl,       // eor [s10100100] N[22] imm_r[21-16] imm_s[15-10] rn[9-5] rd[4-0].
@@ -267,11 +249,7 @@ enum ArmOpcode {
   kA64Fcvtzs2xf,     // fcvtzs [100111100s111000000000] rn[9-5] rd[4-0].
   kA64Fcvt2Ss,       // fcvt   [0001111000100010110000] rn[9-5] rd[4-0].
   kA64Fcvt2sS,       // fcvt   [0001111001100010010000] rn[9-5] rd[4-0].
-  kA64Fcvtms2ws,     // fcvtms [0001111000110000000000] rn[9-5] rd[4-0].
-  kA64Fcvtms2xS,     // fcvtms [1001111001110000000000] rn[9-5] rd[4-0].
   kA64Fdiv3fff,      // fdiv[000111100s1] rm[20-16] [000110] rn[9-5] rd[4-0].
-  kA64Fmax3fff,      // fmax[000111100s1] rm[20-16] [010010] rn[9-5] rd[4-0].
-  kA64Fmin3fff,      // fmin[000111100s1] rm[20-16] [010110] rn[9-5] rd[4-0].
   kA64Fmov2ff,       // fmov[000111100s100000010000] rn[9-5] rd[4-0].
   kA64Fmov2fI,       // fmov[000111100s1] imm_8[20-13] [10000000] rd[4-0].
   kA64Fmov2sw,       // fmov[0001111000100111000000] rn[9-5] rd[4-0].
@@ -280,9 +258,6 @@ enum ArmOpcode {
   kA64Fmov2xS,       // fmov[1001111001101111000000] rn[9-5] rd[4-0].
   kA64Fmul3fff,      // fmul[000111100s1] rm[20-16] [000010] rn[9-5] rd[4-0].
   kA64Fneg2ff,       // fneg[000111100s100001010000] rn[9-5] rd[4-0].
-  kA64Frintp2ff,     // frintp [000111100s100100110000] rn[9-5] rd[4-0].
-  kA64Frintm2ff,     // frintm [000111100s100101010000] rn[9-5] rd[4-0].
-  kA64Frintn2ff,     // frintn [000111100s100100010000] rn[9-5] rd[4-0].
   kA64Frintz2ff,     // frintz [000111100s100101110000] rn[9-5] rd[4-0].
   kA64Fsqrt2ff,      // fsqrt[000111100s100001110000] rn[9-5] rd[4-0].
   kA64Fsub3fff,      // fsub[000111100s1] rm[20-16] [001110] rn[9-5] rd[4-0].
@@ -301,13 +276,11 @@ enum ArmOpcode {
   kA64Ldr4fXxG,      // ldr [1s111100011] rm[20-16] [011] S[12] [10] rn[9-5] rt[4-0].
   kA64Ldr4rXxG,      // ldr [1s111000011] rm[20-16] [011] S[12] [10] rn[9-5] rt[4-0].
   kA64LdrPost3rXd,   // ldr [1s111000010] imm_9[20-12] [01] rn[9-5] rt[4-0].
-  kA64Ldp4ffXD,      // ldp [0s10110101] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
   kA64Ldp4rrXD,      // ldp [s010100101] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
   kA64LdpPost4rrXD,  // ldp [s010100011] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
   kA64Ldur3fXd,      // ldur[1s111100010] imm_9[20-12] [00] rn[9-5] rt[4-0].
   kA64Ldur3rXd,      // ldur[1s111000010] imm_9[20-12] [00] rn[9-5] rt[4-0].
   kA64Ldxr2rX,       // ldxr[1s00100001011111011111] rn[9-5] rt[4-0].
-  kA64Ldaxr2rX,      // ldaxr[1s00100001011111111111] rn[9-5] rt[4-0].
   kA64Lsl3rrr,       // lsl [s0011010110] rm[20-16] [001000] rn[9-5] rd[4-0].
   kA64Lsr3rrd,       // lsr alias of "ubfm arg0, arg1, arg2, #{31/63}".
   kA64Lsr3rrr,       // lsr [s0011010110] rm[20-16] [001001] rn[9-5] rd[4-0].
@@ -317,12 +290,10 @@ enum ArmOpcode {
   kA64Mov2rr,        // mov [00101010000] rm[20-16] [000000] [11111] rd[4-0].
   kA64Mvn2rr,        // mov [00101010001] rm[20-16] [000000] [11111] rd[4-0].
   kA64Mul3rrr,       // mul [00011011000] rm[20-16] [011111] rn[9-5] rd[4-0].
-  kA64Msub4rrrr,     // msub[s0011011000] rm[20-16] [1] ra[14-10] rn[9-5] rd[4-0].
   kA64Neg3rro,       // neg alias of "sub arg0, rzr, arg1, arg2".
   kA64Orr3Rrl,       // orr [s01100100] N[22] imm_r[21-16] imm_s[15-10] rn[9-5] rd[4-0].
   kA64Orr4rrro,      // orr [s0101010] shift[23-22] [0] rm[20-16] imm_6[15-10] rn[9-5] rd[4-0].
   kA64Ret,           // ret [11010110010111110000001111000000].
-  kA64Rbit2rr,       // rbit [s101101011000000000000] rn[9-5] rd[4-0].
   kA64Rev2rr,        // rev [s10110101100000000001x] rn[9-5] rd[4-0].
   kA64Rev162rr,      // rev16[s101101011000000000001] rn[9-5] rd[4-0].
   kA64Ror3rrr,       // ror [s0011010110] rm[20-16] [001011] rn[9-5] rd[4-0].
@@ -332,11 +303,8 @@ enum ArmOpcode {
   kA64Scvtf2fx,      // scvtf  [100111100s100010000000] rn[9-5] rd[4-0].
   kA64Sdiv3rrr,      // sdiv[s0011010110] rm[20-16] [000011] rn[9-5] rd[4-0].
   kA64Smaddl4xwwx,   // smaddl [10011011001] rm[20-16] [0] ra[14-10] rn[9-5] rd[4-0].
-  kA64Smulh3xxx,     // smulh [10011011010] rm[20-16] [011111] rn[9-5] rd[4-0].
-  kA64Stp4ffXD,      // stp [0s10110100] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
-  kA64Stp4rrXD,      // stp [s010100100] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
+  kA64Stp4rrXD,      // stp [s010100101] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
   kA64StpPost4rrXD,  // stp [s010100010] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
-  kA64StpPre4ffXD,   // stp [0s10110110] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
   kA64StpPre4rrXD,   // stp [s010100110] imm_7[21-15] rt2[14-10] rn[9-5] rt[4-0].
   kA64Str3fXD,       // str [1s11110100] imm_12[21-10] rn[9-5] rt[4-0].
   kA64Str4fXxG,      // str [1s111100001] rm[20-16] [011] S[12] [10] rn[9-5] rt[4-0].
@@ -350,10 +318,8 @@ enum ArmOpcode {
   kA64Stur3fXd,      // stur[1s111100000] imm_9[20-12] [00] rn[9-5] rt[4-0].
   kA64Stur3rXd,      // stur[1s111000000] imm_9[20-12] [00] rn[9-5] rt[4-0].
   kA64Stxr3wrX,      // stxr[11001000000] rs[20-16] [011111] rn[9-5] rt[4-0].
-  kA64Stlxr3wrX,     // stlxr[11001000000] rs[20-16] [111111] rn[9-5] rt[4-0].
   kA64Sub4RRdT,      // sub [s101000100] imm_12[21-10] rn[9-5] rd[4-0].
-  kA64Sub4rrro,      // sub [s1001011000] rm[20-16] imm_6[15-10] rn[9-5] rd[4-0].
-  kA64Sub4RRre,      // sub [s1001011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] rd[4-0].
+  kA64Sub4rrro,      // sub [s1001011001] rm[20-16] option[15-13] imm_3[12-10] rn[9-5] rd[4-0].
   kA64Subs3rRd,      // subs[s111000100] imm_12[21-10] rn[9-5] rd[4-0].
   kA64Tst3rro,       // tst alias of "ands rzr, arg1, arg2, arg3".
   kA64Ubfm4rrdd,     // ubfm[s10100110] N[22] imm_r[21-16] imm_s[15-10] rn[9-5] rd[4-0].
@@ -386,12 +352,14 @@ enum ArmOpcode {
 #define FUNWIDE UNWIDE
 #define IS_FWIDE IS_WIDE
 
+#define OP_KIND_UNWIDE(opcode) (opcode)
+#define OP_KIND_IS_WIDE(opcode) (false)
+
 enum ArmOpDmbOptions {
   kSY = 0xf,
   kST = 0xe,
   kISH = 0xb,
   kISHST = 0xa,
-  kISHLD = 0x9,
   kNSH = 0x7,
   kNSHST = 0x6
 };

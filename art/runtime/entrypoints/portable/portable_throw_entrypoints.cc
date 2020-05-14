@@ -15,7 +15,7 @@
  */
 
 #include "dex_instruction.h"
-#include "entrypoints/entrypoint_utils-inl.h"
+#include "entrypoints/entrypoint_utils.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/object-inl.h"
 
@@ -79,8 +79,8 @@ extern "C" int32_t art_portable_find_catch_block_from_code(mirror::ArtMethod* cu
     return -1;
   }
   mirror::Class* exception_type = exception->GetClass();
-  StackHandleScope<1> hs(self);
-  const DexFile::CodeItem* code_item = current_method->GetCodeItem();
+  MethodHelper mh(current_method);
+  const DexFile::CodeItem* code_item = mh.GetCodeItem();
   DCHECK_LT(ti_offset, code_item->tries_size_);
   const DexFile::TryItem* try_item = DexFile::GetTryItems(*code_item, ti_offset);
 
@@ -97,13 +97,12 @@ extern "C" int32_t art_portable_find_catch_block_from_code(mirror::ArtMethod* cu
       break;
     }
     // Does this catch exception type apply?
-    mirror::Class* iter_exception_type =
-        current_method->GetDexCacheResolvedType(iter_type_idx);
+    mirror::Class* iter_exception_type = mh.GetDexCacheResolvedType(iter_type_idx);
     if (UNLIKELY(iter_exception_type == NULL)) {
       // TODO: check, the verifier (class linker?) should take care of resolving all exception
       //       classes early.
       LOG(WARNING) << "Unresolved exception class when finding catch block: "
-          << current_method->GetTypeDescriptorFromTypeIdx(iter_type_idx);
+          << mh.GetTypeDescriptorFromTypeIdx(iter_type_idx);
     } else if (iter_exception_type->IsAssignableFrom(exception_type)) {
       catch_dex_pc = it.GetHandlerAddress();
       result = iter_index;
@@ -113,11 +112,13 @@ extern "C" int32_t art_portable_find_catch_block_from_code(mirror::ArtMethod* cu
   }
   if (result != -1) {
     // Handler found.
-    Runtime::Current()->GetInstrumentation()->ExceptionCaughtEvent(
-        self, throw_location, current_method, catch_dex_pc, exception);
+    Runtime::Current()->GetInstrumentation()->ExceptionCaughtEvent(self,
+                                                                   throw_location,
+                                                                   current_method,
+                                                                   catch_dex_pc,
+                                                                   exception);
     // If the catch block has no move-exception then clear the exception for it.
-    const Instruction* first_catch_instr = Instruction::At(
-        &current_method->GetCodeItem()->insns_[catch_dex_pc]);
+    const Instruction* first_catch_instr = Instruction::At(&mh.GetCodeItem()->insns_[catch_dex_pc]);
     if (first_catch_instr->Opcode() != Instruction::MOVE_EXCEPTION) {
       self->ClearException();
     }

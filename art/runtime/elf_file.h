@@ -18,7 +18,6 @@
 #define ART_RUNTIME_ELF_FILE_H_
 
 #include <map>
-#include <memory>
 #include <vector>
 
 #include "base/unix_file/fd_file.h"
@@ -26,6 +25,7 @@
 #include "elf_utils.h"
 #include "mem_map.h"
 #include "os.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -41,9 +41,6 @@ extern "C" {
 class ElfFile {
  public:
   static ElfFile* Open(File* file, bool writable, bool program_header_only, std::string* error_msg);
-  // Open with specific mmap flags, Always maps in the whole file, not just the
-  // program header sections.
-  static ElfFile* Open(File* file, int mmap_prot, int mmap_flags, std::string* error_msg);
   ~ElfFile();
 
   // Load segments into memory based on PT_LOAD program headers
@@ -67,20 +64,33 @@ class ElfFile {
   Elf32_Ehdr& GetHeader() const;
 
   Elf32_Word GetProgramHeaderNum() const;
-  Elf32_Phdr* GetProgramHeader(Elf32_Word) const;
+  Elf32_Phdr& GetProgramHeader(Elf32_Word) const;
+  Elf32_Phdr* FindProgamHeaderByType(Elf32_Word type) const;
 
   Elf32_Word GetSectionHeaderNum() const;
-  Elf32_Shdr* GetSectionHeader(Elf32_Word) const;
+  Elf32_Shdr& GetSectionHeader(Elf32_Word) const;
   Elf32_Shdr* FindSectionByType(Elf32_Word type) const;
-  Elf32_Shdr* FindSectionByName(const std::string& name) const;
 
-  Elf32_Shdr* GetSectionNameStringSection() const;
+  Elf32_Shdr& GetSectionNameStringSection() const;
 
   // Find .dynsym using .hash for more efficient lookup than FindSymbolAddress.
   const byte* FindDynamicSymbolAddress(const std::string& symbol_name) const;
 
+  static bool IsSymbolSectionType(Elf32_Word section_type);
   Elf32_Word GetSymbolNum(Elf32_Shdr&) const;
-  Elf32_Sym* GetSymbol(Elf32_Word section_type, Elf32_Word i) const;
+  Elf32_Sym& GetSymbol(Elf32_Word section_type, Elf32_Word i) const;
+
+  // Find symbol in specified table, returning NULL if it is not found.
+  //
+  // If build_map is true, builds a map to speed repeated access. The
+  // map does not included untyped symbol values (aka STT_NOTYPE)
+  // since they can contain duplicates. If build_map is false, the map
+  // will be used if it was already created. Typically build_map
+  // should be set unless only a small number of symbols will be
+  // looked up.
+  Elf32_Sym* FindSymbolByName(Elf32_Word section_type,
+                              const std::string& symbol_name,
+                              bool build_map);
 
   // Find address of symbol in specified table, returning 0 if it is
   // not found. See FindSymbolByName for an explanation of build_map.
@@ -88,12 +98,16 @@ class ElfFile {
                                const std::string& symbol_name,
                                bool build_map);
 
-  // Lookup a string given string section and offset. Returns nullptr for
+  // Lookup a string given string section and offset. Returns NULL for
   // special 0 offset.
   const char* GetString(Elf32_Shdr&, Elf32_Word) const;
 
+  // Lookup a string by section type. Returns NULL for special 0 offset.
+  const char* GetString(Elf32_Word section_type, Elf32_Word) const;
+
   Elf32_Word GetDynamicNum() const;
   Elf32_Dyn& GetDynamic(Elf32_Word) const;
+  Elf32_Word FindDynamicValueByType(Elf32_Sword type) const;
 
   Elf32_Word GetRelNum(Elf32_Shdr&) const;
   Elf32_Rel& GetRel(Elf32_Shdr&, Elf32_Word) const;
@@ -111,7 +125,7 @@ class ElfFile {
  private:
   ElfFile(File* file, bool writable, bool program_header_only);
 
-  bool Setup(int prot, int flags, std::string* error_msg);
+  bool Setup(std::string* error_msg);
 
   bool SetMap(MemMap* map, std::string* error_msg);
 
@@ -126,44 +140,13 @@ class ElfFile {
   Elf32_Word* GetHashSectionStart() const;
   Elf32_Word GetHashBucketNum() const;
   Elf32_Word GetHashChainNum() const;
-  Elf32_Word GetHashBucket(size_t i, bool* ok) const;
-  Elf32_Word GetHashChain(size_t i, bool* ok) const;
+  Elf32_Word GetHashBucket(size_t i) const;
+  Elf32_Word GetHashChain(size_t i) const;
 
   typedef std::map<std::string, Elf32_Sym*> SymbolTable;
   SymbolTable** GetSymbolTable(Elf32_Word section_type);
 
   bool ValidPointer(const byte* start) const;
-
-  const Elf32_Sym* FindDynamicSymbol(const std::string& symbol_name) const;
-
-  // Check that certain sections and their dependencies exist.
-  bool CheckSectionsExist(std::string* error_msg) const;
-
-  // Check that the link of the first section links to the second section.
-  bool CheckSectionsLinked(const byte* source, const byte* target) const;
-
-  // Check whether the offset is in range, and set to target to Begin() + offset if OK.
-  bool CheckAndSet(Elf32_Off offset, const char* label, byte** target, std::string* error_msg);
-
-  // Find symbol in specified table, returning nullptr if it is not found.
-  //
-  // If build_map is true, builds a map to speed repeated access. The
-  // map does not included untyped symbol values (aka STT_NOTYPE)
-  // since they can contain duplicates. If build_map is false, the map
-  // will be used if it was already created. Typically build_map
-  // should be set unless only a small number of symbols will be
-  // looked up.
-  Elf32_Sym* FindSymbolByName(Elf32_Word section_type,
-                              const std::string& symbol_name,
-                              bool build_map);
-
-  Elf32_Phdr* FindProgamHeaderByType(Elf32_Word type) const;
-
-  Elf32_Dyn* FindDynamicByType(Elf32_Sword type) const;
-  Elf32_Word FindDynamicValueByType(Elf32_Sword type) const;
-
-  // Lookup a string by section type. Returns nullptr for special 0 offset.
-  const char* GetString(Elf32_Word section_type, Elf32_Word) const;
 
   const File* const file_;
   const bool writable_;
@@ -171,7 +154,7 @@ class ElfFile {
 
   // ELF header mapping. If program_header_only_ is false, will
   // actually point to the entire elf file.
-  std::unique_ptr<MemMap> map_;
+  UniquePtr<MemMap> map_;
   Elf32_Ehdr* header_;
   std::vector<MemMap*> segments_;
 
@@ -198,8 +181,9 @@ class ElfFile {
   // Support for GDB JIT
   byte* jit_elf_image_;
   JITCodeEntry* jit_gdb_entry_;
-  std::unique_ptr<ElfFile> gdb_file_mapping_;
   void GdbJITSupport();
+  // Is this an OAT file with debug information in it?
+  static constexpr uint32_t kExpectedSectionsInOATFile = 12;
 };
 
 }  // namespace art

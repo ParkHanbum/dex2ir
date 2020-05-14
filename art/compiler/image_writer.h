@@ -20,7 +20,6 @@
 #include <stdint.h>
 
 #include <cstddef>
-#include <memory>
 #include <set>
 #include <string>
 
@@ -31,6 +30,7 @@
 #include "os.h"
 #include "safe_map.h"
 #include "gc/space/space.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -69,11 +69,6 @@ class ImageWriter {
   bool IsImageOffsetAssigned(mirror::Object* object) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   size_t GetImageOffset(mirror::Object* object) const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  static void* GetImageAddressCallback(void* writer, mirror::Object* obj)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return reinterpret_cast<ImageWriter*>(writer)->GetImageAddress(obj);
-  }
 
   mirror::Object* GetImageAddress(mirror::Object* object) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
@@ -154,15 +149,10 @@ class ImageWriter {
   void FixupObject(mirror::Object* orig, mirror::Object* copy)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  // Get quick code for non-resolution/imt_conflict/abstract method.
-  const byte* GetQuickCode(mirror::ArtMethod* method, bool* quick_is_interpreted)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const byte* GetQuickEntryPoint(mirror::ArtMethod* method)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
   // Patches references in OatFile to expect runtime addresses.
-  void PatchOatCodeAndMethods(File* elf_file)
+  void PatchOatCodeAndMethods()
+      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void SetPatchLocation(const CompilerDriver::PatchInformation* patch, uint32_t value)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   const CompilerDriver& compiler_driver_;
@@ -171,7 +161,7 @@ class ImageWriter {
   OatFile* oat_file_;
 
   // Memory mapped for generating the image.
-  std::unique_ptr<MemMap> image_;
+  UniquePtr<MemMap> image_;
 
   // Offset to the free space in image_.
   size_t image_end_;
@@ -180,13 +170,13 @@ class ImageWriter {
   byte* image_begin_;
 
   // Saved hashes (objects are inside of the image so that they don't move).
-  std::vector<std::pair<mirror::Object*, uint32_t>> saved_hashes_;
+  std::vector<std::pair<mirror::Object*, uint32_t> > saved_hashes_;
 
   // Beginning target oat address for the pointers from the output image to its oat file.
   const byte* oat_data_begin_;
 
   // Image bitmap which lets us know where the objects inside of the image reside.
-  std::unique_ptr<gc::accounting::ContinuousSpaceBitmap> image_bitmap_;
+  UniquePtr<gc::accounting::ContinuousSpaceBitmap> image_bitmap_;
 
   // Offset from oat_data_begin_ to the stubs.
   uint32_t interpreter_to_interpreter_bridge_offset_;
@@ -201,7 +191,6 @@ class ImageWriter {
   uint32_t quick_to_interpreter_bridge_offset_;
 
   friend class FixupVisitor;
-  friend class FixupClassVisitor;
   DISALLOW_COPY_AND_ASSIGN(ImageWriter);
 };
 

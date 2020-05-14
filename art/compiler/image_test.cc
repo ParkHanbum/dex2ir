@@ -16,20 +16,18 @@
 
 #include "image.h"
 
-#include <memory>
 #include <string>
 #include <vector>
 
-#include "base/unix_file/fd_file.h"
 #include "common_compiler_test.h"
-#include "elf_fixup.h"
+#include "compiler/elf_fixup.h"
+#include "compiler/image_writer.h"
+#include "compiler/oat_writer.h"
 #include "gc/space/image_space.h"
-#include "image_writer.h"
 #include "lock_word.h"
 #include "mirror/object-inl.h"
-#include "oat_writer.h"
-#include "scoped_thread_state_change.h"
 #include "signal_catcher.h"
+#include "UniquePtr.h"
 #include "utils.h"
 #include "vector_output_stream.h"
 
@@ -44,29 +42,15 @@ class ImageTest : public CommonCompilerTest {
 };
 
 TEST_F(ImageTest, WriteRead) {
-  // Create a generic location tmp file, to be the base of the .art and .oat temporary files.
-  ScratchFile location;
-  ScratchFile image_location(location, ".art");
-
-  std::string image_filename(GetSystemImageFilename(image_location.GetFilename().c_str(),
-                                                    kRuntimeISA));
-  size_t pos = image_filename.rfind('/');
-  CHECK_NE(pos, std::string::npos) << image_filename;
-  std::string image_dir(image_filename, 0, pos);
-  int mkdir_result = mkdir(image_dir.c_str(), 0700);
-  CHECK_EQ(0, mkdir_result) << image_dir;
-  ScratchFile image_file(OS::CreateEmptyFile(image_filename.c_str()));
-
-  std::string oat_filename(image_filename, 0, image_filename.size() - 3);
-  oat_filename += "oat";
-  ScratchFile oat_file(OS::CreateEmptyFile(oat_filename.c_str()));
-
+  // Create a root tmp file, to be the base of the .art and .oat temporary files.
+  ScratchFile tmp;
+  ScratchFile tmp_elf(tmp, "oat");
   {
     {
       jobject class_loader = NULL;
       ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
       TimingLogger timings("ImageTest::WriteRead", false, false);
-      TimingLogger::ScopedTiming t("CompileAll", &timings);
+      timings.StartSplit("CompileAll");
       if (kUsePortableCompiler) {
         // TODO: we disable this for portable so the test executes in a reasonable amount of time.
         //       We shouldn't need to do this.
@@ -77,35 +61,35 @@ TEST_F(ImageTest, WriteRead) {
       }
       compiler_driver_->CompileAll(class_loader, class_linker->GetBootClassPath(), &timings);
 
-      t.NewTiming("WriteElf");
       ScopedObjectAccess soa(Thread::Current());
-      SafeMap<std::string, std::string> key_value_store;
-      OatWriter oat_writer(class_linker->GetBootClassPath(), 0, 0, 0, compiler_driver_.get(), &timings,
-                           &key_value_store);
+      OatWriter oat_writer(class_linker->GetBootClassPath(),
+                           0, 0, "", compiler_driver_.get(), &timings);
       bool success = compiler_driver_->WriteElf(GetTestAndroidRoot(),
                                                 !kIsTargetBuild,
                                                 class_linker->GetBootClassPath(),
                                                 &oat_writer,
-                                                oat_file.GetFile());
+                                                tmp_elf.GetFile());
       ASSERT_TRUE(success);
+      timings.EndSplit();
     }
   }
-  // Workound bug that mcld::Linker::emit closes oat_file by reopening as dup_oat.
-  std::unique_ptr<File> dup_oat(OS::OpenFileReadWrite(oat_file.GetFilename().c_str()));
-  ASSERT_TRUE(dup_oat.get() != NULL);
+  // Workound bug that mcld::Linker::emit closes tmp_elf by reopening as tmp_oat.
+  UniquePtr<File> tmp_oat(OS::OpenFileReadWrite(tmp_elf.GetFilename().c_str()));
+  ASSERT_TRUE(tmp_oat.get() != NULL);
 
+  ScratchFile tmp_image(tmp, "art");
   const uintptr_t requested_image_base = ART_BASE_ADDRESS;
   {
     ImageWriter writer(*compiler_driver_.get());
-    bool success_image = writer.Write(image_file.GetFilename(), requested_image_base,
-                                      dup_oat->GetPath(), dup_oat->GetPath());
+    bool success_image = writer.Write(tmp_image.GetFilename(), requested_image_base,
+                                      tmp_oat->GetPath(), tmp_oat->GetPath());
     ASSERT_TRUE(success_image);
-    bool success_fixup = ElfFixup::Fixup(dup_oat.get(), writer.GetOatDataBegin());
+    bool success_fixup = ElfFixup::Fixup(tmp_oat.get(), writer.GetOatDataBegin());
     ASSERT_TRUE(success_fixup);
   }
 
   {
-    std::unique_ptr<File> file(OS::OpenFileForReading(image_file.GetFilename().c_str()));
+    UniquePtr<File> file(OS::OpenFileForReading(tmp_image.GetFilename().c_str()));
     ASSERT_TRUE(file.get() != NULL);
     ImageHeader image_header;
     file->ReadFully(&image_header, sizeof(image_header));
@@ -123,7 +107,7 @@ TEST_F(ImageTest, WriteRead) {
   }
 
   ASSERT_TRUE(compiler_driver_->GetImageClasses() != NULL);
-  std::set<std::string> image_classes(*compiler_driver_->GetImageClasses());
+  CompilerDriver::DescriptorSet image_classes(*compiler_driver_->GetImageClasses());
 
   // Need to delete the compiler since it has worker threads which are attached to runtime.
   compiler_driver_.reset();
@@ -132,17 +116,19 @@ TEST_F(ImageTest, WriteRead) {
   runtime_.reset();
   java_lang_dex_file_ = NULL;
 
-  std::unique_ptr<const DexFile> dex(LoadExpectSingleDexFile(GetLibCoreDexFileName().c_str()));
+  std::string error_msg;
+  UniquePtr<const DexFile> dex(DexFile::Open(GetLibCoreDexFileName().c_str(),
+                                             GetLibCoreDexFileName().c_str(),
+                                             &error_msg));
+  ASSERT_TRUE(dex.get() != nullptr) << error_msg;
 
   // Remove the reservation of the memory for use to load the image.
   UnreserveImageSpace();
 
-  RuntimeOptions options;
+  Runtime::Options options;
   std::string image("-Ximage:");
-  image.append(image_location.GetFilename());
+  image.append(tmp_image.GetFilename());
   options.push_back(std::make_pair(image.c_str(), reinterpret_cast<void*>(NULL)));
-  // By default the compiler this creates will not include patch information.
-  options.push_back(std::make_pair("-Xnorelocate", nullptr));
 
   if (!Runtime::Create(options, false)) {
     LOG(FATAL) << "Failed to create runtime";
@@ -180,11 +166,6 @@ TEST_F(ImageTest, WriteRead) {
     }
     EXPECT_TRUE(Monitor::IsValidLockWord(klass->GetLockWord(false)));
   }
-
-  image_file.Unlink();
-  oat_file.Unlink();
-  int rmdir_result = rmdir(image_dir.c_str());
-  CHECK_EQ(0, rmdir_result);
 }
 
 TEST_F(ImageTest, ImageHeaderIsValid) {

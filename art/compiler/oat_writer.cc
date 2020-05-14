@@ -22,7 +22,6 @@
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"
 #include "class_linker.h"
-#include "compiled_class.h"
 #include "dex_file-inl.h"
 #include "dex/verification_results.h"
 #include "gc/space/space.h"
@@ -50,21 +49,19 @@ namespace art {
 OatWriter::OatWriter(const std::vector<const DexFile*>& dex_files,
                      uint32_t image_file_location_oat_checksum,
                      uintptr_t image_file_location_oat_begin,
-                     int32_t image_patch_delta,
+                     const std::string& image_file_location,
                      const CompilerDriver* compiler,
-                     TimingLogger* timings,
-                     SafeMap<std::string, std::string>* key_value_store)
+                     TimingLogger* timings)
   : compiler_driver_(compiler),
     dex_files_(&dex_files),
     image_file_location_oat_checksum_(image_file_location_oat_checksum),
     image_file_location_oat_begin_(image_file_location_oat_begin),
-    image_patch_delta_(image_patch_delta),
-    key_value_store_(key_value_store),
+    image_file_location_(image_file_location),
     oat_header_(NULL),
     size_dex_file_alignment_(0),
     size_executable_offset_alignment_(0),
     size_oat_header_(0),
-    size_oat_header_key_value_store_(0),
+    size_oat_header_image_file_location_(0),
     size_dex_file_(0),
     size_interpreter_to_interpreter_bridge_(0),
     size_interpreter_to_compiled_code_bridge_(0),
@@ -92,43 +89,39 @@ OatWriter::OatWriter(const std::vector<const DexFile*>& dex_files,
     size_oat_class_status_(0),
     size_oat_class_method_bitmaps_(0),
     size_oat_class_method_offsets_(0) {
-  CHECK(key_value_store != nullptr);
-
   size_t offset;
   {
-    TimingLogger::ScopedTiming split("InitOatHeader", timings);
+    TimingLogger::ScopedSplit split("InitOatHeader", timings);
     offset = InitOatHeader();
   }
   {
-    TimingLogger::ScopedTiming split("InitOatDexFiles", timings);
+    TimingLogger::ScopedSplit split("InitOatDexFiles", timings);
     offset = InitOatDexFiles(offset);
   }
   {
-    TimingLogger::ScopedTiming split("InitDexFiles", timings);
+    TimingLogger::ScopedSplit split("InitDexFiles", timings);
     offset = InitDexFiles(offset);
   }
   {
-    TimingLogger::ScopedTiming split("InitOatClasses", timings);
+    TimingLogger::ScopedSplit split("InitOatClasses", timings);
     offset = InitOatClasses(offset);
   }
   {
-    TimingLogger::ScopedTiming split("InitOatMaps", timings);
+    TimingLogger::ScopedSplit split("InitOatMaps", timings);
     offset = InitOatMaps(offset);
   }
   {
-    TimingLogger::ScopedTiming split("InitOatCode", timings);
+    TimingLogger::ScopedSplit split("InitOatCode", timings);
     offset = InitOatCode(offset);
   }
   {
-    TimingLogger::ScopedTiming split("InitOatCodeDexFiles", timings);
+    TimingLogger::ScopedSplit split("InitOatCodeDexFiles", timings);
     offset = InitOatCodeDexFiles(offset);
   }
   size_ = offset;
 
   CHECK_EQ(dex_files_->size(), oat_dex_files_.size());
-  CHECK_EQ(compiler->IsImage(),
-           key_value_store_->find(OatHeader::kImageLocationKey) == key_value_store_->end());
-  CHECK_ALIGNED(image_patch_delta_, kPageSize);
+  CHECK(image_file_location.empty() == compiler->IsImage());
 }
 
 OatWriter::~OatWriter() {
@@ -357,16 +350,33 @@ class OatWriter::InitCodeMethodVisitor : public OatDexMethodVisitor {
         uint32_t thumb_offset = compiled_method->CodeDelta();
         quick_code_offset = offset_ + sizeof(OatQuickMethodHeader) + thumb_offset;
 
-        bool force_debug_capture = false;
-        bool deduped = false;
+        std::vector<uint8_t>* cfi_info = writer_->compiler_driver_->GetCallFrameInformation();
+        if (cfi_info != nullptr) {
+          // Copy in the FDE, if present
+          const std::vector<uint8_t>* fde = compiled_method->GetCFIInfo();
+          if (fde != nullptr) {
+            // Copy the information into cfi_info and then fix the address in the new copy.
+            int cur_offset = cfi_info->size();
+            cfi_info->insert(cfi_info->end(), fde->begin(), fde->end());
+
+            // Set the 'initial_location' field to address the start of the method.
+            uint32_t new_value = quick_code_offset - writer_->oat_header_->GetExecutableOffset();
+            uint32_t offset_to_update = cur_offset + 2*sizeof(uint32_t);
+            (*cfi_info)[offset_to_update+0] = new_value;
+            (*cfi_info)[offset_to_update+1] = new_value >> 8;
+            (*cfi_info)[offset_to_update+2] = new_value >> 16;
+            (*cfi_info)[offset_to_update+3] = new_value >> 24;
+            std::string name = PrettyMethod(it.GetMemberIndex(), *dex_file_, false);
+            writer_->method_info_.push_back(DebugInfo(name, new_value, new_value + code_size));
+          }
+        }
 
         // Deduplicate code arrays.
-        auto lb = dedupe_map_.lower_bound(compiled_method);
-        if (lb != dedupe_map_.end() && !dedupe_map_.key_comp()(compiled_method, lb->first)) {
-          quick_code_offset = lb->second;
-          deduped = true;
+        auto code_iter = dedupe_map_.find(compiled_method);
+        if (code_iter != dedupe_map_.end()) {
+          quick_code_offset = code_iter->second;
         } else {
-          dedupe_map_.PutBefore(lb, compiled_method, quick_code_offset);
+          dedupe_map_.Put(compiled_method, quick_code_offset);
         }
 
         // Update quick method header.
@@ -393,54 +403,11 @@ class OatWriter::InitCodeMethodVisitor : public OatDexMethodVisitor {
                                               code_size);
 
         // Update checksum if this wasn't a duplicate.
-        if (!deduped) {
+        if (code_iter == dedupe_map_.end()) {
           writer_->oat_header_->UpdateChecksum(method_header, sizeof(*method_header));
           offset_ += sizeof(*method_header);  // Method header is prepended before code.
           writer_->oat_header_->UpdateChecksum(&(*quick_code)[0], code_size);
           offset_ += code_size;
-        }
-
-        uint32_t quick_code_start = quick_code_offset - writer_->oat_header_->GetExecutableOffset();
-        std::vector<uint8_t>* cfi_info = writer_->compiler_driver_->GetCallFrameInformation();
-        if (cfi_info != nullptr) {
-          // Copy in the FDE, if present
-          const std::vector<uint8_t>* fde = compiled_method->GetCFIInfo();
-          if (fde != nullptr) {
-            // Copy the information into cfi_info and then fix the address in the new copy.
-            int cur_offset = cfi_info->size();
-            cfi_info->insert(cfi_info->end(), fde->begin(), fde->end());
-
-            // Set the 'CIE_pointer' field to cur_offset+4.
-            uint32_t CIE_pointer = cur_offset + 4;
-            uint32_t offset_to_update = cur_offset + sizeof(uint32_t);
-            (*cfi_info)[offset_to_update+0] = CIE_pointer;
-            (*cfi_info)[offset_to_update+1] = CIE_pointer >> 8;
-            (*cfi_info)[offset_to_update+2] = CIE_pointer >> 16;
-            (*cfi_info)[offset_to_update+3] = CIE_pointer >> 24;
-
-            // Set the 'initial_location' field to address the start of the method.
-            offset_to_update = cur_offset + 2*sizeof(uint32_t);
-            (*cfi_info)[offset_to_update+0] = quick_code_start;
-            (*cfi_info)[offset_to_update+1] = quick_code_start >> 8;
-            (*cfi_info)[offset_to_update+2] = quick_code_start >> 16;
-            (*cfi_info)[offset_to_update+3] = quick_code_start >> 24;
-            force_debug_capture = true;
-          }
-        }
-
-
-        if (writer_->compiler_driver_->DidIncludeDebugSymbols() || force_debug_capture) {
-          // Record debug information for this function if we are doing that or
-          // we have CFI and so need it.
-          std::string name = PrettyMethod(it.GetMemberIndex(), *dex_file_, true);
-          if (deduped) {
-            // TODO We should place the DEDUPED tag on the first instance of a
-            // deduplicated symbol so that it will show up in a debuggerd crash
-            // report.
-            name += " [ DEDUPED ]";
-          }
-          writer_->method_info_.push_back(DebugInfo(name, quick_code_start,
-                                                    quick_code_start + code_size));
         }
       }
 
@@ -459,7 +426,7 @@ class OatWriter::InitCodeMethodVisitor : public OatDexMethodVisitor {
         }
         const std::vector<uint8_t>& gc_map = compiled_method->GetGcMap();
         size_t gc_map_size = gc_map.size() * sizeof(gc_map[0]);
-        bool is_native = it.MemberIsNative();
+        bool is_native = (it.GetMemberAccessFlags() & kAccNative) != 0;
         CHECK(gc_map_size != 0 || is_native || status < mirror::Class::kStatusVerified)
             << &gc_map << " " << gc_map_size << " " << (is_native ? "true" : "false") << " "
             << (status < mirror::Class::kStatusVerified) << " " << status << " "
@@ -500,12 +467,12 @@ class OatWriter::InitMapMethodVisitor : public OatDexMethodVisitor {
       const std::vector<uint8_t>* map = DataAccess::GetData(compiled_method);
       uint32_t map_size = map->size() * sizeof((*map)[0]);
       if (map_size != 0u) {
-        auto lb = dedupe_map_.lower_bound(map);
-        if (lb != dedupe_map_.end() && !dedupe_map_.key_comp()(map, lb->first)) {
-          DataAccess::SetOffset(oat_class, method_offsets_index_, lb->second);
+        auto it = dedupe_map_.find(map);
+        if (it != dedupe_map_.end()) {
+          DataAccess::SetOffset(oat_class, method_offsets_index_, it->second);
         } else {
           DataAccess::SetOffset(oat_class, method_offsets_index_, offset_);
-          dedupe_map_.PutBefore(lb, map, offset_);
+          dedupe_map_.Put(map, offset_);
           offset_ += map_size;
           writer_->oat_header_->UpdateChecksum(&(*map)[0], map_size);
         }
@@ -546,11 +513,10 @@ class OatWriter::InitImageMethodVisitor : public OatDexMethodVisitor {
     ScopedObjectAccessUnchecked soa(Thread::Current());
     StackHandleScope<2> hs(soa.Self());
     Handle<mirror::DexCache> dex_cache(hs.NewHandle(linker->FindDexCache(*dex_file_)));
+    auto class_loader = hs.NewHandle<mirror::ClassLoader>(nullptr);
     mirror::ArtMethod* method = linker->ResolveMethod(*dex_file_, it.GetMemberIndex(), dex_cache,
-                                                      NullHandle<mirror::ClassLoader>(),
-                                                      NullHandle<mirror::ArtMethod>(),
-                                                      invoke_type);
-    CHECK(method != NULL) << PrettyMethod(it.GetMemberIndex(), *dex_file_, true);
+                                                      class_loader, nullptr, invoke_type);
+    CHECK(method != NULL);
     // Portable code offsets are set by ElfWriterMclinker::FixupCompiledCodeOffset after linking.
     method->SetQuickOatCodeOffset(offsets.code_offset_);
     method->SetOatNativeGcMapOffset(offsets.gc_map_offset_);
@@ -731,14 +697,16 @@ bool OatWriter::VisitDexMethods(DexMethodVisitor* visitor) {
 }
 
 size_t OatWriter::InitOatHeader() {
-  oat_header_ = OatHeader::Create(compiler_driver_->GetInstructionSet(),
-                                  compiler_driver_->GetInstructionSetFeatures(),
-                                  dex_files_,
-                                  image_file_location_oat_checksum_,
-                                  image_file_location_oat_begin_,
-                                  key_value_store_);
-
-  return oat_header_->GetHeaderSize();
+  // create the OatHeader
+  oat_header_ = new OatHeader(compiler_driver_->GetInstructionSet(),
+                              compiler_driver_->GetInstructionSetFeatures(),
+                              dex_files_,
+                              image_file_location_oat_checksum_,
+                              image_file_location_oat_begin_,
+                              image_file_location_);
+  size_t offset = sizeof(*oat_header_);
+  offset += image_file_location_.size();
+  return offset;
 }
 
 size_t OatWriter::InitOatDexFiles(size_t offset) {
@@ -813,19 +781,16 @@ size_t OatWriter::InitOatMaps(size_t offset) {
 size_t OatWriter::InitOatCode(size_t offset) {
   // calculate the offsets within OatHeader to executable code
   size_t old_offset = offset;
-  size_t adjusted_offset = offset;
   // required to be on a new page boundary
   offset = RoundUp(offset, kPageSize);
   oat_header_->SetExecutableOffset(offset);
   size_executable_offset_alignment_ = offset - old_offset;
   if (compiler_driver_->IsImage()) {
-    CHECK_EQ(image_patch_delta_, 0);
     InstructionSet instruction_set = compiler_driver_->GetInstructionSet();
 
     #define DO_TRAMPOLINE(field, fn_name) \
       offset = CompiledCode::AlignCode(offset, instruction_set); \
-      adjusted_offset = offset + CompiledCode::CodeDelta(instruction_set); \
-      oat_header_->Set ## fn_name ## Offset(adjusted_offset); \
+      oat_header_->Set ## fn_name ## Offset(offset); \
       field.reset(compiler_driver_->Create ## fn_name()); \
       offset += field->size();
 
@@ -852,7 +817,6 @@ size_t OatWriter::InitOatCode(size_t offset) {
     oat_header_->SetQuickImtConflictTrampolineOffset(0);
     oat_header_->SetQuickResolutionTrampolineOffset(0);
     oat_header_->SetQuickToInterpreterBridgeOffset(0);
-    oat_header_->SetImagePatchDelta(image_patch_delta_);
   }
   return offset;
 }
@@ -879,13 +843,17 @@ size_t OatWriter::InitOatCodeDexFiles(size_t offset) {
 bool OatWriter::Write(OutputStream* out) {
   const size_t file_offset = out->Seek(0, kSeekCurrent);
 
-  size_t header_size = oat_header_->GetHeaderSize();
-  if (!out->WriteFully(oat_header_, header_size)) {
+  if (!out->WriteFully(oat_header_, sizeof(*oat_header_))) {
     PLOG(ERROR) << "Failed to write oat header to " << out->GetLocation();
     return false;
   }
-  size_oat_header_ += sizeof(OatHeader);
-  size_oat_header_key_value_store_ += oat_header_->GetHeaderSize() - sizeof(OatHeader);
+  size_oat_header_ += sizeof(*oat_header_);
+
+  if (!out->WriteFully(image_file_location_.data(), image_file_location_.size())) {
+    PLOG(ERROR) << "Failed to write oat header image file location to " << out->GetLocation();
+    return false;
+  }
+  size_oat_header_image_file_location_ += image_file_location_.size();
 
   if (!WriteTables(out, file_offset)) {
     LOG(ERROR) << "Failed to write oat tables to " << out->GetLocation();
@@ -920,7 +888,7 @@ bool OatWriter::Write(OutputStream* out) {
     DO_STAT(size_dex_file_alignment_);
     DO_STAT(size_executable_offset_alignment_);
     DO_STAT(size_oat_header_);
-    DO_STAT(size_oat_header_key_value_store_);
+    DO_STAT(size_oat_header_image_file_location_);
     DO_STAT(size_dex_file_);
     DO_STAT(size_interpreter_to_interpreter_bridge_);
     DO_STAT(size_interpreter_to_compiled_code_bridge_);

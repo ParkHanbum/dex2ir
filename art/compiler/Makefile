@@ -15,13 +15,14 @@
 #
 
 include $(srcdir)/Makefile.include
+include $(srcdir)/art/build/Android.common.mk
 
 srcdir := $(CURDIR)
 objdir := $(CURDIR)
 
+
 LIBART_COMPILER_SRC_FILES := \
 	compiled_method.cc \
-	dex/global_value_numbering.cc \
 	dex/local_value_numbering.cc \
 	dex/quick/arm/assemble_arm.cc \
 	dex/quick/arm/call_arm.cc \
@@ -50,7 +51,6 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/quick/mips/utility_mips.cc \
 	dex/quick/mir_to_lir.cc \
 	dex/quick/ralloc_util.cc \
-	dex/quick/resource_mask.cc \
 	dex/quick/x86/assemble_x86.cc \
 	dex/quick/x86/call_x86.cc \
 	dex/quick/x86/fp_x86.cc \
@@ -62,10 +62,9 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/mir_field_info.cc \
 	dex/mir_method_info.cc \
 	dex/mir_optimization.cc \
+	dex/pass_driver.cc \
 	dex/bb_optimizations.cc \
-	dex/post_opt_passes.cc \
-	dex/pass_driver_me_opts.cc \
-	dex/pass_driver_me_post_opt.cc \
+	dex/bit_vector_block_iterator.cc \
 	dex/frontend.cc \
 	dex/mir_graph.cc \
 	dex/mir_analysis.cc \
@@ -73,7 +72,6 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/verification_results.cc \
 	dex/vreg_analysis.cc \
 	dex/ssa_transformation.cc \
-	dex/quick_compiler_callbacks.cc \
 	driver/compiler_driver.cc \
 	driver/dex_compilation_unit.cc \
 	jni/quick/arm/calling_convention_arm.cc \
@@ -87,23 +85,15 @@ LIBART_COMPILER_SRC_FILES := \
 	optimizing/code_generator.cc \
 	optimizing/code_generator_arm.cc \
 	optimizing/code_generator_x86.cc \
-	optimizing/code_generator_x86_64.cc \
 	optimizing/graph_visualizer.cc \
-	optimizing/locations.cc \
 	optimizing/nodes.cc \
 	optimizing/optimizing_compiler.cc \
-	optimizing/parallel_move_resolver.cc \
-	optimizing/register_allocator.cc \
 	optimizing/ssa_builder.cc \
 	optimizing/ssa_liveness_analysis.cc \
-	optimizing/ssa_phi_elimination.cc \
-	optimizing/ssa_type_propagation.cc \
 	trampolines/trampoline_compiler.cc \
 	utils/arena_allocator.cc \
 	utils/arena_bit_vector.cc \
 	utils/arm/assembler_arm.cc \
-	utils/arm/assembler_arm32.cc \
-	utils/arm/assembler_thumb2.cc \
 	utils/arm/managed_register_arm.cc \
 	utils/arm64/assembler_arm64.cc \
 	utils/arm64/managed_register_arm64.cc \
@@ -119,7 +109,6 @@ LIBART_COMPILER_SRC_FILES := \
 	compilers.cc \
 	compiler.cc \
 	elf_fixup.cc \
-	elf_patcher.cc \
 	elf_stripper.cc \
 	elf_writer.cc \
 	elf_writer_quick.cc \
@@ -128,21 +117,43 @@ LIBART_COMPILER_SRC_FILES := \
 	oat_writer.cc \
 	vector_output_stream.cc
 
-LIBART_COMPILER_CFLAGS :=
-ifeq ($(ART_USE_PORTABLE_COMPILER),true)
-  LIBART_COMPILER_SRC_FILES += elf_writer_mclinker.cc
-  LIBART_COMPILER_CFLAGS += -DART_USE_PORTABLE_COMPILER=1
+ifeq ($(ART_SEA_IR_MODE),true)
+LIBART_COMPILER_SRC_FILES += \
+	sea_ir/frontend.cc \
+	sea_ir/ir/instruction_tools.cc \
+	sea_ir/ir/sea.cc \
+	sea_ir/code_gen/code_gen.cc \
+	sea_ir/code_gen/code_gen_data.cc \
+	sea_ir/types/type_inference.cc \
+	sea_ir/types/type_inference_visitor.cc \
+	sea_ir/debug/dot_gen.cc
 endif
 
-OPERATOR_OUT_HEADER_FILES := \
+LIBART_COMPILER_SRC_FILES += \
+	dex/portable/mir_to_gbc.cc \
+	elf_writer_mclinker.cc \
+	jni/portable/jni_compiler.cc \
+	llvm/compiler_llvm.cc \
+	llvm/gbc_expander.cc \
+	llvm/generated/art_module.cc \
+	llvm/intrinsic_helper.cc \
+	llvm/ir_builder.cc \
+	llvm/llvm_compilation_unit.cc \
+	llvm/md_builder.cc \
+	llvm/runtime_support_builder.cc \
+	llvm/runtime_support_builder_arm.cc \
+	llvm/runtime_support_builder_x86.cc
+
+LIBART_COMPILER_ENUM_OPERATOR_OUT_HEADER_FILES := \
 	dex/compiler_enums.h
 
+# ART_USE_PORTABLE_COMPILER indicates whether to use the LLVM compiler.
 LIBARTC_CFLAGS := -I$(srcdir) -I$(LIBLLVM_HDRS) -I$(LLVM_CONFIG) -I$(srcdir)/dex/portable
 LIBARTC_CFLAGS += -I$(LIBRUNTIME_HDRS) -I$(LIBNATIVEHELPER_HDRS) 
 LIBARTC_CFLAGS += -I$(srcdir)/dex
-LIBARTC_CFLAGS += -DART_USE_PORTABLE_COMPILER=1 -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
 LIBARTC_CFLAGS += $(CXXFLAGS)
-LIBARTC_CFLAGS += $(ANDROID_CONFIG_CXXFLAGS)
+
+LIBARTC_CFLAGS += -DART_USE_PORTABLE_COMPILER=1 -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS
 
 
 GENERATED_SRC := generated_out.cc

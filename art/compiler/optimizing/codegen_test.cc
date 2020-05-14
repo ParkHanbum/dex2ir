@@ -42,29 +42,10 @@ class InternalCodeAllocator : public CodeAllocator {
 
  private:
   size_t size_;
-  std::unique_ptr<uint8_t[]> memory_;
+  UniquePtr<uint8_t[]> memory_;
 
   DISALLOW_COPY_AND_ASSIGN(InternalCodeAllocator);
 };
-
-#if defined(__i386__) || defined(__arm__) || defined(__x86_64__)
-static void Run(const InternalCodeAllocator& allocator,
-                const CodeGenerator& codegen,
-                bool has_result,
-                int32_t expected) {
-  typedef int32_t (*fptr)();
-  CommonCompilerTest::MakeExecutable(allocator.GetMemory(), allocator.GetSize());
-  fptr f = reinterpret_cast<fptr>(allocator.GetMemory());
-  if (codegen.GetInstructionSet() == kThumb2) {
-    // For thumb we need the bottom bit set.
-    f = reinterpret_cast<fptr>(reinterpret_cast<uintptr_t>(f) + 1);
-  }
-  int32_t result = f();
-  if (has_result) {
-    CHECK_EQ(result, expected);
-  }
-}
-#endif
 
 static void TestCode(const uint16_t* data, bool has_result = false, int32_t expected = 0) {
   ArenaPool pool;
@@ -74,25 +55,24 @@ static void TestCode(const uint16_t* data, bool has_result = false, int32_t expe
   HGraph* graph = builder.BuildGraph(*item);
   ASSERT_NE(graph, nullptr);
   InternalCodeAllocator allocator;
-
   CodeGenerator* codegen = CodeGenerator::Create(&arena, graph, kX86);
-  // We avoid doing a stack overflow check that requires the runtime being setup,
-  // by making sure the compiler knows the methods we are running are leaf methods.
-  codegen->CompileBaseline(&allocator, true);
+  codegen->Compile(&allocator);
+  typedef int32_t (*fptr)();
 #if defined(__i386__)
-  Run(allocator, *codegen, has_result, expected);
+  CommonCompilerTest::MakeExecutable(allocator.GetMemory(), allocator.GetSize());
+  int32_t result = reinterpret_cast<fptr>(allocator.GetMemory())();
+  if (has_result) {
+    CHECK_EQ(result, expected);
+  }
 #endif
-
   codegen = CodeGenerator::Create(&arena, graph, kArm);
-  codegen->CompileBaseline(&allocator, true);
+  codegen->Compile(&allocator);
 #if defined(__arm__)
-  Run(allocator, *codegen, has_result, expected);
-#endif
-
-  codegen = CodeGenerator::Create(&arena, graph, kX86_64);
-  codegen->CompileBaseline(&allocator, true);
-#if defined(__x86_64__)
-  Run(allocator, *codegen, has_result, expected);
+  CommonCompilerTest::MakeExecutable(allocator.GetMemory(), allocator.GetSize());
+  int32_t result = reinterpret_cast<fptr>(allocator.GetMemory())();
+  if (has_result) {
+    CHECK_EQ(result, expected);
+  }
 #endif
 }
 

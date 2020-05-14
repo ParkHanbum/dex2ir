@@ -29,11 +29,7 @@
 
 namespace art {
 
-void FaultManager::HandleNestedSignal(int sig, siginfo_t* info, void* context) {
-}
-
-void FaultManager::GetMethodAndReturnPcAndSp(siginfo_t* siginfo, void* context,
-                                             mirror::ArtMethod** out_method,
+void FaultManager::GetMethodAndReturnPCAndSP(void* context, mirror::ArtMethod** out_method,
                                              uintptr_t* out_return_pc, uintptr_t* out_sp) {
 }
 

@@ -17,7 +17,6 @@
 #ifndef ART_RUNTIME_PROFILER_H_
 #define ART_RUNTIME_PROFILER_H_
 
-#include <memory>
 #include <ostream>
 #include <set>
 #include <string>
@@ -28,10 +27,9 @@
 #include "base/mutex.h"
 #include "globals.h"
 #include "instrumentation.h"
-#include "profiler_options.h"
 #include "os.h"
 #include "safe_map.h"
-#include "method_reference.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -40,57 +38,6 @@ namespace mirror {
   class Class;
 }  // namespace mirror
 class Thread;
-
-typedef std::pair<mirror::ArtMethod*, uint32_t> InstructionLocation;
-
-// This class stores the sampled bounded stacks in a trie structure. A path of the trie represents
-// a particular context with the method on top of the stack being a leaf or an internal node of the
-// trie rather than the root.
-class StackTrieNode {
- public:
-  StackTrieNode(MethodReference method, uint32_t dex_pc, uint32_t method_size,
-      StackTrieNode* parent) :
-      parent_(parent), method_(method), dex_pc_(dex_pc),
-      count_(0), method_size_(method_size) {
-  }
-  StackTrieNode() : parent_(nullptr), method_(nullptr, 0),
-      dex_pc_(0), count_(0), method_size_(0) {
-  }
-  StackTrieNode* GetParent() { return parent_; }
-  MethodReference GetMethod() { return method_; }
-  uint32_t GetCount() { return count_; }
-  uint32_t GetDexPC() { return dex_pc_; }
-  uint32_t GetMethodSize() { return method_size_; }
-  void AppendChild(StackTrieNode* child) { children_.insert(child); }
-  StackTrieNode* FindChild(MethodReference method, uint32_t dex_pc);
-  void DeleteChildren();
-  void IncreaseCount() { ++count_; }
-
- private:
-  // Comparator for stack trie node.
-  struct StackTrieNodeComparator {
-    bool operator()(StackTrieNode* node1, StackTrieNode* node2) const {
-      MethodReference mr1 = node1->GetMethod();
-      MethodReference mr2 = node2->GetMethod();
-      if (mr1.dex_file == mr2.dex_file) {
-        if (mr1.dex_method_index == mr2.dex_method_index) {
-          return node1->GetDexPC() < node2->GetDexPC();
-        } else {
-          return mr1.dex_method_index < mr2.dex_method_index;
-        }
-      } else {
-        return mr1.dex_file < mr2.dex_file;
-      }
-    }
-  };
-
-  std::set<StackTrieNode*, StackTrieNodeComparator> children_;
-  StackTrieNode* parent_;
-  MethodReference method_;
-  uint32_t dex_pc_;
-  uint32_t count_;
-  uint32_t method_size_;
-};
 
 //
 // This class holds all the results for all runs of the profiler.  It also
@@ -105,9 +52,8 @@ class ProfileSampleResults {
   ~ProfileSampleResults();
 
   void Put(mirror::ArtMethod* method);
-  void PutStack(const std::vector<InstructionLocation>& stack_dump);
-  uint32_t Write(std::ostream &os, ProfileDataType type);
-  void ReadPrevious(int fd, ProfileDataType type);
+  uint32_t Write(std::ostream &os);
+  void ReadPrevious(int fd);
   void Clear();
   uint32_t GetNumSamples() { return num_samples_; }
   void NullMethod() { ++num_null_methods_; }
@@ -116,29 +62,19 @@ class ProfileSampleResults {
  private:
   uint32_t Hash(mirror::ArtMethod* method);
   static constexpr int kHashSize = 17;
-  Mutex& lock_;                  // Reference to the main profiler lock - we don't need two of them.
-  uint32_t num_samples_;         // Total number of samples taken.
-  uint32_t num_null_methods_;    // Number of samples where can don't know the method.
-  uint32_t num_boot_methods_;    // Number of samples in the boot path.
+  Mutex& lock_;                   // Reference to the main profiler lock - we don't need two of them.
+  uint32_t num_samples_;          // Total number of samples taken.
+  uint32_t num_null_methods_;     // Number of samples where can don't know the method.
+  uint32_t num_boot_methods_;     // Number of samples in the boot path.
 
-  typedef std::map<mirror::ArtMethod*, uint32_t> Map;  // Map of method vs its count.
+  typedef std::map<mirror::ArtMethod*, uint32_t> Map;   // Map of method vs its count.
   Map *table[kHashSize];
 
-  typedef std::set<StackTrieNode*> TrieNodeSet;
-  // Map of method hit by profiler vs the set of stack trie nodes for this method.
-  typedef std::map<MethodReference, TrieNodeSet*, MethodReferenceComparator> MethodContextMap;
-  MethodContextMap *method_context_table;
-  StackTrieNode* stack_trie_root_;  // Root of the trie that stores sampled stack information.
-
-  // Map from <pc, context> to counts.
-  typedef std::map<std::pair<uint32_t, std::string>, uint32_t> PreviousContextMap;
   struct PreviousValue {
-    PreviousValue() : count_(0), method_size_(0), context_map_(nullptr) {}
-    PreviousValue(uint32_t count, uint32_t method_size, PreviousContextMap* context_map)
-      : count_(count), method_size_(method_size), context_map_(context_map) {}
+    PreviousValue() : count_(0), method_size_(0) {}
+    PreviousValue(uint32_t count, uint32_t method_size) : count_(count), method_size_(method_size) {}
     uint32_t count_;
     uint32_t method_size_;
-    PreviousContextMap* context_map_;
   };
 
   typedef std::map<std::string, PreviousValue> PreviousProfile;
@@ -165,9 +101,9 @@ class ProfileSampleResults {
 
 class BackgroundMethodSamplingProfiler {
  public:
-  // Start a profile thread with the user-supplied arguments.
-  // Returns true if the profile was started or if it was already running. Returns false otherwise.
-  static bool Start(const std::string& output_filename, const ProfilerOptions& options)
+  static void Start(int period, int duration, const std::string& profile_filename,
+                    const std::string& procName, int interval_us,
+                    double backoff_coefficient, bool startImmediately)
   LOCKS_EXCLUDED(Locks::mutator_lock_,
                  Locks::thread_list_lock_,
                  Locks::thread_suspend_count_lock_,
@@ -177,17 +113,16 @@ class BackgroundMethodSamplingProfiler {
   static void Shutdown() LOCKS_EXCLUDED(Locks::profiler_lock_);
 
   void RecordMethod(mirror::ArtMethod *method) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  void RecordStack(const std::vector<InstructionLocation>& stack) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool ProcessMethod(mirror::ArtMethod* method) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  const ProfilerOptions& GetProfilerOptions() const { return options_; }
 
   Barrier& GetBarrier() {
     return *profiler_barrier_;
   }
 
  private:
-  explicit BackgroundMethodSamplingProfiler(
-    const std::string& output_filename, const ProfilerOptions& options);
+  explicit BackgroundMethodSamplingProfiler(int period, int duration,
+                                            const std::string& profile_filename,
+                                            const std::string& process_name,
+                                            double backoff_coefficient, int interval_us, bool startImmediately);
 
   // The sampling interval in microseconds is passed as an argument.
   static void* RunProfilerThread(void* arg) LOCKS_EXCLUDED(Locks::profiler_lock_);
@@ -206,14 +141,35 @@ class BackgroundMethodSamplingProfiler {
   // Sampling thread, non-zero when sampling.
   static pthread_t profiler_pthread_;
 
-  // Some measure of the number of samples that are significant.
+  // Some measure of the number of samples that are significant
   static constexpr uint32_t kSignificantSamples = 10;
 
-  // The name of the file where profile data will be written.
-  std::string output_filename_;
-  // The options used to start the profiler.
-  const ProfilerOptions& options_;
+  // File to write profile data out to.  Cannot be empty if we are profiling.
+  std::string profile_file_name_;
 
+  // Process name.
+  std::string process_name_;
+
+  // Number of seconds between profile runs.
+  uint32_t period_s_;
+
+  // Most of the time we want to delay the profiler startup to prevent everything
+  // running at the same time (all processes).  This is the default, but if we
+  // want to override this, set the 'start_immediately_' to true.  This is done
+  // if the -Xprofile option is given on the command line.
+  bool start_immediately_;
+
+  uint32_t interval_us_;
+
+  // A backoff coefficent to adjust the profile period based on time.
+  double backoff_factor_;
+
+  // How much to increase the backoff by on each profile iteration.
+  double backoff_coefficient_;
+
+  // Duration of each profile run.  The profile file will be written at the end
+  // of each run.
+  uint32_t duration_s_;
 
   // Profile condition support.
   Mutex wait_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
@@ -221,7 +177,7 @@ class BackgroundMethodSamplingProfiler {
 
   ProfileSampleResults profile_table_;
 
-  std::unique_ptr<Barrier> profiler_barrier_;
+  UniquePtr<Barrier> profiler_barrier_;
 
   // Set of methods to be filtered out.  This will probably be rare because
   // most of the methods we want to be filtered reside in the boot path and
@@ -232,51 +188,52 @@ class BackgroundMethodSamplingProfiler {
   DISALLOW_COPY_AND_ASSIGN(BackgroundMethodSamplingProfiler);
 };
 
-//
-// Contains profile data generated from previous runs of the program and stored
+// TODO: incorporate in ProfileSampleResults
+
+// Profile data.  This is generated from previous runs of the program and stored
 // in a file.  It is used to determine whether to compile a particular method or not.
-class ProfileFile {
+class ProfileData {
  public:
-  class ProfileData {
-   public:
-    ProfileData() : count_(0), method_size_(0), used_percent_(0) {}
-    ProfileData(const std::string& method_name, uint32_t count, uint32_t method_size,
-      double used_percent, double top_k_used_percentage) :
-      method_name_(method_name), count_(count), method_size_(method_size),
-      used_percent_(used_percent), top_k_used_percentage_(top_k_used_percentage) {
-      // TODO: currently method_size_ is unused
-      UNUSED(method_size_);
-    }
+  ProfileData() : count_(0), method_size_(0), usedPercent_(0) {}
+  ProfileData(const std::string& method_name, uint32_t count, uint32_t method_size,
+    double usedPercent, double topKUsedPercentage) :
+    method_name_(method_name), count_(count), method_size_(method_size),
+    usedPercent_(usedPercent), topKUsedPercentage_(topKUsedPercentage) {
+    // TODO: currently method_size_ and count_ are unused.
+    UNUSED(method_size_);
+    UNUSED(count_);
+  }
 
-    double GetUsedPercent() const { return used_percent_; }
-    uint32_t GetCount() const { return count_; }
-    double GetTopKUsedPercentage() const { return top_k_used_percentage_; }
-
-   private:
-    std::string method_name_;       // Method name.
-    uint32_t count_;                // Number of times it has been called.
-    uint32_t method_size_;          // Size of the method on dex instructions.
-    double used_percent_;           // Percentage of how many times this method was called.
-    double top_k_used_percentage_;  // The percentage of the group that comprise K% of the total
-                                    // used methods this methods belongs to.
-  };
-
- public:
-  // Loads profile data from the given file. The new data are merged with any existing data.
-  // Returns true if the file was loaded successfully and false otherwise.
-  bool LoadFile(const std::string& filename);
-
-  // Computes the group that comprise top_k_percentage of the total used methods.
-  bool GetTopKSamples(std::set<std::string>& top_k_methods, double top_k_percentage);
-
-  // If the given method has an entry in the profile table it updates the data
-  // and returns true. Otherwise returns false and leaves the data unchanged.
-  bool GetProfileData(ProfileData* data, const std::string& method_name);
+  bool IsAbove(double v) const { return usedPercent_ >= v; }
+  double GetUsedPercent() const { return usedPercent_; }
+  uint32_t GetCount() const { return count_; }
+  double GetTopKUsedPercentage() const { return topKUsedPercentage_; }
 
  private:
-  // Profile data is stored in a map, indexed by the full method name.
-  typedef std::map<std::string, ProfileData> ProfileMap;
-  ProfileMap profile_map_;
+  std::string method_name_;    // Method name.
+  uint32_t count_;             // Number of times it has been called.
+  uint32_t method_size_;       // Size of the method on dex instructions.
+  double usedPercent_;         // Percentage of how many times this method was called.
+  double topKUsedPercentage_;  // The percentage of the group that comprise K% of the total used
+                               // methods this methods belongs to.
+};
+
+// Profile data is stored in a map, indexed by the full method name.
+typedef std::map<std::string, ProfileData> ProfileMap;
+
+class ProfileHelper {
+ private:
+  ProfileHelper();
+
+ public:
+  // Read the profile data from the given file.  Calculates the percentage for each method.
+  // Returns false if there was no profile file or it was malformed.
+  static bool LoadProfileMap(ProfileMap& profileMap, const std::string& fileName);
+
+  // Read the profile data from the given file and computes the group that comprise
+  // topKPercentage of the total used methods.
+  static bool LoadTopKSamples(std::set<std::string>& topKMethods, const std::string& fileName,
+                              double topKPercentage);
 };
 
 }  // namespace art

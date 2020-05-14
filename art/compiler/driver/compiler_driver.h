@@ -24,14 +24,13 @@
 #include "base/mutex.h"
 #include "base/timing_logger.h"
 #include "class_reference.h"
+#include "compiled_class.h"
 #include "compiled_method.h"
 #include "compiler.h"
 #include "dex_file.h"
-#include "driver/compiler_options.h"
 #include "instruction_set.h"
 #include "invoke_type.h"
 #include "method_reference.h"
-#include "mirror/class.h"  // For mirror::Class::Status.
 #include "os.h"
 #include "profiler.h"
 #include "runtime.h"
@@ -46,7 +45,6 @@ namespace verifier {
 class MethodVerifier;
 }  // namespace verifier
 
-class CompiledClass;
 class CompilerOptions;
 class DexCompilationUnit;
 class DexFileToMethodInlinerMap;
@@ -79,7 +77,7 @@ enum DexToDexCompilationLevel {
 // Thread-local storage compiler worker threads
 class CompilerTls {
   public:
-    CompilerTls() : llvm_info_(nullptr) {}
+    CompilerTls() : llvm_info_(NULL) {}
     ~CompilerTls() {}
 
     void* GetLLVMInfo() { return llvm_info_; }
@@ -92,10 +90,12 @@ class CompilerTls {
 
 class CompilerDriver {
  public:
+  typedef std::set<std::string> DescriptorSet;
+
   // Create a compiler targeting the requested "instruction_set".
   // "image" should be true if image specific optimizations should be
   // enabled.  "image_classes" lets the compiler know what classes it
-  // can assume will be in the image, with nullptr implying all available
+  // can assume will be in the image, with NULL implying all available
   // classes.
   explicit CompilerDriver(const CompilerOptions* compiler_options,
                           VerificationResults* verification_results,
@@ -103,9 +103,10 @@ class CompilerDriver {
                           Compiler::Kind compiler_kind,
                           InstructionSet instruction_set,
                           InstructionSetFeatures instruction_set_features,
-                          bool image, std::set<std::string>* image_classes,
+                          bool image, DescriptorSet* image_classes,
                           size_t thread_count, bool dump_stats, bool dump_passes,
-                          CumulativeLogger* timer, std::string profile_file = "");
+                          CumulativeLogger* timer,
+                          std::string profile_file = "");
 
   ~CompilerDriver();
 
@@ -142,7 +143,7 @@ class CompilerDriver {
   }
 
   bool ProfilePresent() const {
-    return profile_present_;
+    return profile_ok_;
   }
 
   // Are we compiling and creating an image file?
@@ -150,7 +151,7 @@ class CompilerDriver {
     return image_;
   }
 
-  const std::set<std::string>* GetImageClasses() const {
+  DescriptorSet* GetImageClasses() const {
     return image_classes_.get();
   }
 
@@ -197,9 +198,9 @@ class CompilerDriver {
 
   // Are runtime access checks necessary in the compiled code?
   bool CanAccessTypeWithoutChecks(uint32_t referrer_idx, const DexFile& dex_file,
-                                  uint32_t type_idx, bool* type_known_final = nullptr,
-                                  bool* type_known_abstract = nullptr,
-                                  bool* equals_referrers_class = nullptr)
+                                  uint32_t type_idx, bool* type_known_final = NULL,
+                                  bool* type_known_abstract = NULL,
+                                  bool* equals_referrers_class = NULL)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
 
   // Are runtime access and instantiable checks necessary in the code?
@@ -220,15 +221,15 @@ class CompilerDriver {
 
   // Resolve compiling method's class. Returns nullptr on failure.
   mirror::Class* ResolveCompilingMethodsClass(
-      const ScopedObjectAccess& soa, Handle<mirror::DexCache> dex_cache,
-      Handle<mirror::ClassLoader> class_loader, const DexCompilationUnit* mUnit)
+      ScopedObjectAccess& soa, const Handle<mirror::DexCache>& dex_cache,
+      const Handle<mirror::ClassLoader>& class_loader, const DexCompilationUnit* mUnit)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Resolve a field. Returns nullptr on failure, including incompatible class change.
   // NOTE: Unlike ClassLinker's ResolveField(), this method enforces is_static.
   mirror::ArtField* ResolveField(
-      const ScopedObjectAccess& soa, Handle<mirror::DexCache> dex_cache,
-      Handle<mirror::ClassLoader> class_loader, const DexCompilationUnit* mUnit,
+      ScopedObjectAccess& soa, const Handle<mirror::DexCache>& dex_cache,
+      const Handle<mirror::ClassLoader>& class_loader, const DexCompilationUnit* mUnit,
       uint32_t field_idx, bool is_static)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -243,7 +244,7 @@ class CompilerDriver {
   // Can we fast-path an IGET/IPUT access to an instance field? If yes, compute the field offset.
   std::pair<bool, bool> IsFastInstanceField(
       mirror::DexCache* dex_cache, mirror::Class* referrer_class,
-      mirror::ArtField* resolved_field, uint16_t field_idx)
+      mirror::ArtField* resolved_field, uint16_t field_idx, MemberOffset* field_offset)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Can we fast-path an SGET/SPUT access to a static field? If yes, compute the field offset,
@@ -257,8 +258,8 @@ class CompilerDriver {
 
   // Resolve a method. Returns nullptr on failure, including incompatible class change.
   mirror::ArtMethod* ResolveMethod(
-      ScopedObjectAccess& soa, Handle<mirror::DexCache> dex_cache,
-      Handle<mirror::ClassLoader> class_loader, const DexCompilationUnit* mUnit,
+      ScopedObjectAccess& soa, const Handle<mirror::DexCache>& dex_cache,
+      const Handle<mirror::ClassLoader>& class_loader, const DexCompilationUnit* mUnit,
       uint32_t method_idx, InvokeType invoke_type)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -276,8 +277,8 @@ class CompilerDriver {
   // Can we fast-path an INVOKE? If no, returns 0. If yes, returns a non-zero opaque flags value
   // for ProcessedInvoke() and computes the necessary lowering info.
   int IsFastInvoke(
-      ScopedObjectAccess& soa, Handle<mirror::DexCache> dex_cache,
-      Handle<mirror::ClassLoader> class_loader, const DexCompilationUnit* mUnit,
+      ScopedObjectAccess& soa, const Handle<mirror::DexCache>& dex_cache,
+      const Handle<mirror::ClassLoader>& class_loader, const DexCompilationUnit* mUnit,
       mirror::Class* referrer_class, mirror::ArtMethod* resolved_method, InvokeType* invoke_type,
       MethodReference* target_method, const MethodReference* devirt_target,
       uintptr_t* direct_code, uintptr_t* direct_method)
@@ -295,13 +296,6 @@ class CompilerDriver {
   bool ComputeInstanceFieldInfo(uint32_t field_idx, const DexCompilationUnit* mUnit, bool is_put,
                                 MemberOffset* field_offset, bool* is_volatile)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
-
-  mirror::ArtField* ComputeInstanceFieldInfo(uint32_t field_idx,
-                                             const DexCompilationUnit* mUnit,
-                                             bool is_put,
-                                             const ScopedObjectAccess& soa)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
 
   // Can we fastpath static field access? Computes field's offset, volatility and whether the
   // field is within the referrer (which can avoid checking class initialization).
@@ -400,10 +394,6 @@ class CompilerDriver {
     return dump_passes_;
   }
 
-  bool DidIncludeDebugSymbols() const {
-    return compiler_options_->GetIncludeDebugSymbols();
-  }
-
   CumulativeLogger* GetTimingsLogger() const {
     return timings_logger_;
   }
@@ -447,7 +437,7 @@ class CompilerDriver {
         referrer_class_def_idx_(referrer_class_def_idx),
         referrer_method_idx_(referrer_method_idx),
         literal_offset_(literal_offset) {
-      CHECK(dex_file_ != nullptr);
+      CHECK(dex_file_ != NULL);
     }
     virtual ~PatchInformation() {}
 
@@ -605,8 +595,8 @@ class CompilerDriver {
     return cfi_info_.get();
   }
 
-  ProfileFile profile_file_;
-  bool profile_present_;
+  ProfileMap profile_map_;
+  bool profile_ok_;
 
   // Should the compiler run on this method given profile information?
   bool SkipCompilation(const std::string& method_name);
@@ -656,29 +646,19 @@ class CompilerDriver {
                ThreadPool* thread_pool, TimingLogger* timings)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
   void ResolveDexFile(jobject class_loader, const DexFile& dex_file,
-                      const std::vector<const DexFile*>& dex_files,
                       ThreadPool* thread_pool, TimingLogger* timings)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
 
   void Verify(jobject class_loader, const std::vector<const DexFile*>& dex_files,
               ThreadPool* thread_pool, TimingLogger* timings);
   void VerifyDexFile(jobject class_loader, const DexFile& dex_file,
-                     const std::vector<const DexFile*>& dex_files,
                      ThreadPool* thread_pool, TimingLogger* timings)
-      LOCKS_EXCLUDED(Locks::mutator_lock_);
-
-  void SetVerified(jobject class_loader, const std::vector<const DexFile*>& dex_files,
-                   ThreadPool* thread_pool, TimingLogger* timings);
-  void SetVerifiedDexFile(jobject class_loader, const DexFile& dex_file,
-                          const std::vector<const DexFile*>& dex_files,
-                          ThreadPool* thread_pool, TimingLogger* timings)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
 
   void InitializeClasses(jobject class_loader, const std::vector<const DexFile*>& dex_files,
                          ThreadPool* thread_pool, TimingLogger* timings)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
   void InitializeClasses(jobject class_loader, const DexFile& dex_file,
-                         const std::vector<const DexFile*>& dex_files,
                          ThreadPool* thread_pool, TimingLogger* timings)
       LOCKS_EXCLUDED(Locks::mutator_lock_, compiled_classes_lock_);
 
@@ -689,7 +669,6 @@ class CompilerDriver {
   void Compile(jobject class_loader, const std::vector<const DexFile*>& dex_files,
                ThreadPool* thread_pool, TimingLogger* timings);
   void CompileDexFile(jobject class_loader, const DexFile& dex_file,
-                      const std::vector<const DexFile*>& dex_files,
                       ThreadPool* thread_pool, TimingLogger* timings)
       LOCKS_EXCLUDED(Locks::mutator_lock_);
   void CompileMethod(const DexFile::CodeItem* code_item, uint32_t access_flags,
@@ -709,7 +688,7 @@ class CompilerDriver {
   VerificationResults* const verification_results_;
   DexFileToMethodInlinerMap* const method_inliner_map_;
 
-  std::unique_ptr<Compiler> compiler_;
+  UniquePtr<Compiler> compiler_;
 
   const InstructionSet instruction_set_;
   const InstructionSetFeatures instruction_set_features_;
@@ -731,15 +710,15 @@ class CompilerDriver {
   const bool image_;
 
   // If image_ is true, specifies the classes that will be included in
-  // the image. Note if image_classes_ is nullptr, all classes are
+  // the image. Note if image_classes_ is NULL, all classes are
   // included in the image.
-  std::unique_ptr<std::set<std::string>> image_classes_;
+  UniquePtr<DescriptorSet> image_classes_;
 
   size_t thread_count_;
   uint64_t start_ns_;
 
   class AOTCompilationStats;
-  std::unique_ptr<AOTCompilationStats> stats_;
+  UniquePtr<AOTCompilationStats> stats_;
 
   bool dump_stats_;
   const bool dump_passes_;
@@ -776,7 +755,7 @@ class CompilerDriver {
   bool support_boot_image_fixup_;
 
   // Call Frame Information, which might be generated to help stack tracebacks.
-  std::unique_ptr<std::vector<uint8_t>> cfi_info_;
+  UniquePtr<std::vector<uint8_t> > cfi_info_;
 
   // DeDuplication data structures, these own the corresponding byte arrays.
   class DedupeHashFunc {

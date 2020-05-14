@@ -18,14 +18,12 @@
 #define ART_RUNTIME_VERIFIER_REGISTER_LINE_INL_H_
 
 #include "register_line.h"
-
 #include "method_verifier.h"
-#include "reg_type_cache-inl.h"
 
 namespace art {
 namespace verifier {
 
-inline RegType& RegisterLine::GetRegisterType(uint32_t vsrc) const {
+inline const RegType& RegisterLine::GetRegisterType(uint32_t vsrc) const {
   // The register index was validated during the static pass, so we don't need to check it here.
   DCHECK_LT(vsrc, num_regs_);
   return verifier_->GetRegTypeCache()->GetFromId(line_[vsrc]);

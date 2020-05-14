@@ -77,28 +77,23 @@ void ZygoteSpace::Dump(std::ostream& os) const {
 
 mirror::Object* ZygoteSpace::Alloc(Thread* self, size_t num_bytes, size_t* bytes_allocated,
                                    size_t* usable_size) {
-  UNIMPLEMENTED(FATAL);
+  LOG(FATAL) << "Unimplemented";
   return nullptr;
 }
 
 size_t ZygoteSpace::AllocationSize(mirror::Object* obj, size_t* usable_size) {
-  UNIMPLEMENTED(FATAL);
+  LOG(FATAL) << "Unimplemented";
   return 0;
 }
 
 size_t ZygoteSpace::Free(Thread* self, mirror::Object* ptr) {
-  UNIMPLEMENTED(FATAL);
+  LOG(FATAL) << "Unimplemented";
   return 0;
 }
 
 size_t ZygoteSpace::FreeList(Thread* self, size_t num_ptrs, mirror::Object** ptrs) {
-  UNIMPLEMENTED(FATAL);
+  LOG(FATAL) << "Unimplemented";
   return 0;
-}
-
-void ZygoteSpace::LogFragmentationAllocFailure(std::ostream& /*os*/,
-                                               size_t /*failed_alloc_bytes*/) {
-  UNIMPLEMENTED(FATAL);
 }
 
 void ZygoteSpace::SweepCallback(size_t num_ptrs, mirror::Object** ptrs, void* arg) {
@@ -120,7 +115,7 @@ void ZygoteSpace::SweepCallback(size_t num_ptrs, mirror::Object** ptrs, void* ar
     // Need to mark the card since this will update the mod-union table next GC cycle.
     card_table->MarkCard(ptrs[i]);
   }
-  zygote_space->objects_allocated_.FetchAndSubSequentiallyConsistent(num_ptrs);
+  zygote_space->objects_allocated_.FetchAndSub(num_ptrs);
 }
 
 }  // namespace space

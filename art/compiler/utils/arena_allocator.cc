@@ -32,11 +32,10 @@ static constexpr size_t kValgrindRedZoneBytes = 8;
 constexpr size_t Arena::kDefaultSize;
 
 template <bool kCount>
-const char* const ArenaAllocatorStatsImpl<kCount>::kAllocNames[] = {
+const char* ArenaAllocatorStatsImpl<kCount>::kAllocNames[kNumArenaAllocKinds] = {
   "Misc       ",
   "BasicBlock ",
   "LIR        ",
-  "LIR masks  ",
   "MIR        ",
   "DataFlow   ",
   "GrowList   ",
@@ -102,7 +101,6 @@ void ArenaAllocatorStatsImpl<kCount>::Dump(std::ostream& os, const Arena* first,
        << num_allocations << ", avg size: " << bytes_allocated / num_allocations << "\n";
   }
   os << "===== Allocation by kind\n";
-  COMPILE_ASSERT(arraysize(kAllocNames) == kNumArenaAllocKinds, check_arraysize_kAllocNames);
   for (int i = 0; i < kNumArenaAllocKinds; i++) {
       os << kAllocNames[i] << std::setw(10) << alloc_stats_[i] << "\n";
   }
@@ -141,7 +139,7 @@ void Arena::Reset() {
     if (kUseMemSet || !kUseMemMap) {
       memset(Begin(), 0, bytes_allocated_);
     } else {
-      map_->MadviseDontNeedAndZero();
+      madvise(Begin(), bytes_allocated_, MADV_DONTNEED);
     }
     bytes_allocated_ = 0;
   }
@@ -217,7 +215,7 @@ void ArenaAllocator::UpdateBytesAllocated() {
 }
 
 void* ArenaAllocator::AllocValgrind(size_t bytes, ArenaAllocKind kind) {
-  size_t rounded_bytes = RoundUp(bytes + kValgrindRedZoneBytes, 8);
+  size_t rounded_bytes = (bytes + 3 + kValgrindRedZoneBytes) & ~3;
   if (UNLIKELY(ptr_ + rounded_bytes > end_)) {
     // Obtain a new block.
     ObtainNewArenaForAllocation(rounded_bytes);

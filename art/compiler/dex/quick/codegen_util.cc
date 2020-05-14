@@ -56,23 +56,16 @@ bool Mir2Lir::IsInexpensiveConstant(RegLocation rl_src) {
   bool res = false;
   if (rl_src.is_const) {
     if (rl_src.wide) {
-      // For wide registers, check whether we're the high partner. In that case we need to switch
-      // to the lower one for the correct value.
-      if (rl_src.high_word) {
-        rl_src.high_word = false;
-        rl_src.s_reg_low--;
-        rl_src.orig_sreg--;
-      }
       if (rl_src.fp) {
-        res = InexpensiveConstantDouble(mir_graph_->ConstantValueWide(rl_src));
+         res = InexpensiveConstantDouble(mir_graph_->ConstantValueWide(rl_src));
       } else {
-        res = InexpensiveConstantLong(mir_graph_->ConstantValueWide(rl_src));
+         res = InexpensiveConstantLong(mir_graph_->ConstantValueWide(rl_src));
       }
     } else {
       if (rl_src.fp) {
-        res = InexpensiveConstantFloat(mir_graph_->ConstantValue(rl_src));
+         res = InexpensiveConstantFloat(mir_graph_->ConstantValue(rl_src));
       } else {
-        res = InexpensiveConstantInt(mir_graph_->ConstantValue(rl_src));
+         res = InexpensiveConstantInt(mir_graph_->ConstantValue(rl_src));
       }
     }
   }
@@ -81,23 +74,9 @@ bool Mir2Lir::IsInexpensiveConstant(RegLocation rl_src) {
 
 void Mir2Lir::MarkSafepointPC(LIR* inst) {
   DCHECK(!inst->flags.use_def_invalid);
-  inst->u.m.def_mask = &kEncodeAll;
+  inst->u.m.def_mask = ENCODE_ALL;
   LIR* safepoint_pc = NewLIR0(kPseudoSafepointPC);
-  DCHECK(safepoint_pc->u.m.def_mask->Equals(kEncodeAll));
-}
-
-void Mir2Lir::MarkSafepointPCAfter(LIR* after) {
-  DCHECK(!after->flags.use_def_invalid);
-  after->u.m.def_mask = &kEncodeAll;
-  // As NewLIR0 uses Append, we need to create the LIR by hand.
-  LIR* safepoint_pc = RawLIR(current_dalvik_offset_, kPseudoSafepointPC);
-  if (after->next == nullptr) {
-    DCHECK_EQ(after, last_lir_insn_);
-    AppendLIR(safepoint_pc);
-  } else {
-    InsertLIRAfter(after, safepoint_pc);
-  }
-  DCHECK(safepoint_pc->u.m.def_mask->Equals(kEncodeAll));
+  DCHECK_EQ(safepoint_pc->u.m.def_mask, ENCODE_ALL);
 }
 
 /* Remove a LIR from the list. */
@@ -129,40 +108,37 @@ void Mir2Lir::NopLIR(LIR* lir) {
 }
 
 void Mir2Lir::SetMemRefType(LIR* lir, bool is_load, int mem_type) {
+  uint64_t *mask_ptr;
+  uint64_t mask = ENCODE_MEM;
   DCHECK(GetTargetInstFlags(lir->opcode) & (IS_LOAD | IS_STORE));
   DCHECK(!lir->flags.use_def_invalid);
-  // TODO: Avoid the extra Arena allocation!
-  const ResourceMask** mask_ptr;
-  ResourceMask mask;
   if (is_load) {
     mask_ptr = &lir->u.m.use_mask;
   } else {
     mask_ptr = &lir->u.m.def_mask;
   }
-  mask = **mask_ptr;
   /* Clear out the memref flags */
-  mask.ClearBits(kEncodeMem);
+  *mask_ptr &= ~mask;
   /* ..and then add back the one we need */
   switch (mem_type) {
-    case ResourceMask::kLiteral:
+    case kLiteral:
       DCHECK(is_load);
-      mask.SetBit(ResourceMask::kLiteral);
+      *mask_ptr |= ENCODE_LITERAL;
       break;
-    case ResourceMask::kDalvikReg:
-      mask.SetBit(ResourceMask::kDalvikReg);
+    case kDalvikReg:
+      *mask_ptr |= ENCODE_DALVIK_REG;
       break;
-    case ResourceMask::kHeapRef:
-      mask.SetBit(ResourceMask::kHeapRef);
+    case kHeapRef:
+      *mask_ptr |= ENCODE_HEAP_REF;
       break;
-    case ResourceMask::kMustNotAlias:
+    case kMustNotAlias:
       /* Currently only loads can be marked as kMustNotAlias */
       DCHECK(!(GetTargetInstFlags(lir->opcode) & IS_STORE));
-      mask.SetBit(ResourceMask::kMustNotAlias);
+      *mask_ptr |= ENCODE_MUST_NOT_ALIAS;
       break;
     default:
       LOG(FATAL) << "Oat: invalid memref kind - " << mem_type;
   }
-  *mask_ptr = mask_cache_.GetMask(mask);
 }
 
 /*
@@ -170,8 +146,7 @@ void Mir2Lir::SetMemRefType(LIR* lir, bool is_load, int mem_type) {
  */
 void Mir2Lir::AnnotateDalvikRegAccess(LIR* lir, int reg_id, bool is_load,
                                       bool is64bit) {
-  DCHECK((is_load ? lir->u.m.use_mask : lir->u.m.def_mask)->Intersection(kEncodeMem).Equals(
-      kEncodeDalvikReg));
+  SetMemRefType(lir, is_load, kDalvikReg);
 
   /*
    * Store the Dalvik register id in alias_info. Mark the MSB if it is a 64-bit
@@ -266,10 +241,10 @@ void Mir2Lir::DumpLIRInsn(LIR* lir, unsigned char* base_addr) {
   }
 
   if (lir->u.m.use_mask && (!lir->flags.is_nop || dump_nop)) {
-    DUMP_RESOURCE_MASK(DumpResourceMask(lir, *lir->u.m.use_mask, "use"));
+    DUMP_RESOURCE_MASK(DumpResourceMask(lir, lir->u.m.use_mask, "use"));
   }
   if (lir->u.m.def_mask && (!lir->flags.is_nop || dump_nop)) {
-    DUMP_RESOURCE_MASK(DumpResourceMask(lir, *lir->u.m.def_mask, "def"));
+    DUMP_RESOURCE_MASK(DumpResourceMask(lir, lir->u.m.def_mask, "def"));
   }
 }
 
@@ -279,7 +254,7 @@ void Mir2Lir::DumpPromotionMap() {
     PromotionMap v_reg_map = promotion_map_[i];
     std::string buf;
     if (v_reg_map.fp_location == kLocPhysReg) {
-      StringAppendF(&buf, " : s%d", RegStorage::RegNum(v_reg_map.fp_reg));
+      StringAppendF(&buf, " : s%d", RegStorage::RegNum(v_reg_map.FpReg));
     }
 
     std::string buf3;
@@ -387,18 +362,6 @@ LIR* Mir2Lir::ScanLiteralPoolWide(LIR* data_target, int val_lo, int val_hi) {
     data_target = data_target->next;
   }
   return NULL;
-}
-
-/* Search the existing constants in the literal pool for an exact method match */
-LIR* Mir2Lir::ScanLiteralPoolMethod(LIR* data_target, const MethodReference& method) {
-  while (data_target) {
-    if (static_cast<uint32_t>(data_target->operands[0]) == method.dex_method_index &&
-        UnwrapPointer(data_target->operands[1]) == method.dex_file) {
-      return data_target;
-    }
-    data_target = data_target->next;
-  }
-  return nullptr;
 }
 
 /*
@@ -819,7 +782,7 @@ LIR* Mir2Lir::InsertCaseLabel(DexOffset vaddr, int keyVal) {
     new_label->operands[0] = keyVal;
     new_label->flags.fixup = kFixupLabel;
     DCHECK(!new_label->flags.use_def_invalid);
-    new_label->u.m.def_mask = &kEncodeAll;
+    new_label->u.m.def_mask = ENCODE_ALL;
     InsertLIRAfter(boundary_lir, new_label);
     res = new_label;
   }
@@ -990,8 +953,6 @@ Mir2Lir::Mir2Lir(CompilationUnit* cu, MIRGraph* mir_graph, ArenaAllocator* arena
       estimated_native_code_size_(0),
       reg_pool_(NULL),
       live_sreg_(0),
-      core_vmap_table_(mir_graph->GetArena()->Adapter()),
-      fp_vmap_table_(mir_graph->GetArena()->Adapter()),
       num_core_spills_(0),
       num_fp_spills_(0),
       frame_size_(0),
@@ -999,9 +960,7 @@ Mir2Lir::Mir2Lir(CompilationUnit* cu, MIRGraph* mir_graph, ArenaAllocator* arena
       fp_spill_mask_(0),
       first_lir_insn_(NULL),
       last_lir_insn_(NULL),
-      slow_paths_(arena, 32, kGrowableArraySlowPaths),
-      mem_ref_type_(ResourceMask::kHeapRef),
-      mask_cache_(arena) {
+      slow_paths_(arena, 32, kGrowableArraySlowPaths) {
   // Reserve pointer id 0 for NULL.
   size_t null_idx = WrapPointer(NULL);
   DCHECK_EQ(null_idx, 0U);
@@ -1032,7 +991,7 @@ void Mir2Lir::Materialize() {
     /* Convert LIR into machine code. */
     AssembleLIR();
 
-    if ((cu_->enable_debug & (1 << kDebugCodegenDump)) != 0) {
+    if (cu_->verbose) {
       CodegenDump();
     }
   }
@@ -1055,19 +1014,9 @@ CompiledMethod* Mir2Lir::GetCompiledMethod() {
     }
     // Push a marker to take place of lr.
     vmap_encoder.PushBackUnsigned(VmapTable::kAdjustedFpMarker);
-    if (cu_->instruction_set == kThumb2) {
-      // fp regs already sorted.
-      for (uint32_t i = 0; i < fp_vmap_table_.size(); i++) {
-        vmap_encoder.PushBackUnsigned(fp_vmap_table_[i] + VmapTable::kEntryAdjustment);
-      }
-    } else {
-      // For other platforms regs may have been inserted out of order - sort first.
-      std::sort(fp_vmap_table_.begin(), fp_vmap_table_.end());
-      for (size_t i = 0 ; i < fp_vmap_table_.size(); ++i) {
-        // Copy, stripping out the phys register sort key.
-        vmap_encoder.PushBackUnsigned(
-            ~(-1 << VREG_NUM_WIDTH) & (fp_vmap_table_[i] + VmapTable::kEntryAdjustment));
-      }
+    // fp regs already sorted.
+    for (uint32_t i = 0; i < fp_vmap_table_.size(); i++) {
+      vmap_encoder.PushBackUnsigned(fp_vmap_table_[i] + VmapTable::kEntryAdjustment);
     }
   } else {
     DCHECK_EQ(POPCOUNT(core_spill_mask_), 0);
@@ -1077,7 +1026,7 @@ CompiledMethod* Mir2Lir::GetCompiledMethod() {
     vmap_encoder.PushBackUnsigned(0u);  // Size is 0.
   }
 
-  std::unique_ptr<std::vector<uint8_t>> cfi_info(ReturnCallFrameInformation());
+  UniquePtr<std::vector<uint8_t> > cfi_info(ReturnCallFrameInformation());
   CompiledMethod* result =
       new CompiledMethod(cu_->compiler_driver, cu_->instruction_set, code_buffer_, frame_size_,
                          core_spill_mask_, fp_spill_mask_, encoded_mapping_table_,
@@ -1145,7 +1094,7 @@ void Mir2Lir::InsertLIRBefore(LIR* current_lir, LIR* new_lir) {
 
 /*
  * Insert an LIR instruction after the current instruction, which cannot be the
- * last instruction.
+ * first instruction.
  *
  * current_lir -> new_lir -> old_next
  */
@@ -1181,12 +1130,9 @@ bool Mir2Lir::BadOverlap(RegLocation rl_src, RegLocation rl_dest) {
 }
 
 LIR *Mir2Lir::OpCmpMemImmBranch(ConditionCode cond, RegStorage temp_reg, RegStorage base_reg,
-                                int offset, int check_value, LIR* target, LIR** compare) {
+                                int offset, int check_value, LIR* target) {
   // Handle this for architectures that can't compare to memory.
-  LIR* inst = Load32Disp(base_reg, offset, temp_reg);
-  if (compare != nullptr) {
-    *compare = inst;
-  }
+  Load32Disp(base_reg, offset, temp_reg);
   LIR* branch = OpCmpImmBranch(cond, temp_reg, check_value, target);
   return branch;
 }
@@ -1197,34 +1143,28 @@ void Mir2Lir::AddSlowPath(LIRSlowPath* slowpath) {
 
 void Mir2Lir::LoadCodeAddress(const MethodReference& target_method, InvokeType type,
                               SpecialTargetRegister symbolic_reg) {
-  LIR* data_target = ScanLiteralPoolMethod(code_literal_list_, target_method);
+  int target_method_idx = target_method.dex_method_index;
+  LIR* data_target = ScanLiteralPool(code_literal_list_, target_method_idx, 0);
   if (data_target == NULL) {
-    data_target = AddWordData(&code_literal_list_, target_method.dex_method_index);
+    data_target = AddWordData(&code_literal_list_, target_method_idx);
     data_target->operands[1] = WrapPointer(const_cast<DexFile*>(target_method.dex_file));
-    // NOTE: The invoke type doesn't contribute to the literal identity. In fact, we can have
-    // the same method invoked with kVirtual, kSuper and kInterface but the class linker will
-    // resolve these invokes to the same method, so we don't care which one we record here.
     data_target->operands[2] = type;
   }
-  // Loads a code pointer. Code from oat file can be mapped anywhere.
-  LIR* load_pc_rel = OpPcRelLoad(TargetPtrReg(symbolic_reg), data_target);
+  LIR* load_pc_rel = OpPcRelLoad(TargetReg(symbolic_reg), data_target);
   AppendLIR(load_pc_rel);
   DCHECK_NE(cu_->instruction_set, kMips) << reinterpret_cast<void*>(data_target);
 }
 
 void Mir2Lir::LoadMethodAddress(const MethodReference& target_method, InvokeType type,
                                 SpecialTargetRegister symbolic_reg) {
-  LIR* data_target = ScanLiteralPoolMethod(method_literal_list_, target_method);
+  int target_method_idx = target_method.dex_method_index;
+  LIR* data_target = ScanLiteralPool(method_literal_list_, target_method_idx, 0);
   if (data_target == NULL) {
-    data_target = AddWordData(&method_literal_list_, target_method.dex_method_index);
+    data_target = AddWordData(&method_literal_list_, target_method_idx);
     data_target->operands[1] = WrapPointer(const_cast<DexFile*>(target_method.dex_file));
-    // NOTE: The invoke type doesn't contribute to the literal identity. In fact, we can have
-    // the same method invoked with kVirtual, kSuper and kInterface but the class linker will
-    // resolve these invokes to the same method, so we don't care which one we record here.
     data_target->operands[2] = type;
   }
-  // Loads an ArtMethod pointer, which is a reference as it lives in the heap.
-  LIR* load_pc_rel = OpPcRelLoad(TargetReg(symbolic_reg, kRef), data_target);
+  LIR* load_pc_rel = OpPcRelLoad(TargetReg(symbolic_reg), data_target);
   AppendLIR(load_pc_rel);
   DCHECK_NE(cu_->instruction_set, kMips) << reinterpret_cast<void*>(data_target);
 }
@@ -1235,8 +1175,7 @@ void Mir2Lir::LoadClassType(uint32_t type_idx, SpecialTargetRegister symbolic_re
   if (data_target == nullptr) {
     data_target = AddWordData(&class_literal_list_, type_idx);
   }
-  // Loads a Class pointer, which is a reference as it lives in the heap.
-  LIR* load_pc_rel = OpPcRelLoad(TargetReg(symbolic_reg, kRef), data_target);
+  LIR* load_pc_rel = OpPcRelLoad(TargetReg(symbolic_reg), data_target);
   AppendLIR(load_pc_rel);
 }
 
@@ -1246,32 +1185,22 @@ std::vector<uint8_t>* Mir2Lir::ReturnCallFrameInformation() {
 }
 
 RegLocation Mir2Lir::NarrowRegLoc(RegLocation loc) {
-  if (loc.location == kLocPhysReg) {
-    DCHECK(!loc.reg.Is32Bit());
-    if (loc.reg.IsPair()) {
-      RegisterInfo* info_lo = GetRegInfo(loc.reg.GetLow());
-      RegisterInfo* info_hi = GetRegInfo(loc.reg.GetHigh());
-      info_lo->SetIsWide(false);
-      info_hi->SetIsWide(false);
-      loc.reg = info_lo->GetReg();
-    } else {
-      RegisterInfo* info = GetRegInfo(loc.reg);
-      RegisterInfo* info_new = info->FindMatchingView(RegisterInfo::k32SoloStorageMask);
-      DCHECK(info_new != nullptr);
-      if (info->IsLive() && (info->SReg() == loc.s_reg_low)) {
-        info->MarkDead();
-        info_new->MarkLive(loc.s_reg_low);
-      }
-      loc.reg = info_new->GetReg();
-    }
-    DCHECK(loc.reg.Valid());
-  }
   loc.wide = false;
+  if (loc.location == kLocPhysReg) {
+    if (loc.reg.IsPair()) {
+      loc.reg = loc.reg.GetLow();
+    } else {
+      // FIXME: temp workaround.
+      // Issue here: how do we narrow to a 32-bit value in 64-bit container?
+      // Probably the wrong thing to narrow the RegStorage container here.  That
+      // should be a target decision.  At the RegLocation level, we're only
+      // modifying the view of the Dalvik value - this is orthogonal to the storage
+      // container size.  Consider this a temp workaround.
+      DCHECK(loc.reg.IsDouble());
+      loc.reg = loc.reg.DoubleToLowSingle();
+    }
+  }
   return loc;
-}
-
-void Mir2Lir::GenMachineSpecificExtendedMethodMIR(BasicBlock* bb, MIR* mir) {
-  LOG(FATAL) << "Unknown MIR opcode not supported on this architecture";
 }
 
 }  // namespace art

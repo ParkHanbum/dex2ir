@@ -23,14 +23,52 @@ namespace art {
 /*
  * Code Layout pass implementation start.
  */
-bool CodeLayout::Worker(const PassDataHolder* data) const {
-  DCHECK(data != nullptr);
-  const PassMEDataHolder* pass_me_data_holder = down_cast<const PassMEDataHolder*>(data);
-  CompilationUnit* c_unit = pass_me_data_holder->c_unit;
-  DCHECK(c_unit != nullptr);
-  BasicBlock* bb = pass_me_data_holder->bb;
-  DCHECK(bb != nullptr);
-  c_unit->mir_graph->LayoutBlocks(bb);
+bool CodeLayout::WalkBasicBlocks(CompilationUnit* cUnit, BasicBlock* bb) const {
+  cUnit->mir_graph->LayoutBlocks(bb);
+  // No need of repeating, so just return false.
+  return false;
+}
+
+/*
+ * SSATransformation pass implementation start.
+ */
+bool SSATransformation::WalkBasicBlocks(CompilationUnit* cUnit, BasicBlock* bb) const {
+  cUnit->mir_graph->InsertPhiNodeOperands(bb);
+  // No need of repeating, so just return false.
+  return false;
+}
+
+void SSATransformation::End(CompilationUnit* cUnit) const {
+  // Verify the dataflow information after the pass.
+  if (cUnit->enable_debug & (1 << kDebugVerifyDataflow)) {
+    cUnit->mir_graph->VerifyDataflow();
+  }
+}
+
+/*
+ * ConstantPropagation pass implementation start
+ */
+bool ConstantPropagation::WalkBasicBlocks(CompilationUnit* cUnit, BasicBlock* bb) const {
+  cUnit->mir_graph->DoConstantPropagation(bb);
+  // No need of repeating, so just return false.
+  return false;
+}
+
+/*
+ * MethodUseCount pass implementation start.
+ */
+bool MethodUseCount::Gate(const CompilationUnit* cUnit) const {
+  // First initialize the data.
+  cUnit->mir_graph->InitializeMethodUses();
+
+  // Now check if the pass is to be ignored.
+  bool res = ((cUnit->disable_opt & (1 << kPromoteRegs)) == 0);
+
+  return res;
+}
+
+bool MethodUseCount::WalkBasicBlocks(CompilationUnit* cUnit, BasicBlock* bb) const {
+  cUnit->mir_graph->CountUses(bb);
   // No need of repeating, so just return false.
   return false;
 }
@@ -38,14 +76,8 @@ bool CodeLayout::Worker(const PassDataHolder* data) const {
 /*
  * BasicBlock Combine pass implementation start.
  */
-bool BBCombine::Worker(const PassDataHolder* data) const {
-  DCHECK(data != nullptr);
-  const PassMEDataHolder* pass_me_data_holder = down_cast<const PassMEDataHolder*>(data);
-  CompilationUnit* c_unit = pass_me_data_holder->c_unit;
-  DCHECK(c_unit != nullptr);
-  BasicBlock* bb = pass_me_data_holder->bb;
-  DCHECK(bb != nullptr);
-  c_unit->mir_graph->CombineBlocks(bb);
+bool BBCombine::WalkBasicBlocks(CompilationUnit* cUnit, BasicBlock* bb) const {
+  cUnit->mir_graph->CombineBlocks(bb);
 
   // No need of repeating, so just return false.
   return false;
@@ -54,17 +86,14 @@ bool BBCombine::Worker(const PassDataHolder* data) const {
 /*
  * BasicBlock Optimization pass implementation start.
  */
-void BBOptimizations::Start(PassDataHolder* data) const {
-  DCHECK(data != nullptr);
-  CompilationUnit* c_unit = down_cast<PassMEDataHolder*>(data)->c_unit;
-  DCHECK(c_unit != nullptr);
+void BBOptimizations::Start(CompilationUnit* cUnit) const {
   /*
    * This pass has a different ordering depEnding on the suppress exception,
    * so do the pass here for now:
    *   - Later, the Start should just change the ordering and we can move the extended
    *     creation into the pass driver's main job with a new iterator
    */
-  c_unit->mir_graph->BasicBlockOptimization();
+  cUnit->mir_graph->BasicBlockOptimization();
 }
 
 }  // namespace art

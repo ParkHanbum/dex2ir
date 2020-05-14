@@ -31,23 +31,16 @@ static jclass VMClassLoader_findLoadedClass(JNIEnv* env, jclass, jobject javaLoa
   if (name.c_str() == NULL) {
     return NULL;
   }
-  ClassLinker* cl = Runtime::Current()->GetClassLinker();
+
   std::string descriptor(DotToDescriptor(name.c_str()));
-  mirror::Class* c = cl->LookupClass(descriptor.c_str(), loader);
+  mirror::Class* c = Runtime::Current()->GetClassLinker()->LookupClass(descriptor.c_str(), loader);
   if (c != NULL && c->IsResolved()) {
     return soa.AddLocalReference<jclass>(c);
+  } else {
+    // Class wasn't resolved so it may be erroneous or not yet ready, force the caller to go into
+    // the regular loadClass code.
+    return NULL;
   }
-  if (loader != nullptr) {
-    // Try the common case.
-    StackHandleScope<1> hs(soa.Self());
-    c = cl->FindClassInPathClassLoader(soa, soa.Self(), descriptor.c_str(), hs.NewHandle(loader));
-    if (c != nullptr) {
-      return soa.AddLocalReference<jclass>(c);
-    }
-  }
-  // Class wasn't resolved so it may be erroneous or not yet ready, force the caller to go into
-  // the regular loadClass code.
-  return NULL;
 }
 
 static jint VMClassLoader_getBootClassPathSize(JNIEnv*, jclass) {
@@ -69,28 +62,25 @@ static jint VMClassLoader_getBootClassPathSize(JNIEnv*, jclass) {
  */
 static jstring VMClassLoader_getBootClassPathResource(JNIEnv* env, jclass, jstring javaName, jint index) {
   ScopedUtfChars name(env, javaName);
-  if (name.c_str() == nullptr) {
-    return nullptr;
+  if (name.c_str() == NULL) {
+    return NULL;
   }
 
   const std::vector<const DexFile*>& path = Runtime::Current()->GetClassLinker()->GetBootClassPath();
   if (index < 0 || size_t(index) >= path.size()) {
-    return nullptr;
+    return NULL;
   }
   const DexFile* dex_file = path[index];
-
-  // For multidex locations, e.g., x.jar:classes2.dex, we want to look into x.jar.
-  const std::string& location(dex_file->GetBaseLocation());
-
+  const std::string& location(dex_file->GetLocation());
   std::string error_msg;
-  std::unique_ptr<ZipArchive> zip_archive(ZipArchive::Open(location.c_str(), &error_msg));
+  UniquePtr<ZipArchive> zip_archive(ZipArchive::Open(location.c_str(), &error_msg));
   if (zip_archive.get() == nullptr) {
     LOG(WARNING) << "Failed to open zip archive '" << location << "': " << error_msg;
-    return nullptr;
+    return NULL;
   }
-  std::unique_ptr<ZipEntry> zip_entry(zip_archive->Find(name.c_str(), &error_msg));
-  if (zip_entry.get() == nullptr) {
-    return nullptr;
+  UniquePtr<ZipEntry> zip_entry(zip_archive->Find(name.c_str(), &error_msg));
+  if (zip_entry.get() == NULL) {
+    return NULL;
   }
 
   std::string url;

@@ -127,7 +127,7 @@
 
     // Ugly compile-time check, but we only have the preprocessor.
 #if (FRAME_SIZE_REFS_AND_ARGS_CALLEE_SAVE != 40 + 8)
-#error "REFS_AND_ARGS_CALLEE_SAVE_FRAME(ARM) size not as expected."
+#error "REFS_AND_ARGS_CALLEE_SAVE_FRAME(ARM64) size not as expected."
 #endif
 .endm
 
@@ -235,6 +235,31 @@ NO_ARG_RUNTIME_EXCEPTION art_quick_throw_stack_overflow, artThrowStackOverflowFr
      */
 ONE_ARG_RUNTIME_EXCEPTION art_quick_throw_no_such_method, artThrowNoSuchMethodFromCode
 
+  /*
+   * Invoke stack overflow exception from signal handler.
+   * On entry:
+   * r9: thread
+   * sp: address of last known frame
+   * r12: address of next valid SP below protected region in stack
+   *
+   * This is deceptively simple but hides some complexity.  It is called in the case of
+   * a stack overflow condition during implicit checks.  The signal handler has been
+   * called by the kernel due to a load from the protected stack region.  The handler
+   * works out the address of the previous frame and passes this in SP.  However there
+   * is a piece of memory somewhere below the current SP that is not accessible (the
+   * memory that caused the signal).  The signal handler works out the next
+   * accessible value of SP and passes this in r12.  This code then sets up the SP
+   * to be this new value and calls the code to create and throw the stack overflow
+   * exception.
+   */
+ENTRY art_quick_throw_stack_overflow_from_signal
+    SETUP_SAVE_ALL_CALLEE_SAVE_FRAME  // save all registers as basis for long jump context
+    mov r0, r9                      @ pass Thread::Current
+    mov r1, sp                      @ pass SP
+    mov sp, r12                     @ move SP down to below protected region.
+    b   artThrowStackOverflowFromCode                   @ artThrowStackOverflowFromCode(Thread*, SP)
+END art_quick_throw_stack_overflow_from_signal
+
     /*
      * All generated callsites for interface invokes and invocation slow paths will load arguments
      * as usual - except instead of loading arg0/r0 with the target Method*, arg0/r0 will contain
@@ -305,15 +330,10 @@ ENTRY art_quick_invoke_stub
     mov    r11, sp                         @ save the stack pointer
     .cfi_def_cfa_register r11
     mov    r9, r3                          @ move managed thread pointer into r9
-#ifdef ARM_R4_SUSPEND_FLAG
     mov    r4, #SUSPEND_CHECK_INTERVAL     @ reset r4 to suspend check interval
-#endif
-    add    r5, r2, #4                      @ create space for method pointer in frame
-
-    sub    r5, sp, r5                      @ reserve & align *stack* to 16 bytes: native calling
-    and    r5, #0xFFFFFFF0                 @ convention only aligns to 8B, so we have to ensure ART
-    mov    sp, r5                          @ 16B alignment ourselves.
-
+    add    r5, r2, #16                     @ create space for method pointer in frame
+    and    r5, #0xFFFFFFF0                 @ align frame size to 16 bytes
+    sub    sp, r5                          @ reserve stack space for argument array
     add    r0, sp, #4                      @ pass stack pointer + method ptr as dest for memcpy
     bl     memcpy                          @ memcpy (dest, src, bytes)
     ldr    r0, [r11]                       @ restore method*
@@ -343,9 +363,8 @@ END art_quick_invoke_stub
 ARM_ENTRY art_quick_do_long_jump
     vldm r1, {s0-s31}     @ load all fprs from argument fprs_
     ldr  r2, [r0, #60]    @ r2 = r15 (PC from gprs_ 60=4*15)
-    ldr  r14, [r0, #56]   @ (LR from gprs_ 56=4*14)
     add  r0, r0, #12      @ increment r0 to skip gprs_[0..2] 12=4*3
-    ldm  r0, {r3-r13}     @ load remaining gprs from argument gprs_
+    ldm  r0, {r3-r14}     @ load remaining gprs from argument gprs_
     mov  r0, #0           @ clear result registers r0 and r1
     mov  r1, #0
     bx   r2               @ do long jump
@@ -484,7 +503,6 @@ ENTRY art_quick_aput_obj_with_null_and_bound_check
     b art_quick_throw_null_pointer_exception
 END art_quick_aput_obj_with_null_and_bound_check
 
-    .hidden art_quick_aput_obj_with_bound_check
 ENTRY art_quick_aput_obj_with_bound_check
     ldr r3, [r0, #ARRAY_LENGTH_OFFSET]
     cmp r3, r1
@@ -494,7 +512,6 @@ ENTRY art_quick_aput_obj_with_bound_check
     b art_quick_throw_array_bounds
 END art_quick_aput_obj_with_bound_check
 
-    .hidden art_quick_aput_obj
 ENTRY art_quick_aput_obj
     cbz r2, .Ldo_aput_null
     ldr r3, [r0, #CLASS_OFFSET]
@@ -915,13 +932,11 @@ GENERATE_ALL_ALLOC_ENTRYPOINTS
      */
     .extern artTestSuspendFromCode
 ENTRY art_quick_test_suspend
-#ifdef ARM_R4_SUSPEND_FLAG
     ldrh    r0, [rSELF, #THREAD_FLAGS_OFFSET]
     mov    rSUSPEND, #SUSPEND_CHECK_INTERVAL  @ reset rSUSPEND to SUSPEND_CHECK_INTERVAL
     cbnz   r0, 1f                             @ check Thread::Current()->suspend_count_ == 0
     bx     lr                                 @ return if suspend_count_ == 0
 1:
-#endif
     mov    r0, rSELF
     SETUP_REF_ONLY_CALLEE_SAVE_FRAME          @ save callee saves for stack crawl
     mov    r1, sp
@@ -988,105 +1003,10 @@ ENTRY art_quick_resolution_trampoline
     DELIVER_PENDING_EXCEPTION
 END art_quick_resolution_trampoline
 
-    /*
-     * Called to do a generic JNI down-call
-     */
-ENTRY_NO_HIDE art_quick_generic_jni_trampoline
-    SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME
-    str r0, [sp, #0]  // Store native ArtMethod* to bottom of stack.
-
-    // Save rSELF
-    mov r11, rSELF
-    // Save SP , so we can have static CFI info. r10 is saved in ref_and_args.
-    mov r10, sp
-    .cfi_def_cfa_register r10
-
-    sub sp, sp, #5120
-
-    // prepare for artQuickGenericJniTrampoline call
-    // (Thread*,  SP)
-    //    r0      r1   <= C calling convention
-    //  rSELF     r10  <= where they are
-
-    mov r0, rSELF   // Thread*
-    mov r1, r10
-    blx artQuickGenericJniTrampoline  // (Thread*, sp)
-
-    // The C call will have registered the complete save-frame on success.
-    // The result of the call is:
-    // r0: pointer to native code, 0 on error.
-    // r1: pointer to the bottom of the used area of the alloca, can restore stack till there.
-
-    // Check for error = 0.
-    cbz r0, .Lentry_error
-
-    // Release part of the alloca.
-    mov sp, r1
-
-    // Save the code pointer
-    mov r12, r0
-
-    // Load parameters from frame into registers.
-    pop {r0-r3}
-
-    // Softfloat.
-    // TODO: Change to hardfloat when supported.
-
-    blx r12           // native call.
-
-    // result sign extension is handled in C code
-    // prepare for artQuickGenericJniEndTrampoline call
-    // (Thread*, result, result_f)
-    //    r0      r2,r3    stack       <= C calling convention
-    //    r11     r0,r1    r0,r1          <= where they are
-    sub sp, sp, #8 // Stack alignment.
-
-    push {r0-r1}
-    mov r3, r1
-    mov r2, r0
-    mov r0, r11
-
-    blx artQuickGenericJniEndTrampoline
-
-    // Tear down the alloca.
-    mov sp, r10
-    .cfi_def_cfa_register sp
-
-    // Restore self pointer.
-    mov r9, r11
-
-    // Pending exceptions possible.
-    ldr r2, [r9, #THREAD_EXCEPTION_OFFSET]  @ load Thread::Current()->exception_
-    cbnz r2, .Lexception_in_native
-
-    // Tear down the callee-save frame.
-    add  sp, #12                      @ rewind sp
-    // Do not pop r0 and r1, they contain the return value.
-    pop {r2-r3, r5-r8, r10-r11, lr}  @ 9 words of callee saves
-    .cfi_restore r2
-    .cfi_restore r3
-    .cfi_restore r5
-    .cfi_restore r6
-    .cfi_restore r7
-    .cfi_restore r8
-    .cfi_restore r10
-    .cfi_restore r11
-    .cfi_adjust_cfa_offset -48
-
-    bx lr      // ret
-
-.Lentry_error:
-    mov sp, r10
-    .cfi_def_cfa_register sp
-    mov r9, r11
-.Lexception_in_native:
-    RESTORE_REF_AND_ARGS_CALLEE_SAVE_FRAME
-    DELIVER_PENDING_EXCEPTION
-
-END art_quick_generic_jni_trampoline
+UNIMPLEMENTED art_quick_generic_jni_trampoline
 
     .extern artQuickToInterpreterBridge
-ENTRY_NO_HIDE art_quick_to_interpreter_bridge
+ENTRY art_quick_to_interpreter_bridge
     SETUP_REF_AND_ARGS_CALLEE_SAVE_FRAME
     mov     r1, r9                 @ pass Thread::Current
     mov     r2, sp                 @ pass SP

@@ -17,8 +17,6 @@
 #ifndef ART_RUNTIME_DEX_FILE_VERIFIER_H_
 #define ART_RUNTIME_DEX_FILE_VERIFIER_H_
 
-#include <unordered_set>
-
 #include "dex_file.h"
 #include "safe_map.h"
 
@@ -42,13 +40,8 @@ class DexFileVerifier {
   bool Verify();
 
   bool CheckShortyDescriptorMatch(char shorty_char, const char* descriptor, bool is_return_type);
-  bool CheckListSize(const void* start, size_t count, size_t element_size, const char* label);
-  // Check a list. The head is assumed to be at *ptr, and elements to be of size element_size. If
-  // successful, the ptr will be moved forward the amount covered by the list.
-  bool CheckList(size_t element_size, const char* label, const byte* *ptr);
-  // Checks whether the offset is zero (when size is zero) or that the offset falls within the area
-  // claimed by the file.
-  bool CheckValidOffsetAndSize(uint32_t offset, uint32_t size, const char* label);
+  bool CheckPointerRange(const void* start, const void* end, const char* label);
+  bool CheckListSize(const void* start, uint32_t count, uint32_t element_size, const char* label);
   bool CheckIndex(uint32_t field, uint32_t limit, const char* label);
 
   bool CheckHeader();
@@ -78,11 +71,8 @@ class DexFileVerifier {
   bool CheckIntraSection();
 
   bool CheckOffsetToTypeMap(size_t offset, uint16_t type);
-
-  // Note: as sometimes kDexNoIndex16, being 0xFFFF, is a valid return value, we need an
-  // additional out parameter to signal any errors loading an index.
-  uint16_t FindFirstClassDataDefiner(const byte* ptr, bool* success);
-  uint16_t FindFirstAnnotationsDirectoryDefiner(const byte* ptr, bool* success);
+  uint16_t FindFirstClassDataDefiner(const byte* ptr) const;
+  uint16_t FindFirstAnnotationsDirectoryDefiner(const byte* ptr) const;
 
   bool CheckInterStringIdItem();
   bool CheckInterTypeIdItem();
@@ -98,16 +88,6 @@ class DexFileVerifier {
   bool CheckInterSectionIterate(size_t offset, uint32_t count, uint16_t type);
   bool CheckInterSection();
 
-  // Load a string by (type) index. Checks whether the index is in bounds, printing the error if
-  // not. If there is an error, nullptr is returned.
-  const char* CheckLoadStringByIdx(uint32_t idx, const char* error_fmt);
-  const char* CheckLoadStringByTypeIdx(uint32_t type_idx, const char* error_fmt);
-
-  // Load a field/method Id by index. Checks whether the index is in bounds, printing the error if
-  // not. If there is an error, nullptr is returned.
-  const DexFile::FieldId* CheckLoadFieldId(uint32_t idx, const char* error_fmt);
-  const DexFile::MethodId* CheckLoadMethodId(uint32_t idx, const char* error_fmt);
-
   void ErrorStringPrintf(const char* fmt, ...)
       __attribute__((__format__(__printf__, 2, 3))) COLD_ATTR;
 
@@ -117,14 +97,11 @@ class DexFileVerifier {
   const char* const location_;
   const DexFile::Header* const header_;
 
-  AllocationTrackingSafeMap<uint32_t, uint16_t, kAllocatorTagDexFileVerifier> offset_to_type_map_;
+  SafeMap<uint32_t, uint16_t> offset_to_type_map_;
   const byte* ptr_;
   const void* previous_item_;
 
   std::string failure_reason_;
-
-  // Set of type ids for which there are ClassDef elements in the dex file.
-  std::unordered_set<decltype(DexFile::ClassDef::class_idx_)> defined_classes_;
 };
 
 }  // namespace art

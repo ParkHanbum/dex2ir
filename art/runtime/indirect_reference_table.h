@@ -24,11 +24,9 @@
 
 #include "base/logging.h"
 #include "base/mutex.h"
-#include "gc_root.h"
 #include "mem_map.h"
 #include "object_callbacks.h"
 #include "offsets.h"
-#include "read_barrier_option.h"
 
 namespace art {
 namespace mirror {
@@ -205,21 +203,19 @@ union IRTSegmentState {
 
 class IrtIterator {
  public:
-  explicit IrtIterator(GcRoot<mirror::Object>* table, size_t i, size_t capacity)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
+  explicit IrtIterator(mirror::Object** table, size_t i, size_t capacity)
       : table_(table), i_(i), capacity_(capacity) {
     SkipNullsAndTombstones();
   }
 
-  IrtIterator& operator++() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  IrtIterator& operator++() {
     ++i_;
     SkipNullsAndTombstones();
     return *this;
   }
 
   mirror::Object** operator*() {
-    // This does not have a read barrier as this is used to visit roots.
-    return table_[i_].AddressWithoutBarrier();
+    return &table_[i_];
   }
 
   bool equals(const IrtIterator& rhs) const {
@@ -227,16 +223,14 @@ class IrtIterator {
   }
 
  private:
-  void SkipNullsAndTombstones() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  void SkipNullsAndTombstones() {
     // We skip NULLs and tombstones. Clients don't want to see implementation details.
-    while (i_ < capacity_ &&
-           (table_[i_].IsNull() ||
-            table_[i_].Read<kWithoutReadBarrier>() == kClearedJniWeakGlobal)) {
+    while (i_ < capacity_ && (table_[i_] == NULL || table_[i_] == kClearedJniWeakGlobal)) {
       ++i_;
     }
   }
 
-  GcRoot<mirror::Object>* const table_;
+  mirror::Object** const table_;
   size_t i_;
   size_t capacity_;
 };
@@ -269,16 +263,14 @@ class IndirectReferenceTable {
    *
    * Returns kInvalidIndirectRefObject if iref is invalid.
    */
-  template<ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
   mirror::Object* Get(IndirectRef iref) const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
       ALWAYS_INLINE;
 
   // Synchronized get which reads a reference, acquiring a lock if necessary.
-  template<ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
   mirror::Object* SynchronizedGet(Thread* /*self*/, ReaderWriterMutex* /*mutex*/,
                                   IndirectRef iref) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return Get<kReadBarrierOption>(iref);
+    return Get(iref);
   }
 
   /*
@@ -304,7 +296,6 @@ class IndirectReferenceTable {
     return segment_state_.parts.topIndex;
   }
 
-  // Note IrtIterator does not have a read barrier as it's used to visit roots.
   IrtIterator begin() {
     return IrtIterator(table_, 0, Capacity());
   }
@@ -313,8 +304,7 @@ class IndirectReferenceTable {
     return IrtIterator(table_, Capacity(), Capacity());
   }
 
-  void VisitRoots(RootCallback* callback, void* arg, uint32_t tid, RootType root_type)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void VisitRoots(RootCallback* callback, void* arg, uint32_t tid, RootType root_type);
 
   uint32_t GetSegmentState() const {
     return segment_state_.all;
@@ -341,7 +331,7 @@ class IndirectReferenceTable {
    * The object pointer itself is subject to relocation in some GC
    * implementations, so we shouldn't really be using it here.
    */
-  IndirectRef ToIndirectRef(uint32_t tableIndex) const {
+  IndirectRef ToIndirectRef(const mirror::Object* /*o*/, uint32_t tableIndex) const {
     DCHECK_LT(tableIndex, 65536U);
     uint32_t serialChunk = slot_data_[tableIndex].serial;
     uintptr_t uref = serialChunk << 20 | (tableIndex << 2) | kind_;
@@ -373,12 +363,11 @@ class IndirectReferenceTable {
   IRTSegmentState segment_state_;
 
   // Mem map where we store the indirect refs.
-  std::unique_ptr<MemMap> table_mem_map_;
+  UniquePtr<MemMap> table_mem_map_;
   // Mem map where we store the extended debugging info.
-  std::unique_ptr<MemMap> slot_mem_map_;
-  // bottom of the stack. Do not directly access the object references
-  // in this as they are roots. Use Get() that has a read barrier.
-  GcRoot<mirror::Object>* table_;
+  UniquePtr<MemMap> slot_mem_map_;
+  /* bottom of the stack */
+  mirror::Object** table_;
   /* bit mask, ORed into all irefs */
   IndirectRefKind kind_;
   /* extended debugging info */

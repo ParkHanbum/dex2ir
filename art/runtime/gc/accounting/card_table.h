@@ -17,11 +17,10 @@
 #ifndef ART_RUNTIME_GC_ACCOUNTING_CARD_TABLE_H_
 #define ART_RUNTIME_GC_ACCOUNTING_CARD_TABLE_H_
 
-#include <memory>
-
 #include "base/mutex.h"
 #include "globals.h"
 #include "mem_map.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -46,10 +45,10 @@ template<size_t kAlignment> class SpaceBitmap;
 // WriteBarrier, and from there to here.
 class CardTable {
  public:
-  static constexpr size_t kCardShift = 7;
-  static constexpr size_t kCardSize = 1 << kCardShift;
-  static constexpr uint8_t kCardClean = 0x0;
-  static constexpr uint8_t kCardDirty = 0x70;
+  static const size_t kCardShift = 7;
+  static const size_t kCardSize = (1 << kCardShift);
+  static const uint8_t kCardClean = 0x0;
+  static const uint8_t kCardDirty = 0x70;
 
   static CardTable* Create(const byte* heap_begin, size_t heap_capacity);
 
@@ -142,7 +141,7 @@ class CardTable {
   void VerifyCardTable();
 
   // Mmapped pages for the card table
-  std::unique_ptr<MemMap> mem_map_;
+  UniquePtr<MemMap> mem_map_;
   // Value used to compute card table addresses from object addresses, see GetBiasedBegin
   byte* const biased_begin_;
   // Card table doesn't begin at the beginning of the mem_map_, instead it is displaced by offset

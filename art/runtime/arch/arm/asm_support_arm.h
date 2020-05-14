@@ -24,9 +24,9 @@
 // Offset of field Thread::tls32_.thin_lock_thread_id verified in InitCpu
 #define THREAD_ID_OFFSET 12
 // Offset of field Thread::tlsPtr_.card_table verified in InitCpu
-#define THREAD_CARD_TABLE_OFFSET 120
+#define THREAD_CARD_TABLE_OFFSET 112
 // Offset of field Thread::tlsPtr_.exception verified in InitCpu
-#define THREAD_EXCEPTION_OFFSET 124
+#define THREAD_EXCEPTION_OFFSET 116
 
 #define FRAME_SIZE_SAVE_ALL_CALLEE_SAVE 176
 #define FRAME_SIZE_REFS_ONLY_CALLEE_SAVE 32
@@ -34,7 +34,5 @@
 
 // Expected size of a heap reference
 #define HEAP_REFERENCE_SIZE 4
-// Flag for enabling R4 optimization in arm runtime
-#define ARM_R4_SUSPEND_FLAG
 
 #endif  // ART_RUNTIME_ARCH_ARM_ASM_SUPPORT_ARM_H_

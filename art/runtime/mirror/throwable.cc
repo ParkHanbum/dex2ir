@@ -23,6 +23,7 @@
 #include "object-inl.h"
 #include "object_array.h"
 #include "object_array-inl.h"
+#include "object_utils.h"
 #include "stack_trace_element.h"
 #include "utils.h"
 #include "well_known_classes.h"
@@ -30,7 +31,7 @@
 namespace art {
 namespace mirror {
 
-GcRoot<Class> Throwable::java_lang_Throwable_;
+Class* Throwable::java_lang_Throwable_ = NULL;
 
 void Throwable::SetDetailMessage(String* new_detail_message) {
   if (Runtime::Current()->IsActiveTransaction()) {
@@ -84,14 +85,16 @@ std::string Throwable::Dump() {
     ObjectArray<Object>* method_trace = down_cast<ObjectArray<Object>*>(stack_state);
     int32_t depth = method_trace->GetLength() - 1;
     IntArray* pc_trace = down_cast<IntArray*>(method_trace->Get(depth));
+    MethodHelper mh;
     if (depth == 0) {
       result += "(Throwable with empty stack trace)";
     } else {
       for (int32_t i = 0; i < depth; ++i) {
-        mirror::ArtMethod* method = down_cast<ArtMethod*>(method_trace->Get(i));
+        ArtMethod* method = down_cast<ArtMethod*>(method_trace->Get(i));
+        mh.ChangeMethod(method);
         uint32_t dex_pc = pc_trace->Get(i);
-        int32_t line_number = method->GetLineNumFromDexPC(dex_pc);
-        const char* source_file = method->GetDeclaringClassSourceFile();
+        int32_t line_number = mh.GetLineNumFromDexPC(dex_pc);
+        const char* source_file = mh.GetDeclaringClassSourceFile();
         result += StringPrintf("  at %s (%s:%d)\n", PrettyMethod(method, true).c_str(),
                                source_file, line_number);
       }
@@ -127,19 +130,19 @@ std::string Throwable::Dump() {
 }
 
 void Throwable::SetClass(Class* java_lang_Throwable) {
-  CHECK(java_lang_Throwable_.IsNull());
+  CHECK(java_lang_Throwable_ == NULL);
   CHECK(java_lang_Throwable != NULL);
-  java_lang_Throwable_ = GcRoot<Class>(java_lang_Throwable);
+  java_lang_Throwable_ = java_lang_Throwable;
 }
 
 void Throwable::ResetClass() {
-  CHECK(!java_lang_Throwable_.IsNull());
-  java_lang_Throwable_ = GcRoot<Class>(nullptr);
+  CHECK(java_lang_Throwable_ != NULL);
+  java_lang_Throwable_ = NULL;
 }
 
 void Throwable::VisitRoots(RootCallback* callback, void* arg) {
-  if (!java_lang_Throwable_.IsNull()) {
-    java_lang_Throwable_.VisitRoot(callback, arg, 0, kRootStickyClass);
+  if (java_lang_Throwable_ != nullptr) {
+    callback(reinterpret_cast<mirror::Object**>(&java_lang_Throwable_), arg, 0, kRootStickyClass);
   }
 }
 

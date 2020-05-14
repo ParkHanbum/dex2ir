@@ -19,7 +19,6 @@
 #include "arm_lir.h"
 #include "codegen_arm.h"
 #include "dex/quick/mir_to_lir-inl.h"
-#include "gc/accounting/card_table.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 
 namespace art {
@@ -43,7 +42,8 @@ namespace art {
  *   add   rARM_PC, r_disp   ; This is the branch from which we compute displacement
  *   cbnz  r_idx, lp
  */
-void ArmMir2Lir::GenLargeSparseSwitch(MIR* mir, uint32_t table_offset, RegLocation rl_src) {
+void ArmMir2Lir::GenSparseSwitch(MIR* mir, uint32_t table_offset,
+                                 RegLocation rl_src) {
   const uint16_t* table = cu_->insns + current_dalvik_offset_ + table_offset;
   if (cu_->verbose) {
     DumpSparseSwitchTable(table);
@@ -86,12 +86,13 @@ void ArmMir2Lir::GenLargeSparseSwitch(MIR* mir, uint32_t table_offset, RegLocati
   tab_rec->anchor = switch_branch;
   // Needs to use setflags encoding here
   OpRegRegImm(kOpSub, r_idx, r_idx, 1);  // For value == 1, this should set flags.
-  DCHECK(last_lir_insn_->u.m.def_mask->HasBit(ResourceMask::kCCode));
+  DCHECK(last_lir_insn_->u.m.def_mask & ENCODE_CCODE);
   OpCondBranch(kCondNe, target);
 }
 
 
-void ArmMir2Lir::GenLargePackedSwitch(MIR* mir, uint32_t table_offset, RegLocation rl_src) {
+void ArmMir2Lir::GenPackedSwitch(MIR* mir, uint32_t table_offset,
+                                 RegLocation rl_src) {
   const uint16_t* table = cu_->insns + current_dalvik_offset_ + table_offset;
   if (cu_->verbose) {
     DumpPackedSwitchTable(table);
@@ -188,7 +189,7 @@ void ArmMir2Lir::GenMonitorEnter(int opt_flags, RegLocation rl_src) {
       null_check_branch = nullptr;  // No null check.
     } else {
       // If the null-check fails its handled by the slow-path to reduce exception related meta-data.
-      if (!cu_->compiler_driver->GetCompilerOptions().GetImplicitNullChecks()) {
+      if (Runtime::Current()->ExplicitNullChecks()) {
         null_check_branch = OpCmpImmBranch(kCondEq, rs_r0, 0, NULL);
       }
     }
@@ -216,7 +217,7 @@ void ArmMir2Lir::GenMonitorEnter(int opt_flags, RegLocation rl_src) {
 
     LIR* success_target = NewLIR0(kPseudoTargetLabel);
     lock_success_branch->target = success_target;
-    GenMemBarrier(kLoadAny);
+    GenMemBarrier(kLoadLoad);
   } else {
     // Explicit null-check as slow-path is entered using an IT.
     GenNullCheck(rs_r0, opt_flags);
@@ -238,7 +239,7 @@ void ArmMir2Lir::GenMonitorEnter(int opt_flags, RegLocation rl_src) {
     LIR* call_inst = OpReg(kOpBlx/*ne*/, rs_rARM_LR);
     OpEndIT(it);
     MarkSafepointPC(call_inst);
-    GenMemBarrier(kLoadAny);
+    GenMemBarrier(kLoadLoad);
   }
 }
 
@@ -259,7 +260,7 @@ void ArmMir2Lir::GenMonitorExit(int opt_flags, RegLocation rl_src) {
       null_check_branch = nullptr;  // No null check.
     } else {
       // If the null-check fails its handled by the slow-path to reduce exception related meta-data.
-      if (!cu_->compiler_driver->GetCompilerOptions().GetImplicitNullChecks()) {
+      if (Runtime::Current()->ExplicitNullChecks()) {
         null_check_branch = OpCmpImmBranch(kCondEq, rs_r0, 0, NULL);
       }
     }
@@ -267,7 +268,7 @@ void ArmMir2Lir::GenMonitorExit(int opt_flags, RegLocation rl_src) {
     MarkPossibleNullPointerException(opt_flags);
     LoadConstantNoClobber(rs_r3, 0);
     LIR* slow_unlock_branch = OpCmpBranch(kCondNe, rs_r1, rs_r2, NULL);
-    GenMemBarrier(kAnyStore);
+    GenMemBarrier(kStoreLoad);
     Store32Disp(rs_r0, mirror::Object::MonitorOffset().Int32Value(), rs_r3);
     LIR* unlock_success_branch = OpUnconditionalBranch(NULL);
 
@@ -294,11 +295,8 @@ void ArmMir2Lir::GenMonitorExit(int opt_flags, RegLocation rl_src) {
     LoadConstantNoClobber(rs_r3, 0);
     // Is lock unheld on lock or held by us (==thread_id) on unlock?
     OpRegReg(kOpCmp, rs_r1, rs_r2);
-
-    LIR* it = OpIT(kCondEq, "EE");
-    if (GenMemBarrier(kAnyStore)) {
-      UpdateIT(it, "TEE");
-    }
+    LIR* it = OpIT(kCondEq, "TEE");
+    GenMemBarrier(kStoreLoad);
     Store32Disp/*eq*/(rs_r0, mirror::Object::MonitorOffset().Int32Value(), rs_r3);
     // Go expensive route - UnlockObjectFromCode(obj);
     LoadWordDisp/*ne*/(rs_rARM_SELF, QUICK_ENTRYPOINT_OFFSET(4, pUnlockObject).Int32Value(),
@@ -312,11 +310,11 @@ void ArmMir2Lir::GenMonitorExit(int opt_flags, RegLocation rl_src) {
 
 void ArmMir2Lir::GenMoveException(RegLocation rl_dest) {
   int ex_offset = Thread::ExceptionOffset<4>().Int32Value();
-  RegLocation rl_result = EvalLoc(rl_dest, kRefReg, true);
-  RegStorage reset_reg = AllocTempRef();
-  LoadRefDisp(rs_rARM_SELF, ex_offset, rl_result.reg, kNotVolatile);
+  RegLocation rl_result = EvalLoc(rl_dest, kCoreReg, true);
+  RegStorage reset_reg = AllocTemp();
+  Load32Disp(rs_rARM_SELF, ex_offset, rl_result.reg);
   LoadConstant(reset_reg, 0);
-  StoreRefDisp(rs_rARM_SELF, ex_offset, reset_reg, kNotVolatile);
+  Store32Disp(rs_rARM_SELF, ex_offset, reset_reg);
   FreeTemp(reset_reg);
   StoreValue(rl_dest, rl_result);
 }
@@ -354,19 +352,14 @@ void ArmMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) {
    * We can safely skip the stack overflow check if we're
    * a leaf *and* our frame size < fudge factor.
    */
-  bool skip_overflow_check = mir_graph_->MethodIsLeaf() && !FrameNeedsStackCheck(frame_size_, kArm);
+  bool skip_overflow_check = (mir_graph_->MethodIsLeaf() &&
+                            (static_cast<size_t>(frame_size_) <
+                            Thread::kStackOverflowReservedBytes));
   NewLIR0(kPseudoMethodEntry);
-  const size_t kStackOverflowReservedUsableBytes = GetStackOverflowReservedBytes(kArm);
-  bool large_frame = (static_cast<size_t>(frame_size_) > kStackOverflowReservedUsableBytes);
-  bool generate_explicit_stack_overflow_check = large_frame ||
-    !cu_->compiler_driver->GetCompilerOptions().GetImplicitStackOverflowChecks();
   if (!skip_overflow_check) {
-    if (generate_explicit_stack_overflow_check) {
-      if (!large_frame) {
-        /* Load stack limit */
-        LockTemp(rs_r12);
-        Load32Disp(rs_rARM_SELF, Thread::StackEndOffset<4>().Int32Value(), rs_r12);
-      }
+    if (Runtime::Current()->ExplicitStackOverflowChecks()) {
+      /* Load stack limit */
+      Load32Disp(rs_rARM_SELF, Thread::StackEndOffset<4>().Int32Value(), rs_r12);
     } else {
       // Implicit stack overflow check.
       // Generate a load from [sp, #-overflowsize].  If this is in the stack
@@ -380,7 +373,7 @@ void ArmMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) {
       // This is done before the callee save instructions to avoid any possibility
       // of these overflowing.  This uses r12 and that's never saved in a callee
       // save.
-      OpRegRegImm(kOpSub, rs_r12, rs_rARM_SP, GetStackOverflowReservedBytes(kArm));
+      OpRegRegImm(kOpSub, rs_r12, rs_rARM_SP, Thread::kStackOverflowReservedBytes);
       Load32Disp(rs_r12, 0, rs_r12);
       MarkPossibleStackOverflowException();
     }
@@ -400,7 +393,7 @@ void ArmMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) {
   const int spill_size = spill_count * 4;
   const int frame_size_without_spills = frame_size_ - spill_size;
   if (!skip_overflow_check) {
-    if (generate_explicit_stack_overflow_check) {
+    if (Runtime::Current()->ExplicitStackOverflowChecks()) {
       class StackOverflowSlowPath : public LIRSlowPath {
        public:
         StackOverflowSlowPath(Mir2Lir* m2l, LIR* branch, bool restore_lr, size_t sp_displace)
@@ -427,26 +420,16 @@ void ArmMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) {
         const bool restore_lr_;
         const size_t sp_displace_;
       };
-      if (large_frame) {
-        // Note: may need a temp reg, and we only have r12 free at this point.
+      if (static_cast<size_t>(frame_size_) > Thread::kStackOverflowReservedUsableBytes) {
         OpRegRegImm(kOpSub, rs_rARM_LR, rs_rARM_SP, frame_size_without_spills);
-        Load32Disp(rs_rARM_SELF, Thread::StackEndOffset<4>().Int32Value(), rs_r12);
         LIR* branch = OpCmpBranch(kCondUlt, rs_rARM_LR, rs_r12, nullptr);
         // Need to restore LR since we used it as a temp.
         AddSlowPath(new(arena_)StackOverflowSlowPath(this, branch, true, spill_size));
         OpRegCopy(rs_rARM_SP, rs_rARM_LR);     // Establish stack
       } else {
-        /*
-         * If the frame is small enough we are guaranteed to have enough space that remains to
-         * handle signals on the user stack.  However, we may not have any free temp
-         * registers at this point, so we'll temporarily add LR to the temp pool.
-         */
-        DCHECK(!GetRegInfo(rs_rARM_LR)->IsTemp());
-        MarkTemp(rs_rARM_LR);
-        FreeTemp(rs_rARM_LR);
+        // If the frame is small enough we are guaranteed to have enough space that remains to
+        // handle signals on the user stack.
         OpRegRegImm(kOpSub, rs_rARM_SP, rs_rARM_SP, frame_size_without_spills);
-        Clobber(rs_rARM_LR);
-        UnmarkTemp(rs_rARM_LR);
         LIR* branch = OpCmpBranch(kCondUlt, rs_rARM_SP, rs_r12, nullptr);
         AddSlowPath(new(arena_)StackOverflowSlowPath(this, branch, false, frame_size_));
       }
@@ -465,7 +448,6 @@ void ArmMir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) {
   FreeTemp(rs_r1);
   FreeTemp(rs_r2);
   FreeTemp(rs_r3);
-  FreeTemp(rs_r12);
 }
 
 void ArmMir2Lir::GenExitSequence() {

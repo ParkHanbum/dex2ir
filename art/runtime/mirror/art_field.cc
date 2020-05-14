@@ -20,6 +20,7 @@
 #include "gc/accounting/card_table-inl.h"
 #include "object-inl.h"
 #include "object_array-inl.h"
+#include "object_utils.h"
 #include "runtime.h"
 #include "scoped_thread_state_change.h"
 #include "utils.h"
@@ -29,10 +30,9 @@ namespace art {
 namespace mirror {
 
 // TODO: Get global references for these
-GcRoot<Class> ArtField::java_lang_reflect_ArtField_;
+Class* ArtField::java_lang_reflect_ArtField_ = NULL;
 
-ArtField* ArtField::FromReflectedField(const ScopedObjectAccessAlreadyRunnable& soa,
-                                       jobject jlr_field) {
+ArtField* ArtField::FromReflectedField(const ScopedObjectAccess& soa, jobject jlr_field) {
   mirror::ArtField* f = soa.DecodeField(WellKnownClasses::java_lang_reflect_Field_artField);
   mirror::ArtField* field = f->GetObject(soa.Decode<mirror::Object*>(jlr_field))->AsArtField();
   DCHECK(field != nullptr);
@@ -40,21 +40,21 @@ ArtField* ArtField::FromReflectedField(const ScopedObjectAccessAlreadyRunnable& 
 }
 
 void ArtField::SetClass(Class* java_lang_reflect_ArtField) {
-  CHECK(java_lang_reflect_ArtField_.IsNull());
+  CHECK(java_lang_reflect_ArtField_ == NULL);
   CHECK(java_lang_reflect_ArtField != NULL);
-  java_lang_reflect_ArtField_ = GcRoot<Class>(java_lang_reflect_ArtField);
+  java_lang_reflect_ArtField_ = java_lang_reflect_ArtField;
 }
 
 void ArtField::ResetClass() {
-  CHECK(!java_lang_reflect_ArtField_.IsNull());
-  java_lang_reflect_ArtField_ = GcRoot<Class>(nullptr);
+  CHECK(java_lang_reflect_ArtField_ != NULL);
+  java_lang_reflect_ArtField_ = NULL;
 }
 
 void ArtField::SetOffset(MemberOffset num_bytes) {
   DCHECK(GetDeclaringClass()->IsLoaded() || GetDeclaringClass()->IsErroneous());
   if (kIsDebugBuild && Runtime::Current()->IsCompiler() &&
       !Runtime::Current()->UseCompileTimeClassPath()) {
-    Primitive::Type type = GetTypeAsPrimitiveType();
+    Primitive::Type type = FieldHelper(this).GetTypeAsPrimitiveType();
     if (type == Primitive::kPrimDouble || type == Primitive::kPrimLong) {
       DCHECK_ALIGNED(num_bytes.Uint32Value(), 8);
     }
@@ -64,8 +64,9 @@ void ArtField::SetOffset(MemberOffset num_bytes) {
 }
 
 void ArtField::VisitRoots(RootCallback* callback, void* arg) {
-  if (!java_lang_reflect_ArtField_.IsNull()) {
-    java_lang_reflect_ArtField_.VisitRoot(callback, arg, 0, kRootStickyClass);
+  if (java_lang_reflect_ArtField_ != nullptr) {
+    callback(reinterpret_cast<mirror::Object**>(&java_lang_reflect_ArtField_), arg, 0,
+             kRootStickyClass);
   }
 }
 

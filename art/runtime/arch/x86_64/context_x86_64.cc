@@ -24,7 +24,7 @@
 namespace art {
 namespace x86_64 {
 
-static constexpr uintptr_t gZero = 0;
+static const uintptr_t gZero = 0;
 
 void X86_64Context::Reset() {
   for (size_t i = 0; i < kNumberOfCpuRegisters; ++i) {
@@ -59,8 +59,8 @@ void X86_64Context::FillCalleeSaves(const StackVisitor& fr) {
     size_t j = 2;  // Offset j to skip return address spill.
     for (size_t i = 0; i < kNumberOfFloatRegisters; ++i) {
       if (((frame_info.FpSpillMask() >> i) & 1) != 0) {
-        fprs_[i] = reinterpret_cast<uint64_t*>(
-            fr.CalleeSaveAddress(spill_count + fp_spill_count - j, frame_info.FrameSizeInBytes()));
+        fprs_[i] = fr.CalleeSaveAddress(spill_count + fp_spill_count - j,
+                                        frame_info.FrameSizeInBytes());
         j++;
       }
     }
@@ -78,62 +78,50 @@ void X86_64Context::SmashCallerSaves() {
   gprs_[R9] = nullptr;
   gprs_[R10] = nullptr;
   gprs_[R11] = nullptr;
-  fprs_[XMM0] = nullptr;
-  fprs_[XMM1] = nullptr;
-  fprs_[XMM2] = nullptr;
-  fprs_[XMM3] = nullptr;
-  fprs_[XMM4] = nullptr;
-  fprs_[XMM5] = nullptr;
-  fprs_[XMM6] = nullptr;
-  fprs_[XMM7] = nullptr;
-  fprs_[XMM8] = nullptr;
-  fprs_[XMM9] = nullptr;
-  fprs_[XMM10] = nullptr;
-  fprs_[XMM11] = nullptr;
 }
 
-bool X86_64Context::SetGPR(uint32_t reg, uintptr_t value) {
+void X86_64Context::SetGPR(uint32_t reg, uintptr_t value) {
   CHECK_LT(reg, static_cast<uint32_t>(kNumberOfCpuRegisters));
   CHECK_NE(gprs_[reg], &gZero);
-  if (gprs_[reg] != nullptr) {
-    *gprs_[reg] = value;
-    return true;
-  } else {
-    return false;
-  }
+  CHECK(gprs_[reg] != NULL);
+  *gprs_[reg] = value;
 }
-
-bool X86_64Context::SetFPR(uint32_t reg, uintptr_t value) {
-  CHECK_LT(reg, static_cast<uint32_t>(kNumberOfFloatRegisters));
-  CHECK_NE(fprs_[reg], reinterpret_cast<const uint64_t*>(&gZero));
-  if (fprs_[reg] != nullptr) {
-    *fprs_[reg] = value;
-    return true;
-  } else {
-    return false;
-  }
-}
-
-extern "C" void art_quick_do_long_jump(uintptr_t*, uintptr_t*);
 
 void X86_64Context::DoLongJump() {
 #if defined(__x86_64__)
-  uintptr_t gprs[kNumberOfCpuRegisters + 1];
-  uintptr_t fprs[kNumberOfFloatRegisters];
-
+  // Array of GPR values, filled from the context backward for the long jump pop. We add a slot at
+  // the top for the stack pointer that doesn't get popped in a pop-all.
+  volatile uintptr_t gprs[kNumberOfCpuRegisters + 1];
   for (size_t i = 0; i < kNumberOfCpuRegisters; ++i) {
-    gprs[kNumberOfCpuRegisters - i - 1] = gprs_[i] != nullptr ? *gprs_[i] : X86_64Context::kBadGprBase + i;
+    gprs[kNumberOfCpuRegisters - i - 1] = gprs_[i] != NULL ? *gprs_[i] : X86_64Context::kBadGprBase + i;
   }
-  for (size_t i = 0; i < kNumberOfFloatRegisters; ++i) {
-    fprs[i] = fprs_[i] != nullptr ? *fprs_[i] : X86_64Context::kBadFprBase + i;
-  }
-
   // We want to load the stack pointer one slot below so that the ret will pop eip.
   uintptr_t rsp = gprs[kNumberOfCpuRegisters - RSP - 1] - kWordSize;
   gprs[kNumberOfCpuRegisters] = rsp;
   *(reinterpret_cast<uintptr_t*>(rsp)) = rip_;
-
-  art_quick_do_long_jump(gprs, fprs);
+  __asm__ __volatile__(
+      "movq %0, %%rsp\n\t"  // RSP points to gprs.
+      "popq %%r15\n\t"       // Load all registers except RSP and RIP with values in gprs.
+      "popq %%r14\n\t"
+      "popq %%r13\n\t"
+      "popq %%r12\n\t"
+      "popq %%r11\n\t"
+      "popq %%r10\n\t"
+      "popq %%r9\n\t"
+      "popq %%r8\n\t"
+      "popq %%rdi\n\t"
+      "popq %%rsi\n\t"
+      "popq %%rbp\n\t"
+      "addq $8, %%rsp\n\t"
+      "popq %%rbx\n\t"
+      "popq %%rdx\n\t"
+      "popq %%rcx\n\t"
+      "popq %%rax\n\t"
+      "popq %%rsp\n\t"      // Load stack pointer.
+      "ret\n\t"             // From higher in the stack pop rip.
+      :  // output.
+      : "g"(&gprs[0])  // input.
+      :);  // clobber.
 #else
   UNIMPLEMENTED(FATAL);
 #endif

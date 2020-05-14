@@ -145,15 +145,6 @@ class BumpPointerSpace FINAL : public ContinuousMemMapAllocSpace {
 
   accounting::ContinuousSpaceBitmap::SweepCallback* GetSweepCallback() OVERRIDE;
 
-  // Record objects / bytes freed.
-  void RecordFree(int32_t objects, int32_t bytes) {
-    objects_allocated_.FetchAndSubSequentiallyConsistent(objects);
-    bytes_allocated_.FetchAndSubSequentiallyConsistent(bytes);
-  }
-
-  void LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes) OVERRIDE
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
   // Object alignment within the space.
   static constexpr size_t kAlignment = 8;
 

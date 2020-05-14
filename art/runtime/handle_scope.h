@@ -27,13 +27,11 @@ namespace art {
 namespace mirror {
 class Object;
 }
-
 class Thread;
 
-// HandleScopes are scoped objects containing a number of Handles. They are used to allocate
-// handles, for these handles (and the objects contained within them) to be visible/roots for the
-// GC. It is most common to stack allocate HandleScopes using StackHandleScope.
-class PACKED(4) HandleScope {
+// HandleScopes can be allocated within the bridge frame between managed and native code backed by
+// stack storage or manually allocated in native.
+class HandleScope {
  public:
   ~HandleScope() {}
 
@@ -48,17 +46,25 @@ class PACKED(4) HandleScope {
 
   // Returns the size of a HandleScope containing num_references handles.
   static size_t SizeOf(uint32_t num_references) {
-    size_t header_size = sizeof(HandleScope);
+    size_t header_size = OFFSETOF_MEMBER(HandleScope, references_);
     size_t data_size = sizeof(StackReference<mirror::Object>) * num_references;
     return header_size + data_size;
   }
 
-  // Returns the size of a HandleScope containing num_references handles.
-  static size_t SizeOf(size_t pointer_size, uint32_t num_references) {
+  // Get the size of the handle scope for the number of entries, with padding added for potential alignment.
+  static size_t GetAlignedHandleScopeSize(uint32_t num_references) {
+    size_t handle_scope_size = SizeOf(num_references);
+    return RoundUp(handle_scope_size, 8);
+  }
+
+  // Get the size of the handle scope for the number of entries, with padding added for potential alignment.
+  static size_t GetAlignedHandleScopeSizeTarget(size_t pointer_size, uint32_t num_references) {
     // Assume that the layout is packed.
     size_t header_size = pointer_size + sizeof(number_of_references_);
+    // This assumes there is no layout change between 32 and 64b.
     size_t data_size = sizeof(StackReference<mirror::Object>) * num_references;
-    return header_size + data_size;
+    size_t handle_scope_size = header_size + data_size;
+    return RoundUp(handle_scope_size, 8);
   }
 
   // Link to previous HandleScope or null.
@@ -100,8 +106,8 @@ class PACKED(4) HandleScope {
     // jni_compiler should have a jobject/jclass as a native method is
     // passed in a this pointer or a class
     DCHECK_GT(number_of_references_, 0U);
-    return &references_[0] <= handle_scope_entry &&
-        handle_scope_entry <= &references_[number_of_references_ - 1];
+    return ((&references_[0] <= handle_scope_entry)
+            && (handle_scope_entry <= (&references_[number_of_references_ - 1])));
   }
 
   // Offset of link within HandleScope, used by generated code
@@ -132,81 +138,51 @@ class PACKED(4) HandleScope {
 
  private:
   template<size_t kNumReferences> friend class StackHandleScope;
-
   DISALLOW_COPY_AND_ASSIGN(HandleScope);
 };
 
 // A wrapper which wraps around Object** and restores the pointer in the destructor.
 // TODO: Add more functionality.
 template<class T>
-class HandleWrapper : public Handle<T> {
+class HandleWrapper {
  public:
   HandleWrapper(T** obj, const Handle<T>& handle)
-     : Handle<T>(handle), obj_(obj) {
+     : obj_(obj), handle_(handle) {
   }
 
   ~HandleWrapper() {
-    *obj_ = Handle<T>::Get();
+    *obj_ = handle_.Get();
   }
 
  private:
   T** obj_;
+  Handle<T> handle_;
 };
 
 // Scoped handle storage of a fixed size that is usually stack allocated.
 template<size_t kNumReferences>
-class PACKED(4) StackHandleScope FINAL : public HandleScope {
+class StackHandleScope : public HandleScope {
  public:
   explicit StackHandleScope(Thread* self);
   ~StackHandleScope();
 
-  // Currently unused, using this GetReference instead of the one in HandleScope is preferred to
-  // avoid compiler optimizations incorrectly optimizing out of bound array accesses.
-  // TODO: Remove this when it is un-necessary.
-  mirror::Object* GetReference(size_t i) const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      ALWAYS_INLINE {
-    DCHECK_LT(i, number_of_references_);
-    return references_storage_[i].AsMirrorPtr();
-  }
-
-  Handle<mirror::Object> GetHandle(size_t i) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      ALWAYS_INLINE {
-    DCHECK_LT(i, number_of_references_);
-    return Handle<mirror::Object>(&references_storage_[i]);
-  }
-
-  void SetReference(size_t i, mirror::Object* object) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      ALWAYS_INLINE {
-    DCHECK_LT(i, number_of_references_);
-    references_storage_[i].Assign(object);
-  }
-
   template<class T>
   Handle<T> NewHandle(T* object) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     SetReference(pos_, object);
-    Handle<T> h(GetHandle(pos_));
-    pos_++;
-    return h;
+    return Handle<T>(GetHandle(pos_++));
   }
 
   template<class T>
   HandleWrapper<T> NewHandleWrapper(T** object) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     SetReference(pos_, *object);
-    Handle<T> h(GetHandle(pos_));
-    pos_++;
+    Handle<T> h(GetHandle(pos_++));
     return HandleWrapper<T>(object, h);
   }
 
  private:
-  // References_storage_ needs to be first so that it appears in the same location as
-  // HandleScope::references_.
+  // references_storage_ needs to be first so that it matches the address of references_.
   StackReference<mirror::Object> references_storage_[kNumReferences];
-
-  // The thread that the stack handle scope is a linked list upon. The stack handle scope will
-  // push and pop itself from this thread.
   Thread* const self_;
-
-  // Position new handles will be created.
   size_t pos_;
 
   template<size_t kNumRefs> friend class StackHandleScope;

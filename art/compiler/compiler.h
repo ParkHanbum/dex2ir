@@ -43,11 +43,10 @@ class Compiler {
 
   static Compiler* Create(CompilerDriver* driver, Kind kind);
 
-  //c
   virtual void Init() const = 0;
-  //c
+
   virtual void UnInit() const = 0;
-  //c
+
   virtual CompiledMethod* Compile(const DexFile::CodeItem* code_item,
                                   uint32_t access_flags,
                                   InvokeType invoke_type,
@@ -63,11 +62,11 @@ class Compiler {
                                              uint32_t method_idx,
                                              jobject class_loader,
                                              const art::DexFile& dex_file);
-  //c
+
   virtual CompiledMethod* JniCompile(uint32_t access_flags,
                                      uint32_t method_idx,
                                      const DexFile& dex_file) const = 0;
-  //c
+
   virtual uintptr_t GetEntryPointOf(mirror::ArtMethod* method) const
      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) = 0;
 
@@ -77,13 +76,13 @@ class Compiler {
                         const std::string& android_root,
                         bool is_host) const
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) = 0;
-  //c
+
   virtual Backend* GetCodeGenerator(CompilationUnit* cu, void* compilation_unit) const = 0;
 
   uint64_t GetMaximumCompilationTimeBeforeWarning() const {
     return maximum_compilation_time_before_warning_;
   }
-  //c
+
   virtual bool IsPortable() const {
     return false;
   }
@@ -92,10 +91,10 @@ class Compiler {
     UNUSED(driver);
     UNUSED(filename);
   }
-  //c
+
   virtual void InitCompilationUnit(CompilationUnit& cu) const = 0;
 
-  // virtual ~Compiler() {}
+  virtual ~Compiler() {}
 
   /*
    * @brief Generate and return Dwarf CFI initialization, if supported by the
@@ -105,7 +104,6 @@ class Compiler {
    * information.
    * @note This is used for backtrace information in generated code.
    */
-  // c
   virtual std::vector<uint8_t>* GetCallFrameInformationInitialization(const CompilerDriver& driver)
       const {
     return nullptr;

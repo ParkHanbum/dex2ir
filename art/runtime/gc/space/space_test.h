@@ -17,15 +17,15 @@
 #ifndef ART_RUNTIME_GC_SPACE_SPACE_TEST_H_
 #define ART_RUNTIME_GC_SPACE_SPACE_TEST_H_
 
+#include "zygote_space.h"
+
 #include <stdint.h>
-#include <memory>
 
 #include "common_runtime_test.h"
 #include "globals.h"
+#include "UniquePtr.h"
 #include "mirror/array-inl.h"
 #include "mirror/object-inl.h"
-#include "scoped_thread_state_change.h"
-#include "zygote_space.h"
 
 namespace art {
 namespace gc {
@@ -129,37 +129,37 @@ static inline size_t test_rand(size_t* seed) {
 void SpaceTest::InitTestBody(CreateSpaceFn create_space) {
   {
     // Init < max == growth
-    std::unique_ptr<Space> space(create_space("test", 16 * MB, 32 * MB, 32 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 16 * MB, 32 * MB, 32 * MB, nullptr));
     EXPECT_TRUE(space.get() != nullptr);
   }
   {
     // Init == max == growth
-    std::unique_ptr<Space> space(create_space("test", 16 * MB, 16 * MB, 16 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 16 * MB, 16 * MB, 16 * MB, nullptr));
     EXPECT_TRUE(space.get() != nullptr);
   }
   {
     // Init > max == growth
-    std::unique_ptr<Space> space(create_space("test", 32 * MB, 16 * MB, 16 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 32 * MB, 16 * MB, 16 * MB, nullptr));
     EXPECT_TRUE(space.get() == nullptr);
   }
   {
     // Growth == init < max
-    std::unique_ptr<Space> space(create_space("test", 16 * MB, 16 * MB, 32 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 16 * MB, 16 * MB, 32 * MB, nullptr));
     EXPECT_TRUE(space.get() != nullptr);
   }
   {
     // Growth < init < max
-    std::unique_ptr<Space> space(create_space("test", 16 * MB, 8 * MB, 32 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 16 * MB, 8 * MB, 32 * MB, nullptr));
     EXPECT_TRUE(space.get() == nullptr);
   }
   {
     // Init < growth < max
-    std::unique_ptr<Space> space(create_space("test", 8 * MB, 16 * MB, 32 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 8 * MB, 16 * MB, 32 * MB, nullptr));
     EXPECT_TRUE(space.get() != nullptr);
   }
   {
     // Init < max < growth
-    std::unique_ptr<Space> space(create_space("test", 8 * MB, 32 * MB, 16 * MB, nullptr));
+    UniquePtr<Space> space(create_space("test", 8 * MB, 32 * MB, 16 * MB, nullptr));
     EXPECT_TRUE(space.get() == nullptr);
   }
 }
@@ -398,7 +398,7 @@ void SpaceTest::SizeFootPrintGrowthLimitAndTrimBody(MallocSpace* space, intptr_t
 
   // Fill the space with lots of small objects up to the growth limit
   size_t max_objects = (growth_limit / (object_size > 0 ? object_size : 8)) + 1;
-  std::unique_ptr<mirror::Object*[]> lots_of_objects(new mirror::Object*[max_objects]);
+  UniquePtr<mirror::Object*[]> lots_of_objects(new mirror::Object*[max_objects]);
   size_t last_object = 0;  // last object for which allocation succeeded
   size_t amount_allocated = 0;  // amount of space allocated
   Thread* self = Thread::Current();

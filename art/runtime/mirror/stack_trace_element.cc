@@ -26,21 +26,23 @@
 namespace art {
 namespace mirror {
 
-GcRoot<Class> StackTraceElement::java_lang_StackTraceElement_;
+Class* StackTraceElement::java_lang_StackTraceElement_ = NULL;
 
 void StackTraceElement::SetClass(Class* java_lang_StackTraceElement) {
-  CHECK(java_lang_StackTraceElement_.IsNull());
+  CHECK(java_lang_StackTraceElement_ == NULL);
   CHECK(java_lang_StackTraceElement != NULL);
-  java_lang_StackTraceElement_ = GcRoot<Class>(java_lang_StackTraceElement);
+  java_lang_StackTraceElement_ = java_lang_StackTraceElement;
 }
 
 void StackTraceElement::ResetClass() {
-  CHECK(!java_lang_StackTraceElement_.IsNull());
-  java_lang_StackTraceElement_ = GcRoot<Class>(nullptr);
+  CHECK(java_lang_StackTraceElement_ != NULL);
+  java_lang_StackTraceElement_ = NULL;
 }
 
-StackTraceElement* StackTraceElement::Alloc(Thread* self, Handle<String> declaring_class,
-                                            Handle<String> method_name, Handle<String> file_name,
+StackTraceElement* StackTraceElement::Alloc(Thread* self,
+                                            Handle<String>& declaring_class,
+                                            Handle<String>& method_name,
+                                            Handle<String>& file_name,
                                             int32_t line_number) {
   StackTraceElement* trace =
       down_cast<StackTraceElement*>(GetStackTraceElement()->AllocObject(self));
@@ -55,8 +57,8 @@ StackTraceElement* StackTraceElement::Alloc(Thread* self, Handle<String> declari
 }
 
 template<bool kTransactionActive>
-void StackTraceElement::Init(Handle<String> declaring_class, Handle<String> method_name,
-                             Handle<String> file_name, int32_t line_number) {
+void StackTraceElement::Init(Handle<String>& declaring_class, Handle<String>& method_name,
+                             Handle<String>& file_name, int32_t line_number) {
   SetFieldObject<kTransactionActive>(OFFSET_OF_OBJECT_MEMBER(StackTraceElement, declaring_class_),
                                      declaring_class.Get());
   SetFieldObject<kTransactionActive>(OFFSET_OF_OBJECT_MEMBER(StackTraceElement, method_name_),
@@ -68,8 +70,9 @@ void StackTraceElement::Init(Handle<String> declaring_class, Handle<String> meth
 }
 
 void StackTraceElement::VisitRoots(RootCallback* callback, void* arg) {
-  if (!java_lang_StackTraceElement_.IsNull()) {
-    java_lang_StackTraceElement_.VisitRoot(callback, arg, 0, kRootStickyClass);
+  if (java_lang_StackTraceElement_ != nullptr) {
+    callback(reinterpret_cast<mirror::Object**>(&java_lang_StackTraceElement_), arg, 0,
+             kRootStickyClass);
   }
 }
 

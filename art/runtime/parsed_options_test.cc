@@ -16,8 +16,7 @@
 
 #include "parsed_options.h"
 
-#include <memory>
-
+#include "UniquePtr.h"
 #include "common_runtime_test.h"
 
 namespace art {
@@ -36,7 +35,7 @@ TEST_F(ParsedOptionsTest, ParsedOptions) {
   boot_class_path += "-Xbootclasspath:";
   boot_class_path += lib_core;
 
-  RuntimeOptions options;
+  Runtime::Options options;
   options.push_back(std::make_pair(boot_class_path.c_str(), null));
   options.push_back(std::make_pair("-classpath", null));
   options.push_back(std::make_pair(lib_core.c_str(), null));
@@ -54,7 +53,7 @@ TEST_F(ParsedOptionsTest, ParsedOptions) {
   options.push_back(std::make_pair("vfprintf", test_vfprintf));
   options.push_back(std::make_pair("abort", test_abort));
   options.push_back(std::make_pair("exit", test_exit));
-  std::unique_ptr<ParsedOptions> parsed(ParsedOptions::Create(options, false));
+  UniquePtr<ParsedOptions> parsed(ParsedOptions::Create(options, false));
   ASSERT_TRUE(parsed.get() != NULL);
 
   EXPECT_EQ(lib_core, parsed->boot_class_path_string_);

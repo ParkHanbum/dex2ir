@@ -17,17 +17,15 @@
 #ifndef ART_RUNTIME_GC_COLLECTOR_SEMI_SPACE_H_
 #define ART_RUNTIME_GC_COLLECTOR_SEMI_SPACE_H_
 
-#include <memory>
-
 #include "atomic.h"
 #include "base/macros.h"
 #include "base/mutex.h"
 #include "garbage_collector.h"
 #include "gc/accounting/heap_bitmap.h"
 #include "immune_region.h"
-#include "mirror/object_reference.h"
 #include "object_callbacks.h"
 #include "offsets.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -163,10 +161,6 @@ class SemiSpace : public GarbageCollector {
       EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_)
       SHARED_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
 
-  static bool HeapReferenceMarkedCallback(mirror::HeapReference<mirror::Object>* object, void* arg)
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_)
-      SHARED_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
-
   static mirror::Object* MarkedForwardingAddressCallback(mirror::Object* object, void* arg)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_)
       SHARED_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
@@ -244,14 +238,9 @@ class SemiSpace : public GarbageCollector {
   // large objects were allocated at the last whole heap collection.
   uint64_t large_object_bytes_allocated_at_last_whole_heap_collection_;
 
-  // Used for generational mode. When true, we only collect the from_space_.
-  bool collect_from_space_only_;
-
-  // The space which we are promoting into, only used for GSS.
-  space::ContinuousMemMapAllocSpace* promo_dest_space_;
-
-  // The space which we copy to if the to_space_ is full.
-  space::ContinuousMemMapAllocSpace* fallback_space_;
+  // Used for the generational mode. When true, collect the whole
+  // heap. When false, collect only the bump pointer spaces.
+  bool whole_heap_collection_;
 
   // How many objects and bytes we moved, used so that we don't need to Get the size of the
   // to_space_ when calculating how many objects and bytes we freed.

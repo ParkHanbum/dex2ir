@@ -208,15 +208,10 @@ class AssemblerTest : public testing::Test {
     assembler_.reset(new Ass());
 
     // Fake a runtime test for ScratchFile
-    CommonRuntimeTest::SetUpAndroidData(android_data_);
+    std::string android_data;
+    CommonRuntimeTest::SetEnvironmentVariables(android_data);
 
     SetUpHelpers();
-  }
-
-  void TearDown() OVERRIDE {
-    // We leave temporaries in case this failed so we can debug issues.
-    CommonRuntimeTest::TearDownAndroidData(android_data_, false);
-    tmpnam_ = "";
   }
 
   // Override this to set up any architecture-specific things, e.g., register vectors.
@@ -352,7 +347,7 @@ class AssemblerTest : public testing::Test {
     }
 
     size_t cs = assembler_->CodeSize();
-    std::unique_ptr<std::vector<uint8_t>> data(new std::vector<uint8_t>(cs));
+    UniquePtr<std::vector<uint8_t> > data(new std::vector<uint8_t>(cs));
     MemoryRegion code(&(*data)[0], data->size());
     assembler_->FinalizeInstructions(code);
 
@@ -361,15 +356,12 @@ class AssemblerTest : public testing::Test {
     } else {
       if (DisassembleBinaries(*data, *res.code, test_name)) {
         if (data->size() > res.code->size()) {
-          // Fail this test with a fancy colored warning being printed.
-          EXPECT_TRUE(false) << "Assembly code is not identical, but disassembly of machine code "
-              "is equal: this implies sub-optimal encoding! Our code size=" << data->size() <<
+          LOG(WARNING) << "Assembly code is not identical, but disassembly of machine code is "
+              "equal: this implies sub-optimal encoding! Our code size=" << data->size() <<
               ", gcc size=" << res.code->size();
         } else {
-          // Otherwise just print an info message and clean up.
           LOG(INFO) << "GCC chose a different encoding than ours, but the overall length is the "
               "same.";
-          Clean(&res);
         }
       } else {
         // This will output the assembly.
@@ -383,7 +375,7 @@ class AssemblerTest : public testing::Test {
     bool ok;
     std::string error_msg;
     std::string base_name;
-    std::unique_ptr<std::vector<uint8_t>> code;
+    UniquePtr<std::vector<uint8_t>> code;
     uintptr_t length;
   };
 
@@ -689,13 +681,11 @@ class AssemblerTest : public testing::Test {
     return tmpnam_;
   }
 
-  std::unique_ptr<Ass> assembler_;
+  UniquePtr<Ass> assembler_;
 
   std::string resolved_assembler_cmd_;
   std::string resolved_objdump_cmd_;
   std::string resolved_disassemble_cmd_;
-
-  std::string android_data_;
 
   static constexpr size_t OBJDUMP_SECTION_LINE_MIN_TOKENS = 6;
 };

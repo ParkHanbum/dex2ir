@@ -20,13 +20,12 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>  // NOLINT
-#include <memory>
 #include <sstream>
 #include <signal.h>
 #include <vector>
-
 #include "base/macros.h"
 #include "log_severity.h"
+#include "UniquePtr.h"
 
 #define CHECK(x) \
   if (UNLIKELY(!(x))) \
@@ -66,16 +65,6 @@
     } \
   } while (false)
 
-// CHECK that can be used in a constexpr function. For example,
-//    constexpr int half(int n) {
-//      return
-//          DCHECK_CONSTEXPR(n >= 0, , 0)
-//          CHECK_CONSTEXPR((n & 1) == 0), << "Extra debugging output: n = " << n, 0)
-//          n / 2;
-//    }
-#define CHECK_CONSTEXPR(x, out, dummy) \
-  (UNLIKELY(!(x))) ? (LOG(FATAL) << "Check failed: " << #x out, dummy) :
-
 #ifndef NDEBUG
 
 #define DCHECK(x) CHECK(x)
@@ -87,7 +76,6 @@
 #define DCHECK_GT(x, y) CHECK_GT(x, y)
 #define DCHECK_STREQ(s1, s2) CHECK_STREQ(s1, s2)
 #define DCHECK_STRNE(s1, s2) CHECK_STRNE(s1, s2)
-#define DCHECK_CONSTEXPR(x, out, dummy) CHECK_CONSTEXPR(x, out, dummy)
 
 #else  // NDEBUG
 
@@ -126,9 +114,6 @@
 #define DCHECK_STRNE(str1, str2) \
   while (false) \
     CHECK_STRNE(str1, str2)
-
-#define DCHECK_CONSTEXPR(x, out, dummy) \
-  (false && (x)) ? (dummy) :
 
 #endif
 
@@ -217,7 +202,7 @@ class LogMessage {
  private:
   static void LogLine(const LogMessageData& data, const char*);
 
-  const std::unique_ptr<LogMessageData> data_;
+  const UniquePtr<LogMessageData> data_;
 
   friend void HandleUnexpectedSignal(int signal_number, siginfo_t* info, void* raw_context);
   friend class Mutex;

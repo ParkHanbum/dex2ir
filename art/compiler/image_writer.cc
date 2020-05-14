@@ -18,7 +18,6 @@
 
 #include <sys/stat.h>
 
-#include <memory>
 #include <vector>
 
 #include "base/logging.h"
@@ -27,9 +26,6 @@
 #include "compiled_method.h"
 #include "dex_file-inl.h"
 #include "driver/compiler_driver.h"
-#include "elf_file.h"
-#include "elf_utils.h"
-#include "elf_patcher.h"
 #include "elf_writer.h"
 #include "gc/accounting/card_table-inl.h"
 #include "gc/accounting/heap_bitmap.h"
@@ -52,9 +48,11 @@
 #include "mirror/string-inl.h"
 #include "oat.h"
 #include "oat_file.h"
+#include "object_utils.h"
 #include "runtime.h"
 #include "scoped_thread_state_change.h"
 #include "handle_scope-inl.h"
+#include "UniquePtr.h"
 #include "utils.h"
 
 using ::art::mirror::ArtField;
@@ -79,13 +77,13 @@ bool ImageWriter::Write(const std::string& image_filename,
 
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
-  std::unique_ptr<File> oat_file(OS::OpenFileReadWrite(oat_filename.c_str()));
+  UniquePtr<File> oat_file(OS::OpenFileReadWrite(oat_filename.c_str()));
   if (oat_file.get() == NULL) {
     LOG(ERROR) << "Failed to open oat file " << oat_filename << " for " << oat_location;
     return false;
   }
   std::string error_msg;
-  oat_file_ = OatFile::OpenReadable(oat_file.get(), oat_location, &error_msg);
+  oat_file_ = OatFile::OpenWritable(oat_file.get(), oat_location, &error_msg);
   if (oat_file_ == nullptr) {
     LOG(ERROR) << "Failed to open writable oat file " << oat_filename << " for " << oat_location
         << ": " << error_msg;
@@ -140,11 +138,10 @@ bool ImageWriter::Write(const std::string& image_filename,
   ElfWriter::GetOatElfInformation(oat_file.get(), oat_loaded_size, oat_data_offset);
   CalculateNewObjectOffsets(oat_loaded_size, oat_data_offset);
   CopyAndFixupObjects();
-
-  PatchOatCodeAndMethods(oat_file.get());
+  PatchOatCodeAndMethods();
   Thread::Current()->TransitionFromRunnableToSuspended(kNative);
 
-  std::unique_ptr<File> image_file(OS::CreateEmptyFile(image_filename.c_str()));
+  UniquePtr<File> image_file(OS::CreateEmptyFile(image_filename.c_str()));
   ImageHeader* image_header = reinterpret_cast<ImageHeader*>(image_->Begin());
   if (image_file.get() == NULL) {
     LOG(ERROR) << "Failed to open image file " << image_filename;
@@ -254,9 +251,7 @@ void ImageWriter::ComputeLazyFieldsForImageClasses() {
 }
 
 bool ImageWriter::ComputeLazyFieldsForClassesVisitor(Class* c, void* /*arg*/) {
-  Thread* self = Thread::Current();
-  StackHandleScope<1> hs(self);
-  mirror::Class::ComputeName(hs.NewHandle(c));
+  c->ComputeName();
   return true;
 }
 
@@ -266,11 +261,7 @@ void ImageWriter::ComputeEagerResolvedStringsCallback(Object* obj, void* arg) {
   }
   mirror::String* string = obj->AsString();
   const uint16_t* utf16_string = string->GetCharArray()->GetData() + string->GetOffset();
-  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ReaderMutexLock mu(Thread::Current(), *class_linker->DexLock());
-  size_t dex_cache_count = class_linker->GetDexCacheCount();
-  for (size_t i = 0; i < dex_cache_count; ++i) {
-    DexCache* dex_cache = class_linker->GetDexCache(i);
+  for (DexCache* dex_cache : Runtime::Current()->GetClassLinker()->GetDexCaches()) {
     const DexFile& dex_file = *dex_cache->GetDexFile();
     const DexFile::StringId* string_id;
     if (UNLIKELY(string->GetLength() == 0)) {
@@ -294,8 +285,7 @@ void ImageWriter::ComputeEagerResolvedStrings() SHARED_LOCKS_REQUIRED(Locks::mut
 }
 
 bool ImageWriter::IsImageClass(Class* klass) {
-  std::string temp;
-  return compiler_driver_.IsImageClass(klass->GetDescriptor(&temp));
+  return compiler_driver_.IsImageClass(ClassHelper(klass).GetDescriptor());
 }
 
 struct NonImageClasses {
@@ -324,10 +314,7 @@ void ImageWriter::PruneNonImageClasses() {
 
   // Clear references to removed classes from the DexCaches.
   ArtMethod* resolution_method = runtime->GetResolutionMethod();
-  ReaderMutexLock mu(Thread::Current(), *class_linker->DexLock());
-  size_t dex_cache_count = class_linker->GetDexCacheCount();
-  for (size_t idx = 0; idx < dex_cache_count; ++idx) {
-    DexCache* dex_cache = class_linker->GetDexCache(idx);
+  for (DexCache* dex_cache : class_linker->GetDexCaches()) {
     for (size_t i = 0; i < dex_cache->NumResolvedTypes(); i++) {
       Class* klass = dex_cache->GetResolvedType(i);
       if (klass != NULL && !IsImageClass(klass)) {
@@ -352,8 +339,7 @@ void ImageWriter::PruneNonImageClasses() {
 bool ImageWriter::NonImageClassesVisitor(Class* klass, void* arg) {
   NonImageClasses* context = reinterpret_cast<NonImageClasses*>(arg);
   if (!context->image_writer->IsImageClass(klass)) {
-    std::string temp;
-    context->non_image_classes->insert(klass->GetDescriptor(&temp));
+    context->non_image_classes->insert(ClassHelper(klass).GetDescriptor());
   }
   return true;
 }
@@ -373,15 +359,14 @@ void ImageWriter::CheckNonImageClassesRemovedCallback(Object* obj, void* arg) {
     Class* klass = obj->AsClass();
     if (!image_writer->IsImageClass(klass)) {
       image_writer->DumpImageClasses();
-      std::string temp;
-      CHECK(image_writer->IsImageClass(klass)) << klass->GetDescriptor(&temp)
+      CHECK(image_writer->IsImageClass(klass)) << ClassHelper(klass).GetDescriptor()
                                                << " " << PrettyDescriptor(klass);
     }
   }
 }
 
 void ImageWriter::DumpImageClasses() {
-  const std::set<std::string>* image_classes = compiler_driver_.GetImageClasses();
+  CompilerDriver::DescriptorSet* image_classes = compiler_driver_.GetImageClasses();
   CHECK(image_classes != NULL);
   for (const std::string& image_class : *image_classes) {
     LOG(INFO) << " " << image_class;
@@ -421,31 +406,17 @@ ObjectArray<Object>* ImageWriter::CreateImageRoots() const {
   Handle<Class> object_array_class(hs.NewHandle(
       class_linker->FindSystemClass(self, "[Ljava/lang/Object;")));
 
-  // build an Object[] of all the DexCaches used in the source_space_.
-  // Since we can't hold the dex lock when allocating the dex_caches
-  // ObjectArray, we lock the dex lock twice, first to get the number
-  // of dex caches first and then lock it again to copy the dex
-  // caches. We check that the number of dex caches does not change.
-  size_t dex_cache_count;
-  {
-    ReaderMutexLock mu(Thread::Current(), *class_linker->DexLock());
-    dex_cache_count = class_linker->GetDexCacheCount();
-  }
+  // build an Object[] of all the DexCaches used in the source_space_
   Handle<ObjectArray<Object>> dex_caches(
       hs.NewHandle(ObjectArray<Object>::Alloc(self, object_array_class.Get(),
-                                              dex_cache_count)));
-  CHECK(dex_caches.Get() != nullptr) << "Failed to allocate a dex cache array.";
-  {
-    ReaderMutexLock mu(Thread::Current(), *class_linker->DexLock());
-    CHECK_EQ(dex_cache_count, class_linker->GetDexCacheCount())
-        << "The number of dex caches changed.";
-    for (size_t i = 0; i < dex_cache_count; ++i) {
-      dex_caches->Set<false>(i, class_linker->GetDexCache(i));
-    }
+                                              class_linker->GetDexCaches().size())));
+  int i = 0;
+  for (DexCache* dex_cache : class_linker->GetDexCaches()) {
+    dex_caches->Set<false>(i++, dex_cache);
   }
 
   // build an Object[] of the roots needed to restore the runtime
-  Handle<ObjectArray<Object>> image_roots(hs.NewHandle(
+  Handle<ObjectArray<Object> > image_roots(hs.NewHandle(
       ObjectArray<Object>::Alloc(self, object_array_class.Get(), ImageHeader::kImageRootsMax)));
   image_roots->Set<false>(ImageHeader::kResolutionMethod, runtime->GetResolutionMethod());
   image_roots->Set<false>(ImageHeader::kImtConflictMethod, runtime->GetImtConflictMethod());
@@ -633,31 +604,9 @@ class FixupVisitor {
         mirror::Reference::ReferentOffset(), image_writer_->GetImageAddress(ref->GetReferent()));
   }
 
- protected:
+ private:
   ImageWriter* const image_writer_;
   mirror::Object* const copy_;
-};
-
-class FixupClassVisitor FINAL : public FixupVisitor {
- public:
-  FixupClassVisitor(ImageWriter* image_writer, Object* copy) : FixupVisitor(image_writer, copy) {
-  }
-
-  void operator()(Object* obj, MemberOffset offset, bool /*is_static*/) const
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_, Locks::heap_bitmap_lock_) {
-    DCHECK(obj->IsClass());
-    FixupVisitor::operator()(obj, offset, false);
-
-    if (offset.Uint32Value() < mirror::Class::EmbeddedVTableOffset().Uint32Value()) {
-      return;
-    }
-  }
-
-  void operator()(mirror::Class* /*klass*/, mirror::Reference* ref) const
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::heap_bitmap_lock_) {
-    LOG(FATAL) << "Reference not expected here.";
-  }
 };
 
 void ImageWriter::FixupObject(Object* orig, Object* copy) {
@@ -671,65 +620,10 @@ void ImageWriter::FixupObject(Object* orig, Object* copy) {
       DCHECK_EQ(copy->GetReadBarrierPointer(), GetImageAddress(orig));
     }
   }
-  if (orig->IsClass() && orig->AsClass()->ShouldHaveEmbeddedImtAndVTable()) {
-    FixupClassVisitor visitor(this, copy);
-    orig->VisitReferences<true /*visit class*/>(visitor, visitor);
-  } else {
-    FixupVisitor visitor(this, copy);
-    orig->VisitReferences<true /*visit class*/>(visitor, visitor);
-  }
+  FixupVisitor visitor(this, copy);
+  orig->VisitReferences<true /*visit class*/>(visitor, visitor);
   if (orig->IsArtMethod<kVerifyNone>()) {
     FixupMethod(orig->AsArtMethod<kVerifyNone>(), down_cast<ArtMethod*>(copy));
-  }
-}
-
-const byte* ImageWriter::GetQuickCode(mirror::ArtMethod* method, bool* quick_is_interpreted) {
-  DCHECK(!method->IsResolutionMethod() && !method->IsImtConflictMethod() &&
-         !method->IsAbstract()) << PrettyMethod(method);
-
-  // Use original code if it exists. Otherwise, set the code pointer to the resolution
-  // trampoline.
-
-  // Quick entrypoint:
-  const byte* quick_code = GetOatAddress(method->GetQuickOatCodeOffset());
-  *quick_is_interpreted = false;
-  if (quick_code != nullptr &&
-      (!method->IsStatic() || method->IsConstructor() || method->GetDeclaringClass()->IsInitialized())) {
-    // We have code for a non-static or initialized method, just use the code.
-  } else if (quick_code == nullptr && method->IsNative() &&
-      (!method->IsStatic() || method->GetDeclaringClass()->IsInitialized())) {
-    // Non-static or initialized native method missing compiled code, use generic JNI version.
-    quick_code = GetOatAddress(quick_generic_jni_trampoline_offset_);
-  } else if (quick_code == nullptr && !method->IsNative()) {
-    // We don't have code at all for a non-native method, use the interpreter.
-    quick_code = GetOatAddress(quick_to_interpreter_bridge_offset_);
-    *quick_is_interpreted = true;
-  } else {
-    CHECK(!method->GetDeclaringClass()->IsInitialized());
-    // We have code for a static method, but need to go through the resolution stub for class
-    // initialization.
-    quick_code = GetOatAddress(quick_resolution_trampoline_offset_);
-  }
-  return quick_code;
-}
-
-const byte* ImageWriter::GetQuickEntryPoint(mirror::ArtMethod* method) {
-  // Calculate the quick entry point following the same logic as FixupMethod() below.
-  // The resolution method has a special trampoline to call.
-  if (UNLIKELY(method == Runtime::Current()->GetResolutionMethod())) {
-    return GetOatAddress(quick_resolution_trampoline_offset_);
-  } else if (UNLIKELY(method == Runtime::Current()->GetImtConflictMethod())) {
-    return GetOatAddress(quick_imt_conflict_trampoline_offset_);
-  } else {
-    // We assume all methods have code. If they don't currently then we set them to the use the
-    // resolution trampoline. Abstract methods never have code and so we need to make sure their
-    // use results in an AbstractMethodError. We use the interpreter to achieve this.
-    if (UNLIKELY(method->IsAbstract())) {
-      return GetOatAddress(quick_to_interpreter_bridge_offset_);
-    } else {
-      bool quick_is_interpreted;
-      return GetQuickCode(method, &quick_is_interpreted);
-    }
   }
 }
 
@@ -739,56 +633,49 @@ void ImageWriter::FixupMethod(ArtMethod* orig, ArtMethod* copy) {
 
   // The resolution method has a special trampoline to call.
   if (UNLIKELY(orig == Runtime::Current()->GetResolutionMethod())) {
-#if defined(ART_USE_PORTABLE_COMPILER)
     copy->SetEntryPointFromPortableCompiledCode<kVerifyNone>(GetOatAddress(portable_resolution_trampoline_offset_));
-#endif
     copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(GetOatAddress(quick_resolution_trampoline_offset_));
   } else if (UNLIKELY(orig == Runtime::Current()->GetImtConflictMethod())) {
-#if defined(ART_USE_PORTABLE_COMPILER)
     copy->SetEntryPointFromPortableCompiledCode<kVerifyNone>(GetOatAddress(portable_imt_conflict_trampoline_offset_));
-#endif
     copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(GetOatAddress(quick_imt_conflict_trampoline_offset_));
   } else {
     // We assume all methods have code. If they don't currently then we set them to the use the
     // resolution trampoline. Abstract methods never have code and so we need to make sure their
     // use results in an AbstractMethodError. We use the interpreter to achieve this.
     if (UNLIKELY(orig->IsAbstract())) {
-#if defined(ART_USE_PORTABLE_COMPILER)
       copy->SetEntryPointFromPortableCompiledCode<kVerifyNone>(GetOatAddress(portable_to_interpreter_bridge_offset_));
-#endif
       copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(GetOatAddress(quick_to_interpreter_bridge_offset_));
       copy->SetEntryPointFromInterpreter<kVerifyNone>(reinterpret_cast<EntryPointFromInterpreter*>
           (const_cast<byte*>(GetOatAddress(interpreter_to_interpreter_bridge_offset_))));
     } else {
-      bool quick_is_interpreted;
-      const byte* quick_code = GetQuickCode(orig, &quick_is_interpreted);
-      copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(quick_code);
-
-      // Portable entrypoint:
-      bool portable_is_interpreted = false;
-#if defined(ART_USE_PORTABLE_COMPILER)
-      const byte* portable_code = GetOatAddress(orig->GetPortableOatCodeOffset());
-      if (portable_code != nullptr &&
+      copy->SetEntryPointFromInterpreter<kVerifyNone>(reinterpret_cast<EntryPointFromInterpreter*>
+          (const_cast<byte*>(GetOatAddress(interpreter_to_compiled_code_bridge_offset_))));
+      // Use original code if it exists. Otherwise, set the code pointer to the resolution
+      // trampoline.
+      const byte* quick_code = GetOatAddress(orig->GetQuickOatCodeOffset());
+      if (quick_code != nullptr &&
           (!orig->IsStatic() || orig->IsConstructor() || orig->GetDeclaringClass()->IsInitialized())) {
         // We have code for a non-static or initialized method, just use the code.
-      } else if (portable_code == nullptr && orig->IsNative() &&
+        copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(quick_code);
+      } else if (quick_code == nullptr && orig->IsNative() &&
           (!orig->IsStatic() || orig->GetDeclaringClass()->IsInitialized())) {
         // Non-static or initialized native method missing compiled code, use generic JNI version.
-        // TODO: generic JNI support for LLVM.
-        portable_code = GetOatAddress(portable_resolution_trampoline_offset_);
-      } else if (portable_code == nullptr && !orig->IsNative()) {
+        copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(GetOatAddress(quick_generic_jni_trampoline_offset_));
+      } else if (quick_code == nullptr && !orig->IsNative()) {
         // We don't have code at all for a non-native method, use the interpreter.
-        portable_code = GetOatAddress(portable_to_interpreter_bridge_offset_);
-        portable_is_interpreted = true;
+        copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(GetOatAddress(quick_to_interpreter_bridge_offset_));
       } else {
         CHECK(!orig->GetDeclaringClass()->IsInitialized());
         // We have code for a static method, but need to go through the resolution stub for class
         // initialization.
-        portable_code = GetOatAddress(portable_resolution_trampoline_offset_);
+        copy->SetEntryPointFromQuickCompiledCode<kVerifyNone>(GetOatAddress(quick_resolution_trampoline_offset_));
       }
-      copy->SetEntryPointFromPortableCompiledCode<kVerifyNone>(portable_code);
-#endif
-      // JNI entrypoint:
+      const byte* portable_code = GetOatAddress(orig->GetPortableOatCodeOffset());
+      if (portable_code != nullptr) {
+        copy->SetEntryPointFromPortableCompiledCode<kVerifyNone>(portable_code);
+      } else {
+        copy->SetEntryPointFromPortableCompiledCode<kVerifyNone>(GetOatAddress(portable_resolution_trampoline_offset_));
+      }
       if (orig->IsNative()) {
         // The native method's pointer is set to a stub to lookup via dlsym.
         // Note this is not the code_ pointer, that is handled above.
@@ -799,48 +686,143 @@ void ImageWriter::FixupMethod(ArtMethod* orig, ArtMethod* copy) {
         const byte* native_gc_map = GetOatAddress(native_gc_map_offset);
         copy->SetNativeGcMap<kVerifyNone>(reinterpret_cast<const uint8_t*>(native_gc_map));
       }
-
-      // Interpreter entrypoint:
-      // Set the interpreter entrypoint depending on whether there is compiled code or not.
-      uint32_t interpreter_code = (quick_is_interpreted && portable_is_interpreted)
-          ? interpreter_to_interpreter_bridge_offset_
-          : interpreter_to_compiled_code_bridge_offset_;
-      copy->SetEntryPointFromInterpreter<kVerifyNone>(
-          reinterpret_cast<EntryPointFromInterpreter*>(
-              const_cast<byte*>(GetOatAddress(interpreter_code))));
     }
   }
 }
 
-static OatHeader* GetOatHeaderFromElf(ElfFile* elf) {
-  Elf32_Shdr* data_sec = elf->FindSectionByName(".rodata");
-  if (data_sec == nullptr) {
-    return nullptr;
-  }
-  return reinterpret_cast<OatHeader*>(elf->Begin() + data_sec->sh_offset);
+static ArtMethod* GetTargetMethod(const CompilerDriver::CallPatchInformation* patch)
+    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+  StackHandleScope<2> hs(Thread::Current());
+  Handle<mirror::DexCache> dex_cache(
+      hs.NewHandle(class_linker->FindDexCache(*patch->GetTargetDexFile())));
+  auto class_loader(hs.NewHandle<mirror::ClassLoader>(nullptr));
+  ArtMethod* method = class_linker->ResolveMethod(*patch->GetTargetDexFile(),
+                                                  patch->GetTargetMethodIdx(),
+                                                  dex_cache,
+                                                  class_loader,
+                                                  NULL,
+                                                  patch->GetTargetInvokeType());
+  CHECK(method != NULL)
+    << patch->GetTargetDexFile()->GetLocation() << " " << patch->GetTargetMethodIdx();
+  CHECK(!method->IsRuntimeMethod())
+    << patch->GetTargetDexFile()->GetLocation() << " " << patch->GetTargetMethodIdx();
+  CHECK(dex_cache->GetResolvedMethods()->Get(patch->GetTargetMethodIdx()) == method)
+    << patch->GetTargetDexFile()->GetLocation() << " " << patch->GetReferrerMethodIdx() << " "
+    << PrettyMethod(dex_cache->GetResolvedMethods()->Get(patch->GetTargetMethodIdx())) << " "
+    << PrettyMethod(method);
+  return method;
 }
 
-void ImageWriter::PatchOatCodeAndMethods(File* elf_file) {
-  std::string error_msg;
-  std::unique_ptr<ElfFile> elf(ElfFile::Open(elf_file, PROT_READ|PROT_WRITE,
-                                             MAP_SHARED, &error_msg));
-  if (elf.get() == nullptr) {
-    LOG(FATAL) << "Unable patch oat file: " << error_msg;
-    return;
-  }
-  if (!ElfPatcher::Patch(&compiler_driver_, elf.get(), oat_file_,
-                         reinterpret_cast<uintptr_t>(oat_data_begin_),
-                         GetImageAddressCallback, reinterpret_cast<void*>(this),
-                         &error_msg)) {
-    LOG(FATAL) << "unable to patch oat file: " << error_msg;
-    return;
-  }
-  OatHeader* oat_header = GetOatHeaderFromElf(elf.get());
-  CHECK(oat_header != nullptr);
-  CHECK(oat_header->IsValid());
+static Class* GetTargetType(const CompilerDriver::TypePatchInformation* patch)
+    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+  StackHandleScope<2> hs(Thread::Current());
+  Handle<mirror::DexCache> dex_cache(hs.NewHandle(class_linker->FindDexCache(patch->GetDexFile())));
+  auto class_loader(hs.NewHandle<mirror::ClassLoader>(nullptr));
+  Class* klass = class_linker->ResolveType(patch->GetDexFile(),
+                                           patch->GetTargetTypeIdx(),
+                                           dex_cache,
+                                           class_loader);
+  CHECK(klass != NULL)
+    << patch->GetDexFile().GetLocation() << " " << patch->GetTargetTypeIdx();
+  CHECK(dex_cache->GetResolvedTypes()->Get(patch->GetTargetTypeIdx()) == klass)
+    << patch->GetDexFile().GetLocation() << " " << patch->GetReferrerMethodIdx() << " "
+    << PrettyClass(dex_cache->GetResolvedTypes()->Get(patch->GetTargetTypeIdx())) << " "
+    << PrettyClass(klass);
+  return klass;
+}
 
+void ImageWriter::PatchOatCodeAndMethods() {
+  Thread* self = Thread::Current();
+  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+  const char* old_cause = self->StartAssertNoThreadSuspension("ImageWriter");
+
+  typedef std::vector<const CompilerDriver::CallPatchInformation*> CallPatches;
+  const CallPatches& code_to_patch = compiler_driver_.GetCodeToPatch();
+  for (size_t i = 0; i < code_to_patch.size(); i++) {
+    const CompilerDriver::CallPatchInformation* patch = code_to_patch[i];
+    ArtMethod* target = GetTargetMethod(patch);
+    uintptr_t quick_code = reinterpret_cast<uintptr_t>(class_linker->GetQuickOatCodeFor(target));
+    uintptr_t code_base = reinterpret_cast<uintptr_t>(&oat_file_->GetOatHeader());
+    uintptr_t code_offset = quick_code - code_base;
+    if (patch->IsRelative()) {
+      // value to patch is relative to the location being patched
+      const void* quick_oat_code =
+        class_linker->GetQuickOatCodeFor(patch->GetDexFile(),
+                                         patch->GetReferrerClassDefIdx(),
+                                         patch->GetReferrerMethodIdx());
+      uintptr_t base = reinterpret_cast<uintptr_t>(quick_oat_code);
+      uintptr_t patch_location = base + patch->GetLiteralOffset();
+      uintptr_t value = quick_code - patch_location + patch->RelativeOffset();
+      SetPatchLocation(patch, value);
+    } else {
+      if (quick_code == reinterpret_cast<uintptr_t>(GetQuickToInterpreterBridge())) {
+        if (target->IsNative()) {
+          // generic JNI, not interpreter bridge from GetQuickOatCodeFor().
+          code_offset = quick_generic_jni_trampoline_offset_;
+        } else {
+          code_offset = quick_to_interpreter_bridge_offset_;
+        }
+      }
+      SetPatchLocation(patch, PointerToLowMemUInt32(GetOatAddress(code_offset)));
+    }
+  }
+
+  const CallPatches& methods_to_patch = compiler_driver_.GetMethodsToPatch();
+  for (size_t i = 0; i < methods_to_patch.size(); i++) {
+    const CompilerDriver::CallPatchInformation* patch = methods_to_patch[i];
+    ArtMethod* target = GetTargetMethod(patch);
+    SetPatchLocation(patch, PointerToLowMemUInt32(GetImageAddress(target)));
+  }
+
+  const std::vector<const CompilerDriver::TypePatchInformation*>& classes_to_patch =
+      compiler_driver_.GetClassesToPatch();
+  for (size_t i = 0; i < classes_to_patch.size(); i++) {
+    const CompilerDriver::TypePatchInformation* patch = classes_to_patch[i];
+    Class* target = GetTargetType(patch);
+    SetPatchLocation(patch, PointerToLowMemUInt32(GetImageAddress(target)));
+  }
+
+  // Update the image header with the new checksum after patching
   ImageHeader* image_header = reinterpret_cast<ImageHeader*>(image_->Begin());
-  image_header->SetOatChecksum(oat_header->GetChecksum());
+  image_header->SetOatChecksum(oat_file_->GetOatHeader().GetChecksum());
+  self->EndAssertNoThreadSuspension(old_cause);
+}
+
+void ImageWriter::SetPatchLocation(const CompilerDriver::PatchInformation* patch, uint32_t value) {
+  ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+  const void* quick_oat_code = class_linker->GetQuickOatCodeFor(patch->GetDexFile(),
+                                                                patch->GetReferrerClassDefIdx(),
+                                                                patch->GetReferrerMethodIdx());
+  OatHeader& oat_header = const_cast<OatHeader&>(oat_file_->GetOatHeader());
+  // TODO: make this Thumb2 specific
+  uint8_t* base = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(quick_oat_code) & ~0x1);
+  uint32_t* patch_location = reinterpret_cast<uint32_t*>(base + patch->GetLiteralOffset());
+  if (kIsDebugBuild) {
+    if (patch->IsCall()) {
+      const CompilerDriver::CallPatchInformation* cpatch = patch->AsCall();
+      const DexFile::MethodId& id = cpatch->GetTargetDexFile()->GetMethodId(cpatch->GetTargetMethodIdx());
+      uint32_t expected = reinterpret_cast<uintptr_t>(&id) & 0xFFFFFFFF;
+      uint32_t actual = *patch_location;
+      CHECK(actual == expected || actual == value) << std::hex
+          << "actual=" << actual
+          << "expected=" << expected
+          << "value=" << value;
+    }
+    if (patch->IsType()) {
+      const CompilerDriver::TypePatchInformation* tpatch = patch->AsType();
+      const DexFile::TypeId& id = tpatch->GetDexFile().GetTypeId(tpatch->GetTargetTypeIdx());
+      uint32_t expected = reinterpret_cast<uintptr_t>(&id) & 0xFFFFFFFF;
+      uint32_t actual = *patch_location;
+      CHECK(actual == expected || actual == value) << std::hex
+          << "actual=" << actual
+          << "expected=" << expected
+          << "value=" << value;
+    }
+  }
+  *patch_location = value;
+  oat_header.UpdateChecksum(patch_location, sizeof(value));
 }
 
 }  // namespace art

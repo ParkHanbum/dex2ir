@@ -96,7 +96,7 @@ ManagedRegister X86_64ManagedRuntimeCallingConvention::CurrentParamRegister() {
 
 FrameOffset X86_64ManagedRuntimeCallingConvention::CurrentParamStackOffset() {
   return FrameOffset(displacement_.Int32Value() +   // displacement
-                     sizeof(StackReference<mirror::ArtMethod>) +  // Method ref
+                     kFramePointerSize +                 // Method*
                      (itr_slots_ * sizeof(uint32_t)));  // offset into in args
 }
 
@@ -130,10 +130,6 @@ X86_64JniCallingConvention::X86_64JniCallingConvention(bool is_static, bool is_s
   callee_save_regs_.push_back(X86_64ManagedRegister::FromCpuRegister(R13));
   callee_save_regs_.push_back(X86_64ManagedRegister::FromCpuRegister(R14));
   callee_save_regs_.push_back(X86_64ManagedRegister::FromCpuRegister(R15));
-  callee_save_regs_.push_back(X86_64ManagedRegister::FromXmmRegister(XMM12));
-  callee_save_regs_.push_back(X86_64ManagedRegister::FromXmmRegister(XMM13));
-  callee_save_regs_.push_back(X86_64ManagedRegister::FromXmmRegister(XMM14));
-  callee_save_regs_.push_back(X86_64ManagedRegister::FromXmmRegister(XMM15));
 }
 
 uint32_t X86_64JniCallingConvention::CoreSpillMask() const {
@@ -141,16 +137,11 @@ uint32_t X86_64JniCallingConvention::CoreSpillMask() const {
       1 << kNumberOfCpuRegisters;
 }
 
-uint32_t X86_64JniCallingConvention::FpSpillMask() const {
-  return 1 << XMM12 | 1 << XMM13 | 1 << XMM14 | 1 << XMM15;
-}
-
 size_t X86_64JniCallingConvention::FrameSize() {
   // Method*, return address and callee save area size, local reference segment state
-  size_t frame_data_size = sizeof(StackReference<mirror::ArtMethod>) +
-      (2 + CalleeSaveRegisters().size()) * kFramePointerSize;
+  size_t frame_data_size = (3 + CalleeSaveRegisters().size()) * kFramePointerSize;
   // References plus link_ (pointer) and number_of_references_ (uint32_t) for HandleScope header
-  size_t handle_scope_size = HandleScope::SizeOf(kFramePointerSize, ReferenceCount());
+  size_t handle_scope_size = HandleScope::GetAlignedHandleScopeSizeTarget(kFramePointerSize, ReferenceCount());
   // Plus return value spill area size
   return RoundUp(frame_data_size + handle_scope_size + SizeOfReturnValue(), kStackAlignment);
 }

@@ -27,14 +27,9 @@
 #include "mir_method_info.h"
 #include "utils/arena_bit_vector.h"
 #include "utils/growable_array.h"
-#include "utils/arena_containers.h"
-#include "utils/scoped_arena_containers.h"
-#include "reg_location.h"
 #include "reg_storage.h"
 
 namespace art {
-
-class GlobalValueNumbering;
 
 enum InstructionAnalysisAttributePos {
   kUninterestingOp = 0,
@@ -82,7 +77,6 @@ enum DataFlowAttributePos {
   kSetsConst,
   kFormat35c,
   kFormat3rc,
-  kFormatExtended,       // Extended format for extended MIRs.
   kNullCheckSrc0,        // Null check of uses[0].
   kNullCheckSrc1,        // Null check of uses[1].
   kNullCheckSrc2,        // Null check of uses[2].
@@ -121,7 +115,6 @@ enum DataFlowAttributePos {
 #define DF_SETS_CONST           (UINT64_C(1) << kSetsConst)
 #define DF_FORMAT_35C           (UINT64_C(1) << kFormat35c)
 #define DF_FORMAT_3RC           (UINT64_C(1) << kFormat3rc)
-#define DF_FORMAT_EXTENDED      (UINT64_C(1) << kFormatExtended)
 #define DF_NULL_CHK_0           (UINT64_C(1) << kNullCheckSrc0)
 #define DF_NULL_CHK_1           (UINT64_C(1) << kNullCheckSrc1)
 #define DF_NULL_CHK_2           (UINT64_C(1) << kNullCheckSrc2)
@@ -199,7 +192,6 @@ enum OatMethodAttributes {
 
 typedef uint16_t BasicBlockId;
 static const BasicBlockId NullBasicBlockId = 0;
-static constexpr bool kLeafOptimization = false;
 
 /*
  * In general, vreg/sreg describe Dalvik registers that originated with dx.  However,
@@ -231,7 +223,7 @@ struct BasicBlockDataFlow {
   ArenaBitVector* def_v;
   ArenaBitVector* live_in_v;
   ArenaBitVector* phi_v;
-  int32_t* vreg_to_ssa_map_exit;
+  int32_t* vreg_to_ssa_map;
   ArenaBitVector* ending_check_v;  // For null check and class init check elimination.
 };
 
@@ -242,23 +234,14 @@ struct BasicBlockDataFlow {
  * Following SSA renaming, this is the primary struct used by code generators to locate
  * operand and result registers.  This is a somewhat confusing and unhelpful convention that
  * we may want to revisit in the future.
- *
- * TODO:
- *  1. Add accessors for uses/defs and make data private
- *  2. Change fp_use/fp_def to a bit array (could help memory usage)
- *  3. Combine array storage into internal array and handled via accessors from 1.
  */
 struct SSARepresentation {
+  int16_t num_uses;
+  int16_t num_defs;
   int32_t* uses;
   bool* fp_use;
   int32_t* defs;
   bool* fp_def;
-  int16_t num_uses_allocated;
-  int16_t num_defs_allocated;
-  int16_t num_uses;
-  int16_t num_defs;
-
-  static uint32_t GetStartUseIndex(Instruction::Code opcode);
 };
 
 /*
@@ -278,77 +261,12 @@ struct MIR {
     uint32_t vC;
     uint32_t arg[5];         /* vC/D/E/F/G in invoke or filled-new-array */
     Instruction::Code opcode;
-
-    explicit DecodedInstruction():vA(0), vB(0), vB_wide(0), vC(0), opcode(Instruction::NOP) {
-    }
-
-    /*
-     * Given a decoded instruction representing a const bytecode, it updates
-     * the out arguments with proper values as dictated by the constant bytecode.
-     */
-    bool GetConstant(int64_t* ptr_value, bool* wide) const;
-
-    static bool IsPseudoMirOp(Instruction::Code opcode) {
-      return static_cast<int>(opcode) >= static_cast<int>(kMirOpFirst);
-    }
-
-    static bool IsPseudoMirOp(int opcode) {
-      return opcode >= static_cast<int>(kMirOpFirst);
-    }
-
-    bool IsInvoke() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kInvoke) == Instruction::kInvoke);
-    }
-
-    bool IsStore() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kStore) == Instruction::kStore);
-    }
-
-    bool IsLoad() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kLoad) == Instruction::kLoad);
-    }
-
-    bool IsConditionalBranch() const {
-      return !IsPseudoMirOp(opcode) && (Instruction::FlagsOf(opcode) == (Instruction::kContinue | Instruction::kBranch));
-    }
-
-    /**
-     * @brief Is the register C component of the decoded instruction a constant?
-     */
-    bool IsCFieldOrConstant() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kRegCFieldOrConstant) == Instruction::kRegCFieldOrConstant);
-    }
-
-    /**
-     * @brief Is the register C component of the decoded instruction a constant?
-     */
-    bool IsBFieldOrConstant() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kRegBFieldOrConstant) == Instruction::kRegBFieldOrConstant);
-    }
-
-    bool IsCast() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kCast) == Instruction::kCast);
-    }
-
-    /**
-     * @brief Does the instruction clobber memory?
-     * @details Clobber means that the instruction changes the memory not in a punctual way.
-     *          Therefore any supposition on memory aliasing or memory contents should be disregarded
-     *            when crossing such an instruction.
-     */
-    bool Clobbers() const {
-      return !IsPseudoMirOp(opcode) && ((Instruction::FlagsOf(opcode) & Instruction::kClobber) == Instruction::kClobber);
-    }
-
-    bool IsLinear() const {
-      return !IsPseudoMirOp(opcode) && (Instruction::FlagsOf(opcode) & (Instruction::kAdd | Instruction::kSubtract)) != 0;
-    }
   } dalvikInsn;
 
+  uint16_t width;                 // Note: width can include switch table or fill array data.
   NarrowDexOffset offset;         // Offset of the instruction in code units.
   uint16_t optimization_flags;
   int16_t m_unit_index;           // From which method was this MIR included
-  BasicBlockId bb;
   MIR* next;
   SSARepresentation* ssa_rep;
   union {
@@ -367,23 +285,6 @@ struct MIR {
     // INVOKE data index, points to MIRGraph::method_lowering_infos_.
     uint32_t method_lowering_info;
   } meta;
-
-  explicit MIR():offset(0), optimization_flags(0), m_unit_index(0), bb(NullBasicBlockId),
-                 next(nullptr), ssa_rep(nullptr) {
-    memset(&meta, 0, sizeof(meta));
-  }
-
-  uint32_t GetStartUseIndex() const {
-    return SSARepresentation::GetStartUseIndex(dalvikInsn.opcode);
-  }
-
-  MIR* Copy(CompilationUnit *c_unit);
-  MIR* Copy(MIRGraph* mir_Graph);
-
-  static void* operator new(size_t size, ArenaAllocator* arena) {
-    return arena->Alloc(sizeof(MIR), kArenaAllocMIR);
-  }
-  static void operator delete(void* p) {}  // Nop.
 };
 
 struct SuccessorBlockInfo;
@@ -416,49 +317,8 @@ struct BasicBlock {
   GrowableArray<SuccessorBlockInfo*>* successor_blocks;
 
   void AppendMIR(MIR* mir);
-  void AppendMIRList(MIR* first_list_mir, MIR* last_list_mir);
-  void AppendMIRList(const std::vector<MIR*>& insns);
   void PrependMIR(MIR* mir);
-  void PrependMIRList(MIR* first_list_mir, MIR* last_list_mir);
-  void PrependMIRList(const std::vector<MIR*>& to_add);
   void InsertMIRAfter(MIR* current_mir, MIR* new_mir);
-  void InsertMIRListAfter(MIR* insert_after, MIR* first_list_mir, MIR* last_list_mir);
-  MIR* FindPreviousMIR(MIR* mir);
-  void InsertMIRBefore(MIR* insert_before, MIR* list);
-  void InsertMIRListBefore(MIR* insert_before, MIR* first_list_mir, MIR* last_list_mir);
-  bool RemoveMIR(MIR* mir);
-  bool RemoveMIRList(MIR* first_list_mir, MIR* last_list_mir);
-
-  BasicBlock* Copy(CompilationUnit* c_unit);
-  BasicBlock* Copy(MIRGraph* mir_graph);
-
-  /**
-   * @brief Reset the optimization_flags field of each MIR.
-   */
-  void ResetOptimizationFlags(uint16_t reset_flags);
-
-  /**
-   * @brief Hide the BasicBlock.
-   * @details Set it to kDalvikByteCode, set hidden to true, remove all MIRs,
-   *          remove itself from any predecessor edges, remove itself from any
-   *          child's predecessor growable array.
-   */
-  void Hide(CompilationUnit* c_unit);
-
-  /**
-   * @brief Is ssa_reg the last SSA definition of that VR in the block?
-   */
-  bool IsSSALiveOut(const CompilationUnit* c_unit, int ssa_reg);
-
-  /**
-   * @brief Replace the edge going to old_bb to now go towards new_bb.
-   */
-  bool ReplaceChild(BasicBlockId old_bb, BasicBlockId new_bb);
-
-  /**
-   * @brief Update the predecessor growable array from old_pred to new_pred.
-   */
-  void UpdatePredecessor(BasicBlockId old_pred, BasicBlockId new_pred);
 
   /**
    * @brief Used to obtain the next MIR that follows unconditionally.
@@ -469,17 +329,11 @@ struct BasicBlock {
    * @return Returns the following MIR if one can be found.
    */
   MIR* GetNextUnconditionalMir(MIRGraph* mir_graph, MIR* current);
-  bool IsExceptionBlock() const;
-
-  static void* operator new(size_t size, ArenaAllocator* arena) {
-    return arena->Alloc(sizeof(BasicBlock), kArenaAllocBB);
-  }
-  static void operator delete(void* p) {}  // Nop.
 };
 
 /*
  * The "blocks" field in "successor_block_list" points to an array of elements with the type
- * "SuccessorBlockInfo".  For catch blocks, key is type index for the exception.  For switch
+ * "SuccessorBlockInfo".  For catch blocks, key is type index for the exception.  For swtich
  * blocks, key is the case value.
  */
 struct SuccessorBlockInfo {
@@ -508,6 +362,39 @@ class ChildBlockIterator {
   bool visited_taken_;
   bool have_successors_;
   GrowableArray<SuccessorBlockInfo*>::Iterator successor_iter_;
+};
+
+/*
+ * Whereas a SSA name describes a definition of a Dalvik vreg, the RegLocation describes
+ * the type of an SSA name (and, can also be used by code generators to record where the
+ * value is located (i.e. - physical register, frame, spill, etc.).  For each SSA name (SReg)
+ * there is a RegLocation.
+ * A note on SSA names:
+ *   o SSA names for Dalvik vRegs v0..vN will be assigned 0..N.  These represent the "vN_0"
+ *     names.  Negative SSA names represent special values not present in the Dalvik byte code.
+ *     For example, SSA name -1 represents an invalid SSA name, and SSA name -2 represents the
+ *     the Method pointer.  SSA names < -2 are reserved for future use.
+ *   o The vN_0 names for non-argument Dalvik should in practice never be used (as they would
+ *     represent the read of an undefined local variable).  The first definition of the
+ *     underlying Dalvik vReg will result in a vN_1 name.
+ *
+ * FIXME: The orig_sreg field was added as a workaround for llvm bitcode generation.  With
+ * the latest restructuring, we should be able to remove it and rely on s_reg_low throughout.
+ */
+struct RegLocation {
+  RegLocationType location:3;
+  unsigned wide:1;
+  unsigned defined:1;   // Do we know the type?
+  unsigned is_const:1;  // Constant, value in mir_graph->constant_values[].
+  unsigned fp:1;        // Floating point?
+  unsigned core:1;      // Non-floating point?
+  unsigned ref:1;       // Something GC cares about.
+  unsigned high_word:1;  // High word of pair?
+  unsigned home:1;      // Does this represent the home location?
+  RegStorage reg;       // Encoded physical registers.
+  int16_t s_reg_low;    // SSA name for low Dalvik word.
+  int16_t orig_sreg;    // TODO: remove after Bitcode gen complete
+                        // and consolidate usage w/ s_reg_low.
 };
 
 /*
@@ -545,12 +432,12 @@ class MIRGraph {
    * Examine the graph to determine whether it's worthwile to spend the time compiling
    * this method.
    */
-  bool SkipCompilation(std::string* skip_message);
+  bool SkipCompilation();
 
   /*
    * Should we skip the compilation of this method based on its name?
    */
-  bool SkipCompilationByName(const std::string& methodname);
+  bool SkipCompilation(const std::string& methodname);
 
   /*
    * Parse dex method and add MIR at current insert point.  Returns id (which is
@@ -573,7 +460,7 @@ class MIRGraph {
     return m_units_[m_unit_index]->GetCodeItem()->insns_;
   }
 
-  unsigned int GetNumBlocks() const {
+  int GetNumBlocks() const {
     return num_blocks_;
   }
 
@@ -593,7 +480,7 @@ class MIRGraph {
     return exit_block_;
   }
 
-  BasicBlock* GetBasicBlock(unsigned int block_id) const {
+  BasicBlock* GetBasicBlock(int block_id) const {
     return (block_id == NullBasicBlockId) ? NULL : block_list_.Get(block_id);
   }
 
@@ -686,26 +573,6 @@ class MIRGraph {
 
   void BasicBlockOptimization();
 
-  GrowableArray<BasicBlockId>* GetTopologicalSortOrder() {
-    DCHECK(topological_order_ != nullptr);
-    return topological_order_;
-  }
-
-  GrowableArray<BasicBlockId>* GetTopologicalSortOrderLoopEnds() {
-    DCHECK(topological_order_loop_ends_ != nullptr);
-    return topological_order_loop_ends_;
-  }
-
-  GrowableArray<BasicBlockId>* GetTopologicalSortOrderIndexes() {
-    DCHECK(topological_order_indexes_ != nullptr);
-    return topological_order_indexes_;
-  }
-
-  GrowableArray<std::pair<uint16_t, bool>>* GetTopologicalSortOrderLoopHeadStack() {
-    DCHECK(topological_order_loop_head_stack_ != nullptr);
-    return topological_order_loop_head_stack_;
-  }
-
   bool IsConst(int32_t s_reg) const {
     return is_constant_v_->IsBitSet(s_reg);
   }
@@ -726,8 +593,6 @@ class MIRGraph {
 
   int64_t ConstantValueWide(RegLocation loc) const {
     DCHECK(IsConst(loc));
-    DCHECK(!loc.high_word);  // Do not allow asking for the high partner.
-    DCHECK_LT(loc.orig_sreg + 1, GetNumSSARegs());
     return (static_cast<int64_t>(constant_values_[loc.orig_sreg + 1]) << 32) |
         Low32Bits(static_cast<int64_t>(constant_values_[loc.orig_sreg]));
   }
@@ -746,7 +611,7 @@ class MIRGraph {
       * would be filtered out with current settings.  When orig_sreg field is removed
       * from RegLocation, expand s_reg_low to handle all possible cases and remove DCHECK().
       */
-    CHECK_EQ(new_num, static_cast<int16_t>(new_num));
+    DCHECK_EQ(new_num, static_cast<int16_t>(new_num));
     num_ssa_regs_ = new_num;
   }
 
@@ -910,6 +775,14 @@ class MIRGraph {
     return backward_branches_ + forward_branches_;
   }
 
+  bool IsPseudoMirOp(Instruction::Code opcode) {
+    return static_cast<int>(opcode) >= static_cast<int>(kMirOpFirst);
+  }
+
+  bool IsPseudoMirOp(int opcode) {
+    return opcode >= static_cast<int>(kMirOpFirst);
+  }
+
   // Is this vreg in the in set?
   bool IsInVReg(int vreg) {
     return (vreg >= cu_->num_regs);
@@ -921,14 +794,11 @@ class MIRGraph {
   void VerifyDataflow();
   void CheckForDominanceFrontier(BasicBlock* dom_bb, const BasicBlock* succ_bb);
   void EliminateNullChecksAndInferTypesStart();
-  bool EliminateNullChecksAndInferTypes(BasicBlock* bb);
+  bool EliminateNullChecksAndInferTypes(BasicBlock *bb);
   void EliminateNullChecksAndInferTypesEnd();
   bool EliminateClassInitChecksGate();
   bool EliminateClassInitChecks(BasicBlock* bb);
   void EliminateClassInitChecksEnd();
-  bool ApplyGlobalValueNumberingGate();
-  bool ApplyGlobalValueNumbering(BasicBlock* bb);
-  void ApplyGlobalValueNumberingEnd();
   /*
    * Type inference handling helpers.  Because Dalvik's bytecode is not fully typed,
    * we have to do some work to figure out the sreg type.  For some operations it is
@@ -957,14 +827,6 @@ class MIRGraph {
   bool SetHigh(int index, bool is_high);
   bool SetHigh(int index);
 
-  bool PuntToInterpreter() {
-    return punt_to_interpreter_;
-  }
-
-  void SetPuntToInterpreter(bool val) {
-    punt_to_interpreter_ = val;
-  }
-
   char* GetDalvikDisassembly(const MIR* mir);
   void ReplaceSpecialChars(std::string& str);
   std::string GetSSAName(int ssa_reg);
@@ -974,17 +836,14 @@ class MIRGraph {
   void DumpMIRGraph();
   CallInfo* NewMemCallInfo(BasicBlock* bb, MIR* mir, InvokeType type, bool is_range);
   BasicBlock* NewMemBB(BBType block_type, int block_id);
-  MIR* NewMIR();
   MIR* AdvanceMIR(BasicBlock** p_bb, MIR* mir);
   BasicBlock* NextDominatedBlock(BasicBlock* bb);
   bool LayoutBlocks(BasicBlock* bb);
-  void ComputeTopologicalSortOrder();
-  BasicBlock* CreateNewBB(BBType block_type);
 
-  bool InlineSpecialMethodsGate();
-  void InlineSpecialMethodsStart();
-  void InlineSpecialMethods(BasicBlock* bb);
-  void InlineSpecialMethodsEnd();
+  bool InlineCallsGate();
+  void InlineCallsStart();
+  void InlineCalls(BasicBlock* bb);
+  void InlineCallsEnd();
 
   /**
    * @brief Perform the initial preparation for the Method Uses.
@@ -999,7 +858,7 @@ class MIRGraph {
   /**
    * @brief Perform the initial preparation for the SSA Transformation.
    */
-  void SSATransformationStart();
+  void InitializeSSATransformation();
 
   /**
    * @brief Insert a the operands for the Phi nodes.
@@ -1007,11 +866,6 @@ class MIRGraph {
    * @return true
    */
   bool InsertPhiNodeOperands(BasicBlock* bb);
-
-  /**
-   * @brief Perform the cleanup after the SSA Transformation.
-   */
-  void SSATransformationEnd();
 
   /**
    * @brief Perform constant propagation on a BasicBlock.
@@ -1035,18 +889,6 @@ class MIRGraph {
   void CombineBlocks(BasicBlock* bb);
 
   void ClearAllVisitedFlags();
-
-  void AllocateSSAUseData(MIR *mir, int num_uses);
-  void AllocateSSADefData(MIR *mir, int num_defs);
-  void CalculateBasicBlockInformation();
-  void InitializeBasicBlockData();
-  void ComputeDFSOrders();
-  void ComputeDefBlockMatrix();
-  void ComputeDominators();
-  void CompilerInitializeSSAConversion();
-  void InsertPhiNodes();
-  void DoDFSPreOrderSSARename(BasicBlock* block);
-
   /*
    * IsDebugBuild sanity check: keep track of the Dex PCs for catch entries so that later on
    * we can verify that all catch entries have native PC entries.
@@ -1054,39 +896,20 @@ class MIRGraph {
   std::set<uint32_t> catches_;
 
   // TODO: make these private.
-  RegLocation* reg_location_;                               // Map SSA names to location.
-  ArenaSafeMap<unsigned int, unsigned int> block_id_map_;   // Block collapse lookup cache.
+  RegLocation* reg_location_;                         // Map SSA names to location.
+  SafeMap<unsigned int, unsigned int> block_id_map_;  // Block collapse lookup cache.
 
   static const char* extended_mir_op_names_[kMirOpLast - kMirOpFirst];
   static const uint32_t analysis_attributes_[kMirOpLast];
 
-  void HandleSSADef(int* defs, int dalvik_reg, int reg_index);
-  bool InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed);
-
-  // Used for removing redudant suspend tests
-  void AppendGenSuspendTestList(BasicBlock* bb) {
-    if (gen_suspend_test_list_.Size() == 0 ||
-        gen_suspend_test_list_.Get(gen_suspend_test_list_.Size() - 1) != bb) {
-      gen_suspend_test_list_.Insert(bb);
-    }
-  }
-
-  /* This is used to check if there is already a method call dominating the
-   * source basic block of a backedge and being dominated by the target basic
-   * block of the backedge.
-   */
-  bool HasSuspendTestBetween(BasicBlock* source, BasicBlockId target_id);
-
- protected:
+ private:
   int FindCommonParent(int block1, int block2);
   void ComputeSuccLineIn(ArenaBitVector* dest, const ArenaBitVector* src1,
                          const ArenaBitVector* src2);
   void HandleLiveInUse(ArenaBitVector* use_v, ArenaBitVector* def_v,
                        ArenaBitVector* live_in_v, int dalvik_reg_id);
   void HandleDef(ArenaBitVector* def_v, int dalvik_reg_id);
-  void HandleExtended(ArenaBitVector* use_v, ArenaBitVector* def_v,
-                      ArenaBitVector* live_in_v,
-                      const MIR::DecodedInstruction& d_insn);
+  void CompilerInitializeSSAConversion();
   bool DoSSAConversion(BasicBlock* bb);
   bool InvokeUsesMethodStar(MIR* mir);
   int ParseInsn(const uint16_t* code_ptr, MIR::DecodedInstruction* decoded_instruction);
@@ -1096,7 +919,6 @@ class MIRGraph {
   BasicBlock* FindBlock(DexOffset code_offset, bool split, bool create,
                         BasicBlock** immed_pred_block_p);
   void ProcessTryCatchBlocks();
-  bool IsBadMonitorExitCatch(NarrowDexOffset monitor_exit_offset, NarrowDexOffset catch_offset);
   BasicBlock* ProcessCanBranch(BasicBlock* cur_block, MIR* insn, DexOffset cur_offset, int width,
                                int flags, const uint16_t* code_ptr, const uint16_t* code_end);
   BasicBlock* ProcessCanSwitch(BasicBlock* cur_block, MIR* insn, DexOffset cur_offset, int width,
@@ -1106,16 +928,22 @@ class MIRGraph {
                               const uint16_t* code_end);
   int AddNewSReg(int v_reg);
   void HandleSSAUse(int* uses, int dalvik_reg, int reg_index);
+  void HandleSSADef(int* defs, int dalvik_reg, int reg_index);
   void DataFlowSSAFormat35C(MIR* mir);
   void DataFlowSSAFormat3RC(MIR* mir);
-  void DataFlowSSAFormatExtended(MIR* mir);
   bool FindLocalLiveIn(BasicBlock* bb);
+  bool InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed);
   bool VerifyPredInfo(BasicBlock* bb);
   BasicBlock* NeedsVisit(BasicBlock* bb);
   BasicBlock* NextUnvisitedSuccessor(BasicBlock* bb);
   void MarkPreOrder(BasicBlock* bb);
   void RecordDFSOrders(BasicBlock* bb);
+  void ComputeDFSOrders();
+  void ComputeDefBlockMatrix();
   void ComputeDomPostOrderTraversal(BasicBlock* bb);
+  void ComputeDominators();
+  void InsertPhiNodes();
+  void DoDFSPreOrderSSARename(BasicBlock* block);
   void SetConstant(int32_t ssa_reg, int value);
   void SetConstantWide(int ssa_reg, int64_t value);
   int GetSSAUseCount(int s_reg);
@@ -1131,8 +959,7 @@ class MIRGraph {
 
   void CountChecks(BasicBlock* bb);
   void AnalyzeBlock(BasicBlock* bb, struct MethodStats* stats);
-  bool ComputeSkipCompilation(struct MethodStats* stats, bool skip_default,
-                              std::string* skip_message);
+  bool ComputeSkipCompilation(struct MethodStats* stats, bool skip_default);
 
   CompilationUnit* const cu_;
   GrowableArray<int>* ssa_base_vregs_;
@@ -1146,43 +973,33 @@ class MIRGraph {
   GrowableArray<uint32_t> use_counts_;      // Weighted by nesting depth
   GrowableArray<uint32_t> raw_use_counts_;  // Not weighted
   unsigned int num_reachable_blocks_;
-  unsigned int max_num_reachable_blocks_;
   GrowableArray<BasicBlockId>* dfs_order_;
   GrowableArray<BasicBlockId>* dfs_post_order_;
   GrowableArray<BasicBlockId>* dom_post_order_traversal_;
-  GrowableArray<BasicBlockId>* topological_order_;
-  // Indexes in topological_order_ need to be only as big as the BasicBlockId.
-  COMPILE_ASSERT(sizeof(BasicBlockId) == sizeof(uint16_t), assuming_16_bit_BasicBlockId);
-  // For each loop head, remember the past-the-end index of the end of the loop. 0 if not loop head.
-  GrowableArray<uint16_t>* topological_order_loop_ends_;
-  // Map BB ids to topological_order_ indexes. 0xffff if not included (hidden or null block).
-  GrowableArray<uint16_t>* topological_order_indexes_;
-  // Stack of the loop head indexes and recalculation flags for RepeatingTopologicalSortIterator.
-  GrowableArray<std::pair<uint16_t, bool>>* topological_order_loop_head_stack_;
   int* i_dom_list_;
   ArenaBitVector** def_block_matrix_;    // num_dalvik_register x num_blocks.
-  std::unique_ptr<ScopedArenaAllocator> temp_scoped_alloc_;
+  ArenaBitVector* temp_dalvik_register_v_;
+  UniquePtr<ScopedArenaAllocator> temp_scoped_alloc_;
   uint16_t* temp_insn_data_;
   uint32_t temp_bit_vector_size_;
   ArenaBitVector* temp_bit_vector_;
-  std::unique_ptr<GlobalValueNumbering> temp_gvn_;
   static const int kInvalidEntry = -1;
   GrowableArray<BasicBlock*> block_list_;
   ArenaBitVector* try_block_addr_;
   BasicBlock* entry_block_;
   BasicBlock* exit_block_;
-  unsigned int num_blocks_;
+  int num_blocks_;
   const DexFile::CodeItem* current_code_item_;
   GrowableArray<uint16_t> dex_pc_to_block_map_;  // FindBlock lookup cache.
-  ArenaVector<DexCompilationUnit*> m_units_;     // List of methods included in this graph
+  std::vector<DexCompilationUnit*> m_units_;     // List of methods included in this graph
   typedef std::pair<int, int> MIRLocation;       // Insert point, (m_unit_ index, offset)
-  ArenaVector<MIRLocation> method_stack_;        // Include stack
+  std::vector<MIRLocation> method_stack_;        // Include stack
   int current_method_;
   DexOffset current_offset_;                     // Offset in code units
   int def_count_;                                // Used to estimate size of ssa name storage.
   int* opcode_count_;                            // Dex opcode coverage stats.
   int num_ssa_regs_;                             // Number of names following SSA transformation.
-  ArenaVector<BasicBlockId> extended_basic_blocks_;  // Heads of block "traces".
+  std::vector<BasicBlockId> extended_basic_blocks_;  // Heads of block "traces".
   int method_sreg_;
   unsigned int attributes_;
   Checkstats* checkstats_;
@@ -1199,12 +1016,9 @@ class MIRGraph {
   GrowableArray<MirSFieldLoweringInfo> sfield_lowering_infos_;
   GrowableArray<MirMethodLoweringInfo> method_lowering_infos_;
   static const uint64_t oat_data_flow_attributes_[kMirOpLast];
-  GrowableArray<BasicBlock*> gen_suspend_test_list_;  // List of blocks containing suspend tests
 
   friend class ClassInitCheckEliminationTest;
-  friend class GlobalValueNumberingTest;
   friend class LocalValueNumberingTest;
-  friend class TopologicalSortOrderTest;
 };
 
 }  // namespace art

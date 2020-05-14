@@ -17,18 +17,17 @@
 #ifndef ART_RUNTIME_TRACE_H_
 #define ART_RUNTIME_TRACE_H_
 
-#include <memory>
 #include <ostream>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "atomic.h"
 #include "base/macros.h"
 #include "globals.h"
 #include "instrumentation.h"
 #include "os.h"
 #include "safe_map.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -36,8 +35,19 @@ namespace mirror {
   class ArtField;
   class ArtMethod;
 }  // namespace mirror
-
 class Thread;
+
+enum ProfilerClockSource {
+  kProfilerClockSourceThreadCpu,
+  kProfilerClockSourceWall,
+  kProfilerClockSourceDual,  // Both wall and thread CPU clocks.
+};
+
+#if defined(HAVE_POSIX_CLOCKS)
+const ProfilerClockSource kDefaultProfilerClockSource = kProfilerClockSourceDual;
+#else
+const ProfilerClockSource kDefaultProfilerClockSource = kProfilerClockSourceWall;
+#endif
 
 enum TracingMode {
   kTracingInactive,
@@ -51,25 +61,20 @@ class Trace FINAL : public instrumentation::InstrumentationListener {
     kTraceCountAllocs = 1,
   };
 
-  static void SetDefaultClockSource(TraceClockSource clock_source);
+  static void SetDefaultClockSource(ProfilerClockSource clock_source);
 
   static void Start(const char* trace_filename, int trace_fd, int buffer_size, int flags,
                     bool direct_to_ddms, bool sampling_enabled, int interval_us)
-      LOCKS_EXCLUDED(Locks::mutator_lock_,
-                     Locks::thread_list_lock_,
-                     Locks::thread_suspend_count_lock_,
-                     Locks::trace_lock_);
-  static void Stop()
-      LOCKS_EXCLUDED(Locks::mutator_lock_,
-                     Locks::thread_list_lock_,
-                     Locks::trace_lock_);
+  LOCKS_EXCLUDED(Locks::mutator_lock_,
+                 Locks::thread_list_lock_,
+                 Locks::thread_suspend_count_lock_,
+                 Locks::trace_lock_);
+  static void Stop() LOCKS_EXCLUDED(Locks::trace_lock_);
   static void Shutdown() LOCKS_EXCLUDED(Locks::trace_lock_);
   static TracingMode GetMethodTracingMode() LOCKS_EXCLUDED(Locks::trace_lock_);
 
   bool UseWallClock();
   bool UseThreadCpuClock();
-  void MeasureClockOverhead();
-  uint32_t GetClockOverheadNanoSeconds();
 
   void CompareAndUpdateStackTrace(Thread* thread, std::vector<mirror::ArtMethod*>* stack_trace)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -129,19 +134,19 @@ class Trace FINAL : public instrumentation::InstrumentationListener {
   static Trace* volatile the_trace_ GUARDED_BY(Locks::trace_lock_);
 
   // The default profiler clock source.
-  static TraceClockSource default_clock_source_;
+  static ProfilerClockSource default_clock_source_;
 
   // Sampling thread, non-zero when sampling.
   static pthread_t sampling_pthread_;
 
   // Used to remember an unused stack trace to avoid re-allocation during sampling.
-  static std::unique_ptr<std::vector<mirror::ArtMethod*>> temp_stack_trace_;
+  static UniquePtr<std::vector<mirror::ArtMethod*> > temp_stack_trace_;
 
   // File to write trace data out to, NULL if direct to ddms.
-  std::unique_ptr<File> trace_file_;
+  UniquePtr<File> trace_file_;
 
   // Buffer to store trace data.
-  std::unique_ptr<uint8_t> buf_;
+  UniquePtr<uint8_t> buf_;
 
   // Flags enabling extra tracing of things such as alloc counts.
   const int flags_;
@@ -149,7 +154,7 @@ class Trace FINAL : public instrumentation::InstrumentationListener {
   // True if traceview should sample instead of instrumenting method entry/exit.
   const bool sampling_enabled_;
 
-  const TraceClockSource clock_source_;
+  const ProfilerClockSource clock_source_;
 
   // Size of buf_.
   const int buffer_size_;
@@ -157,11 +162,8 @@ class Trace FINAL : public instrumentation::InstrumentationListener {
   // Time trace was created.
   const uint64_t start_time_;
 
-  // Clock overhead.
-  const uint32_t clock_overhead_ns_;
-
   // Offset into buf_.
-  AtomicInteger cur_offset_;
+  volatile int32_t cur_offset_;
 
   // Did we overflow the buffer recording traces?
   bool overflow_;

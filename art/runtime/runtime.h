@@ -21,30 +21,29 @@
 #include <stdio.h>
 
 #include <iosfwd>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/allocator.h"
-#include "compiler_callbacks.h"
-#include "gc_root.h"
-#include "instrumentation.h"
+#include "base/macros.h"
+#include "base/stringpiece.h"
+#include "gc/collector_type.h"
+#include "gc/heap.h"
+#include "globals.h"
 #include "instruction_set.h"
+#include "instrumentation.h"
 #include "jobject_comparator.h"
-#include "nativebridge/native_bridge.h"
 #include "object_callbacks.h"
-#include "offsets.h"
-#include "profiler_options.h"
 #include "quick/quick_method_frame_info.h"
 #include "runtime_stats.h"
 #include "safe_map.h"
+#include "fault_handler.h"
 
 namespace art {
 
 namespace gc {
   class Heap;
-}  // namespace gc
+}
 namespace mirror {
   class ArtMethod;
   class ClassLoader;
@@ -59,20 +58,16 @@ namespace verifier {
 class MethodVerifier;
 }
 class ClassLinker;
+class CompilerCallbacks;
 class DexFile;
 class InternTable;
 class JavaVMExt;
 class MonitorList;
 class MonitorPool;
-class NullPointerHandler;
 class SignalCatcher;
-class StackOverflowHandler;
-class SuspensionHandler;
 class ThreadList;
 class Trace;
 class Transaction;
-
-typedef std::vector<std::pair<std::string, const void*>> RuntimeOptions;
 
 // Not all combinations of flags are valid. You may not visit all roots as well as the new roots
 // (no logical reason to do this). You also may not start logging new roots and stop logging new
@@ -87,32 +82,14 @@ enum VisitRootFlags : uint8_t {
 
 class Runtime {
  public:
+  typedef std::vector<std::pair<std::string, const void*> > Options;
+
   // Creates and initializes a new runtime.
-  static bool Create(const RuntimeOptions& options, bool ignore_unrecognized)
+  static bool Create(const Options& options, bool ignore_unrecognized)
       SHARED_TRYLOCK_FUNCTION(true, Locks::mutator_lock_);
 
   bool IsCompiler() const {
     return compiler_callbacks_ != nullptr;
-  }
-
-  bool CanRelocate() const {
-    return !IsCompiler() || compiler_callbacks_->IsRelocationPossible();
-  }
-
-  bool ShouldRelocate() const {
-    return must_relocate_ && CanRelocate();
-  }
-
-  bool MustRelocateIfPossible() const {
-    return must_relocate_;
-  }
-
-  bool IsDex2OatEnabled() const {
-    return dex2oat_enabled_ && IsImageDex2OatEnabled();
-  }
-
-  bool IsImageDex2OatEnabled() const {
-    return image_dex2oat_enabled_;
   }
 
   CompilerCallbacks* GetCompilerCallbacks() {
@@ -127,19 +104,12 @@ class Runtime {
     return is_explicit_gc_disabled_;
   }
 
-  std::string GetCompilerExecutable() const;
-  std::string GetPatchoatExecutable() const;
-
   const std::vector<std::string>& GetCompilerOptions() const {
     return compiler_options_;
   }
 
   const std::vector<std::string>& GetImageCompilerOptions() const {
     return image_compiler_options_;
-  }
-
-  const ProfilerOptions& GetProfilerOptions() const {
-    return profiler_options_;
   }
 
   // Starts a runtime, which may cause threads to be started and code to run.
@@ -198,7 +168,7 @@ class Runtime {
   void DetachCurrentThread() LOCKS_EXCLUDED(Locks::mutator_lock_);
 
   void DumpForSigQuit(std::ostream& os)
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_);
+      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void DumpLockHolders(std::ostream& os);
 
   ~Runtime();
@@ -244,10 +214,8 @@ class Runtime {
     return monitor_pool_;
   }
 
-  mirror::Throwable* GetPreAllocatedOutOfMemoryError() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  mirror::Throwable* GetPreAllocatedNoClassDefFoundError()
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  mirror::Throwable* GetPreAllocatedOutOfMemoryError() const
+    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   const std::vector<std::string>& GetProperties() const {
     return properties_;
@@ -258,7 +226,7 @@ class Runtime {
   }
 
   static const char* GetVersion() {
-    return "2.1.0";
+    return "2.0.0";
   }
 
   void DisallowNewSystemWeaks() EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -293,41 +261,49 @@ class Runtime {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Returns a special method that calls into a trampoline for runtime method resolution
-  mirror::ArtMethod* GetResolutionMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  mirror::ArtMethod* GetResolutionMethod() const {
+    CHECK(HasResolutionMethod());
+    return resolution_method_;
+  }
 
   bool HasResolutionMethod() const {
-    return !resolution_method_.IsNull();
+    return resolution_method_ != NULL;
   }
 
   void SetResolutionMethod(mirror::ArtMethod* method) {
-    resolution_method_ = GcRoot<mirror::ArtMethod>(method);
+    resolution_method_ = method;
   }
 
   mirror::ArtMethod* CreateResolutionMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  // Returns a special method that calls into a trampoline for runtime imt conflicts.
-  mirror::ArtMethod* GetImtConflictMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  // Returns a special method that calls into a trampoline for runtime imt conflicts
+  mirror::ArtMethod* GetImtConflictMethod() const {
+    CHECK(HasImtConflictMethod());
+    return imt_conflict_method_;
+  }
 
   bool HasImtConflictMethod() const {
-    return !imt_conflict_method_.IsNull();
+    return imt_conflict_method_ != NULL;
   }
 
   void SetImtConflictMethod(mirror::ArtMethod* method) {
-    imt_conflict_method_ = GcRoot<mirror::ArtMethod>(method);
+    imt_conflict_method_ = method;
   }
 
   mirror::ArtMethod* CreateImtConflictMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Returns an imt with every entry set to conflict, used as default imt for all classes.
-  mirror::ObjectArray<mirror::ArtMethod>* GetDefaultImt()
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  mirror::ObjectArray<mirror::ArtMethod>* GetDefaultImt() const {
+    CHECK(HasDefaultImt());
+    return default_imt_;
+  }
 
   bool HasDefaultImt() const {
-    return !default_imt_.IsNull();
+    return default_imt_ != NULL;
   }
 
   void SetDefaultImt(mirror::ObjectArray<mirror::ArtMethod>* imt) {
-    default_imt_ = GcRoot<mirror::ObjectArray<mirror::ArtMethod>>(imt);
+    default_imt_ = imt;
   }
 
   mirror::ObjectArray<mirror::ArtMethod>* CreateDefaultImt(ClassLinker* cl)
@@ -342,21 +318,19 @@ class Runtime {
   };
 
   bool HasCalleeSaveMethod(CalleeSaveType type) const {
-    return !callee_save_methods_[type].IsNull();
+    return callee_save_methods_[type] != NULL;
   }
 
-  mirror::ArtMethod* GetCalleeSaveMethod(CalleeSaveType type)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  mirror::ArtMethod* GetCalleeSaveMethodUnchecked(CalleeSaveType type)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  mirror::ArtMethod* GetCalleeSaveMethod(CalleeSaveType type) const {
+    DCHECK(HasCalleeSaveMethod(type));
+    return callee_save_methods_[type];
+  }
 
   QuickMethodFrameInfo GetCalleeSaveMethodFrameInfo(CalleeSaveType type) const {
     return callee_save_method_frame_infos_[type];
   }
 
-  QuickMethodFrameInfo GetRuntimeMethodFrameInfo(mirror::ArtMethod* method)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  QuickMethodFrameInfo GetRuntimeMethodFrameInfo(mirror::ArtMethod* method) const;
 
   static size_t GetCalleeSaveMethodOffset(CalleeSaveType type) {
     return OFFSETOF_MEMBER(Runtime, callee_save_methods_[type]);
@@ -385,15 +359,11 @@ class Runtime {
 
   void ResetStats(int kinds);
 
-  void SetStatsEnabled(bool new_state, bool suspended);
+  void SetStatsEnabled(bool new_state);
 
-  enum class NativeBridgeAction {  // private
-    kUnload,
-    kInitialize
-  };
   void PreZygoteFork();
   bool InitZygote();
-  void DidForkFromZygote(NativeBridgeAction action);
+  void DidForkFromZygote();
 
   const instrumentation::Instrumentation* GetInstrumentation() const {
     return &instrumentation_;
@@ -414,7 +384,7 @@ class Runtime {
   const std::vector<const DexFile*>& GetCompileTimeClassPath(jobject class_loader);
   void SetCompileTimeClassPath(jobject class_loader, std::vector<const DexFile*>& class_path);
 
-  void StartProfiler(const char* profile_output_filename);
+  void StartProfiler(const char* appDir, const char* procName);
   void UpdateProfilerState(int state);
 
   // Transaction support.
@@ -431,13 +401,13 @@ class Runtime {
                                  mirror::Object* value, bool is_volatile) const;
   void RecordWriteArray(mirror::Array* array, size_t index, uint64_t value) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  void RecordStrongStringInsertion(mirror::String* s) const
+  void RecordStrongStringInsertion(mirror::String* s, uint32_t hash_code) const
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_);
-  void RecordWeakStringInsertion(mirror::String* s) const
+  void RecordWeakStringInsertion(mirror::String* s, uint32_t hash_code) const
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_);
-  void RecordStrongStringRemoval(mirror::String* s) const
+  void RecordStrongStringRemoval(mirror::String* s, uint32_t hash_code) const
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_);
-  void RecordWeakStringRemoval(mirror::String* s) const
+  void RecordWeakStringRemoval(mirror::String* s, uint32_t hash_code) const
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_);
 
   void SetFaultMessage(const std::string& message);
@@ -469,14 +439,6 @@ class Runtime {
     return running_on_valgrind_;
   }
 
-  void SetTargetSdkVersion(int32_t version) {
-    target_sdk_version_ = version;
-  }
-
-  int32_t GetTargetSdkVersion() const {
-    return target_sdk_version_;
-  }
-
   static const char* GetDefaultInstructionSetFeatures() {
     return kDefaultInstructionSetFeatures;
   }
@@ -488,7 +450,7 @@ class Runtime {
 
   void BlockSignals();
 
-  bool Init(const RuntimeOptions& options, bool ignore_unrecognized)
+  bool Init(const Options& options, bool ignore_unrecognized)
       SHARED_TRYLOCK_FUNCTION(true, Locks::mutator_lock_);
   void InitNativeMethods() LOCKS_EXCLUDED(Locks::mutator_lock_);
   void InitThreadGroups(Thread* self);
@@ -506,26 +468,20 @@ class Runtime {
   static constexpr int kProfileForground = 0;
   static constexpr int kProfileBackgrouud = 1;
 
-  GcRoot<mirror::ArtMethod> callee_save_methods_[kLastCalleeSaveType];
-  GcRoot<mirror::Throwable> pre_allocated_OutOfMemoryError_;
-  GcRoot<mirror::Throwable> pre_allocated_NoClassDefFoundError_;
-  GcRoot<mirror::ArtMethod> resolution_method_;
-  GcRoot<mirror::ArtMethod> imt_conflict_method_;
-  GcRoot<mirror::ObjectArray<mirror::ArtMethod>> default_imt_;
+  mirror::ArtMethod* callee_save_methods_[kLastCalleeSaveType];
+  mirror::Throwable* pre_allocated_OutOfMemoryError_;
+  mirror::ArtMethod* resolution_method_;
+  mirror::ArtMethod* imt_conflict_method_;
+  mirror::ObjectArray<mirror::ArtMethod>* default_imt_;
 
   InstructionSet instruction_set_;
   QuickMethodFrameInfo callee_save_method_frame_infos_[kLastCalleeSaveType];
 
   CompilerCallbacks* compiler_callbacks_;
   bool is_zygote_;
-  bool must_relocate_;
   bool is_concurrent_gc_enabled_;
   bool is_explicit_gc_disabled_;
-  bool dex2oat_enabled_;
-  bool image_dex2oat_enabled_;
 
-  std::string compiler_executable_;
-  std::string patchoat_executable_;
   std::vector<std::string> compiler_options_;
   std::vector<std::string> image_compiler_options_;
 
@@ -567,7 +523,7 @@ class Runtime {
   size_t threads_being_born_ GUARDED_BY(Locks::runtime_shutdown_lock_);
 
   // Waited upon until no threads are being born.
-  std::unique_ptr<ConditionVariable> shutdown_cond_ GUARDED_BY(Locks::runtime_shutdown_lock_);
+  UniquePtr<ConditionVariable> shutdown_cond_ GUARDED_BY(Locks::runtime_shutdown_lock_);
 
   // Set when runtime shutdown is past the point that new threads may attach.
   bool shutting_down_ GUARDED_BY(Locks::runtime_shutdown_lock_);
@@ -592,18 +548,22 @@ class Runtime {
 
   const bool running_on_valgrind_;
 
+  // Runtime profile support.
+  bool profile_;
   std::string profile_output_filename_;
-  ProfilerOptions profiler_options_;
-  bool profiler_started_;
+  uint32_t profile_period_s_;           // Generate profile every n seconds.
+  uint32_t profile_duration_s_;         // Run profile for n seconds.
+  uint32_t profile_interval_us_;        // Microseconds between samples.
+  double profile_backoff_coefficient_;  // Coefficient to exponential backoff.
+  bool profile_start_immediately_;      // Whether the profile should start upon app
+                                        // startup or be delayed by some random offset.
 
   bool method_trace_;
   std::string method_trace_file_;
   size_t method_trace_file_size_;
   instrumentation::Instrumentation instrumentation_;
 
-  typedef AllocationTrackingSafeMap<jobject, std::vector<const DexFile*>,
-                                    kAllocatorTagCompileTimeClassPath, JobjectComparator>
-      CompileTimeClassPaths;
+  typedef SafeMap<jobject, std::vector<const DexFile*>, JobjectComparator> CompileTimeClassPaths;
   CompileTimeClassPaths compile_time_class_paths_;
   bool use_compile_time_class_path_;
 
@@ -624,34 +584,6 @@ class Runtime {
 
   // If false, verification is disabled. True by default.
   bool verify_;
-
-  // Specifies target SDK version to allow workarounds for certain API levels.
-  int32_t target_sdk_version_;
-
-  // Implicit checks flags.
-  bool implicit_null_checks_;       // NullPointer checks are implicit.
-  bool implicit_so_checks_;         // StackOverflow checks are implicit.
-  bool implicit_suspend_checks_;    // Thread suspension checks are implicit.
-
-  // The filename to the native bridge library. If this is not empty the native bridge will be
-  // initialized and loaded from the given file (initialized and available). An empty value means
-  // that there's no native bridge (initialized but not available).
-  //
-  // The native bridge allows running native code compiled for a foreign ISA. The way it works is,
-  // if standard dlopen fails to load native library associated with native activity, it calls to
-  // the native bridge to load it and then gets the trampoline for the entry to native activity.
-  std::string native_bridge_library_filename_;
-
-  // Native bridge library runtime callbacks. They represent the runtime interface to native bridge.
-  //
-  // The interface is expected to expose the following methods:
-  // getMethodShorty(): in the case of native method calling JNI native function CallXXXXMethodY(),
-  //   native bridge calls back to VM for the shorty of the method so that it can prepare based on
-  //   host calling convention.
-  // getNativeMethodCount() and getNativeMethods(): in case of JNI function UnregisterNatives(),
-  //   native bridge can call back to get all native methods of specified class so that all
-  //   corresponding trampolines can be destroyed.
-  android::NativeBridgeRuntimeCallbacks native_bridge_art_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(Runtime);
 };

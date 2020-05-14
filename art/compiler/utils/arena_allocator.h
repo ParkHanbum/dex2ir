@@ -24,7 +24,6 @@
 #include "base/mutex.h"
 #include "mem_map.h"
 #include "utils.h"
-#include "utils/debug_stack.h"
 
 namespace art {
 
@@ -35,9 +34,6 @@ class ArenaStack;
 class ScopedArenaAllocator;
 class MemStats;
 
-template <typename T>
-class ArenaAllocatorAdapter;
-
 static constexpr bool kArenaAllocatorCountAllocations = false;
 
 // Type of allocation for memory tuning.
@@ -45,7 +41,6 @@ enum ArenaAllocKind {
   kArenaAllocMisc,
   kArenaAllocBB,
   kArenaAllocLIR,
-  kArenaAllocLIRResourceMask,
   kArenaAllocMIR,
   kArenaAllocDFInfo,
   kArenaAllocGrowableArray,
@@ -97,7 +92,7 @@ class ArenaAllocatorStatsImpl {
   // TODO: Use std::array<size_t, kNumArenaAllocKinds> from C++11 when we upgrade the STL.
   size_t alloc_stats_[kNumArenaAllocKinds];  // Bytes used by various allocation kinds.
 
-  static const char* const kAllocNames[];
+  static const char* kAllocNames[kNumArenaAllocKinds];
 };
 
 typedef ArenaAllocatorStatsImpl<kArenaAllocatorCountAllocations> ArenaAllocatorStats;
@@ -151,20 +146,17 @@ class ArenaPool {
   DISALLOW_COPY_AND_ASSIGN(ArenaPool);
 };
 
-class ArenaAllocator : private DebugStackRefCounter, private ArenaAllocatorStats {
+class ArenaAllocator : private ArenaAllocatorStats {
  public:
   explicit ArenaAllocator(ArenaPool* pool);
   ~ArenaAllocator();
-
-  // Get adapter for use in STL containers. See arena_containers.h .
-  ArenaAllocatorAdapter<void> Adapter(ArenaAllocKind kind = kArenaAllocSTL);
 
   // Returns zeroed memory.
   void* Alloc(size_t bytes, ArenaAllocKind kind) ALWAYS_INLINE {
     if (UNLIKELY(running_on_valgrind_)) {
       return AllocValgrind(bytes, kind);
     }
-    bytes = RoundUp(bytes, 8);
+    bytes = RoundUp(bytes, 4);
     if (UNLIKELY(ptr_ + bytes > end_)) {
       // Obtain a new block.
       ObtainNewArenaForAllocation(bytes);
@@ -176,10 +168,6 @@ class ArenaAllocator : private DebugStackRefCounter, private ArenaAllocatorStats
     uint8_t* ret = ptr_;
     ptr_ += bytes;
     return ret;
-  }
-
-  template <typename T> T* AllocArray(size_t length) {
-    return static_cast<T*>(Alloc(length * sizeof(T), kArenaAllocMisc));
   }
 
   void* AllocValgrind(size_t bytes, ArenaAllocKind kind);
@@ -196,9 +184,6 @@ class ArenaAllocator : private DebugStackRefCounter, private ArenaAllocatorStats
   uint8_t* ptr_;
   Arena* arena_head_;
   bool running_on_valgrind_;
-
-  template <typename U>
-  friend class ArenaAllocatorAdapter;
 
   DISALLOW_COPY_AND_ASSIGN(ArenaAllocator);
 };  // ArenaAllocator

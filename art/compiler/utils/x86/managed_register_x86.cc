@@ -95,11 +95,11 @@ void X86ManagedRegister::Print(std::ostream& os) const {
   if (!IsValidManagedRegister()) {
     os << "No Register";
   } else if (IsXmmRegister()) {
-    os << "XMM: " << AsXmmRegister();
+    os << "XMM: " << static_cast<int>(AsXmmRegister());
   } else if (IsX87Register()) {
-    os << "X87: " << AsX87Register();
+    os << "X87: " << static_cast<int>(AsX87Register());
   } else if (IsCpuRegister()) {
-    os << "CPU: " << AsCpuRegister();
+    os << "CPU: " << static_cast<int>(AsCpuRegister());
   } else if (IsRegisterPair()) {
     os << "Pair: " << AsRegisterPairLow() << ", " << AsRegisterPairHigh();
   } else {

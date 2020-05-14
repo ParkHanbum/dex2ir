@@ -20,7 +20,6 @@
 
 #include "atomic.h"
 #include "common_runtime_test.h"
-#include "thread-inl.h"
 
 namespace art {
 
@@ -70,7 +69,7 @@ TEST_F(ThreadPoolTest, CheckRun) {
   // Wait for tasks to complete.
   thread_pool.Wait(self, true, false);
   // Make sure that we finished all the work.
-  EXPECT_EQ(num_tasks, count.LoadSequentiallyConsistent());
+  EXPECT_EQ(num_tasks, count);
 }
 
 TEST_F(ThreadPoolTest, StopStart) {
@@ -83,7 +82,7 @@ TEST_F(ThreadPoolTest, StopStart) {
   }
   usleep(200);
   // Check that no threads started prematurely.
-  EXPECT_EQ(0, count.LoadSequentiallyConsistent());
+  EXPECT_EQ(0, count);
   // Signal the threads to start processing tasks.
   thread_pool.StartWorkers(self);
   usleep(200);
@@ -92,11 +91,10 @@ TEST_F(ThreadPoolTest, StopStart) {
   thread_pool.AddTask(self, new CountTask(&bad_count));
   usleep(200);
   // Ensure that the task added after the workers were stopped doesn't get run.
-  EXPECT_EQ(0, bad_count.LoadSequentiallyConsistent());
+  EXPECT_EQ(0, bad_count);
   // Allow tasks to finish up and delete themselves.
   thread_pool.StartWorkers(self);
-  while (count.LoadSequentiallyConsistent() != num_tasks &&
-      bad_count.LoadSequentiallyConsistent() != 1) {
+  while (count.Load() != num_tasks && bad_count.Load() != 1) {
     usleep(200);
   }
   thread_pool.StopWorkers(self);
@@ -137,7 +135,7 @@ TEST_F(ThreadPoolTest, RecursiveTest) {
   thread_pool.AddTask(self, new TreeTask(&thread_pool, &count, depth));
   thread_pool.StartWorkers(self);
   thread_pool.Wait(self, true, false);
-  EXPECT_EQ((1 << depth) - 1, count.LoadSequentiallyConsistent());
+  EXPECT_EQ((1 << depth) - 1, count);
 }
 
 }  // namespace art

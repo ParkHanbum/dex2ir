@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "entrypoints/entrypoint_utils-inl.h"
+#include "entrypoints/entrypoint_utils.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/dex_cache-inl.h"
 #include "mirror/object-inl.h"
@@ -23,30 +23,24 @@ namespace art {
 
 template<InvokeType type, bool access_check>
 mirror::ArtMethod* FindMethodHelper(uint32_t method_idx, mirror::Object* this_object,
-                                    mirror::ArtMethod* caller_method, Thread* self) {
+                                    mirror::ArtMethod* caller_method, Thread* thread) {
   mirror::ArtMethod* method = FindMethodFast(method_idx, this_object, caller_method,
                                              access_check, type);
   if (UNLIKELY(method == NULL)) {
-    // Note: This can cause thread suspension.
-    self->AssertThreadSuspensionIsAllowable();
-    method = FindMethodFromCode<type, access_check>(method_idx, &this_object, &caller_method,
-                                                    self);
+    method = FindMethodFromCode<type, access_check>(method_idx, this_object, caller_method, thread);
     if (UNLIKELY(method == NULL)) {
-      CHECK(self->IsExceptionPending());
+      CHECK(thread->IsExceptionPending());
       return 0;  // failure
     }
   }
-  DCHECK(!self->IsExceptionPending());
-#if defined(ART_USE_PORTABLE_COMPILER)
+  DCHECK(!thread->IsExceptionPending());
   const void* code = method->GetEntryPointFromPortableCompiledCode();
-#else
-  const void* code = nullptr;
-#endif
 
   // When we return, the caller will branch to this address, so it had better not be 0!
   if (UNLIKELY(code == NULL)) {
+      MethodHelper mh(method);
       LOG(FATAL) << "Code was NULL in method: " << PrettyMethod(method)
-                 << " location: " << method->GetDexFile()->GetLocation();
+                 << " location: " << mh.GetDexFile().GetLocation();
   }
   return method;
 }

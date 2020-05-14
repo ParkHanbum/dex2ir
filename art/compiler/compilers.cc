@@ -15,7 +15,6 @@
  */
 
 #include "compilers.h"
-
 #include "dex/mir_graph.h"
 #include "dex/quick/mir_to_lir.h"
 #include "elf_writer_quick.h"
@@ -39,7 +38,7 @@ extern "C" art::CompiledMethod* ArtQuickJniCompileMethod(art::CompilerDriver* dr
                                                          const art::DexFile& dex_file);
 
 // Hack for CFI CIE initialization
-extern std::vector<uint8_t>* X86CFIInitialization(bool is_x86_64);
+extern std::vector<uint8_t>* X86CFIInitialization();
 
 void QuickCompiler::Init() const {
   ArtInitQuickCompilerContext(GetCompilerDriver());
@@ -109,7 +108,8 @@ Backend* QuickCompiler::GetCodeGenerator(CompilationUnit* cu, void* compilation_
       mir_to_lir = MipsCodeGenerator(cu, cu->mir_graph.get(), &cu->arena);
       break;
     case kX86:
-      // Fall-through.
+      mir_to_lir = X86CodeGenerator(cu, cu->mir_graph.get(), &cu->arena);
+      break;
     case kX86_64:
       mir_to_lir = X86CodeGenerator(cu, cu->mir_graph.get(), &cu->arena);
       break;
@@ -129,10 +129,10 @@ Backend* QuickCompiler::GetCodeGenerator(CompilationUnit* cu, void* compilation_
 std::vector<uint8_t>* QuickCompiler::GetCallFrameInformationInitialization(
     const CompilerDriver& driver) const {
   if (driver.GetInstructionSet() == kX86) {
-    return X86CFIInitialization(false);
+    return X86CFIInitialization();
   }
   if (driver.GetInstructionSet() == kX86_64) {
-    return X86CFIInitialization(true);
+    return X86CFIInitialization();
   }
   return nullptr;
 }

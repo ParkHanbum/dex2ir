@@ -19,18 +19,15 @@
 #include <dlfcn.h>
 
 #include <cstdarg>
-#include <memory>
 #include <utility>
 #include <vector>
 
 #include "atomic.h"
-#include "base/allocator.h"
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/stl_util.h"
 #include "class_linker-inl.h"
 #include "dex_file-inl.h"
-#include "gc_root.h"
 #include "gc/accounting/card_table-inl.h"
 #include "indirect_reference_table-inl.h"
 #include "interpreter/interpreter.h"
@@ -43,6 +40,7 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/string-inl.h"
 #include "mirror/throwable.h"
+#include "object_utils.h"
 #include "parsed_options.h"
 #include "reflection.h"
 #include "runtime.h"
@@ -51,6 +49,7 @@
 #include "ScopedLocalRef.h"
 #include "thread.h"
 #include "utf.h"
+#include "UniquePtr.h"
 #include "well_known_classes.h"
 
 namespace art {
@@ -60,6 +59,9 @@ static const size_t kMonitorsMax = 4096;  // Arbitrary sanity check.
 
 static const size_t kLocalsInitial = 64;  // Arbitrary.
 static const size_t kLocalsMax = 512;  // Arbitrary sanity check.
+
+static const size_t kPinTableInitial = 16;  // Arbitrary.
+static const size_t kPinTableMax = 1024;  // Arbitrary sanity check.
 
 static size_t gGlobalsInitial = 512;  // Arbitrary.
 static size_t gGlobalsMax = 51200;  // Arbitrary sanity check. (Must fit in 16 bits.)
@@ -105,21 +107,9 @@ static void ThrowNoSuchMethodError(ScopedObjectAccess& soa, mirror::Class* c,
                                    const char* name, const char* sig, const char* kind)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   ThrowLocation throw_location = soa.Self()->GetCurrentLocationForThrow();
-  std::string temp;
   soa.Self()->ThrowNewExceptionF(throw_location, "Ljava/lang/NoSuchMethodError;",
                                  "no %s method \"%s.%s%s\"",
-                                 kind, c->GetDescriptor(&temp), name, sig);
-}
-
-static void ReportInvalidJNINativeMethod(const ScopedObjectAccess& soa, mirror::Class* c,
-                                         const char* kind, jint idx, bool return_errors)
-    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-  LOG(return_errors ? ERROR : FATAL) << "Failed to register native method in "
-      << PrettyDescriptor(c) << " in " << c->GetDexCache()->GetLocation()->ToModifiedUtf8()
-      << ": " << kind << " is null at index " << idx;
-  ThrowLocation throw_location = soa.Self()->GetCurrentLocationForThrow();
-  soa.Self()->ThrowNewExceptionF(throw_location, "Ljava/lang/NoSuchMethodError;",
-                                 "%s is null at index %d", kind, idx);
+                                 kind, ClassHelper(c).GetDescriptor(), name, sig);
 }
 
 static mirror::Class* EnsureInitialized(Thread* self, mirror::Class* klass)
@@ -145,8 +135,6 @@ static jmethodID FindMethodID(ScopedObjectAccess& soa, jclass jni_class,
   mirror::ArtMethod* method = nullptr;
   if (is_static) {
     method = c->FindDirectMethod(name, sig);
-  } else if (c->IsInterface()) {
-    method = c->FindInterfaceMethod(name, sig);
   } else {
     method = c->FindVirtualMethod(name, sig);
     if (method == nullptr) {
@@ -215,29 +203,40 @@ static jfieldID FindFieldID(const ScopedObjectAccess& soa, jclass jni_class, con
     StackHandleScope<1> hs(soa.Self());
     Handle<mirror::Throwable> cause(hs.NewHandle(soa.Self()->GetException(&throw_location)));
     soa.Self()->ClearException();
-    std::string temp;
     soa.Self()->ThrowNewExceptionF(throw_location, "Ljava/lang/NoSuchFieldError;",
                                    "no type \"%s\" found and so no field \"%s\" "
                                    "could be found in class \"%s\" or its superclasses", sig, name,
-                                   c->GetDescriptor(&temp));
+                                   ClassHelper(c.Get()).GetDescriptor());
     soa.Self()->GetException(nullptr)->SetCause(cause.Get());
     return nullptr;
   }
-  std::string temp;
   if (is_static) {
-    field = mirror::Class::FindStaticField(soa.Self(), c, name,
-                                           field_type->GetDescriptor(&temp));
+    field = c->FindStaticField(name, ClassHelper(field_type).GetDescriptor());
   } else {
-    field = c->FindInstanceField(name, field_type->GetDescriptor(&temp));
+    field = c->FindInstanceField(name, ClassHelper(field_type).GetDescriptor());
   }
   if (field == nullptr) {
     ThrowLocation throw_location = soa.Self()->GetCurrentLocationForThrow();
     soa.Self()->ThrowNewExceptionF(throw_location, "Ljava/lang/NoSuchFieldError;",
                                    "no \"%s\" field \"%s\" in class \"%s\" or its superclasses",
-                                   sig, name, c->GetDescriptor(&temp));
+                                   sig, name, ClassHelper(c.Get()).GetDescriptor());
     return nullptr;
   }
   return soa.EncodeField(field);
+}
+
+static void PinPrimitiveArray(const ScopedObjectAccess& soa, mirror::Array* array)
+    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  JavaVMExt* vm = soa.Vm();
+  MutexLock mu(soa.Self(), vm->pins_lock);
+  vm->pin_table.Add(array);
+}
+
+static void UnpinPrimitiveArray(const ScopedObjectAccess& soa, mirror::Array* array)
+    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  JavaVMExt* vm = soa.Vm();
+  MutexLock mu(soa.Self(), vm->pins_lock);
+  vm->pin_table.Remove(array);
 }
 
 static void ThrowAIOOBE(ScopedObjectAccess& soa, mirror::Array* array, jsize start,
@@ -350,16 +349,15 @@ class SharedLibrary {
   SharedLibrary(const std::string& path, void* handle, mirror::Object* class_loader)
       : path_(path),
         handle_(handle),
-        needs_native_bridge_(false),
-        class_loader_(GcRoot<mirror::Object>(class_loader)),
+        class_loader_(class_loader),
         jni_on_load_lock_("JNI_OnLoad lock"),
         jni_on_load_cond_("JNI_OnLoad condition variable", jni_on_load_lock_),
         jni_on_load_thread_id_(Thread::Current()->GetThreadId()),
         jni_on_load_result_(kPending) {
   }
 
-  mirror::Object* GetClassLoader() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return class_loader_.Read();
+  mirror::Object* GetClassLoader() {
+    return class_loader_;
   }
 
   std::string GetPath() {
@@ -410,33 +408,13 @@ class SharedLibrary {
     jni_on_load_cond_.Broadcast(self);
   }
 
-  void SetNeedsNativeBridge() {
-    needs_native_bridge_ = true;
-  }
-
-  bool NeedsNativeBridge() const {
-    return needs_native_bridge_;
-  }
-
   void* FindSymbol(const std::string& symbol_name) {
     return dlsym(handle_, symbol_name.c_str());
   }
 
-  void* FindSymbolWithNativeBridge(const std::string& symbol_name, mirror::ArtMethod* m)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    CHECK(NeedsNativeBridge());
-
-    uint32_t len = 0;
-    const char* shorty = nullptr;
-    if (m != nullptr) {
-      shorty = m->GetShorty(&len);
-    }
-    return android::NativeBridgeGetTrampoline(handle_, symbol_name.c_str(), shorty, len);
-  }
-
   void VisitRoots(RootCallback* visitor, void* arg) {
-    if (!class_loader_.IsNull()) {
-      class_loader_.VisitRoot(visitor, arg, 0, kRootVMInternal);
+    if (class_loader_ != nullptr) {
+      visitor(&class_loader_, arg, 0, kRootVMInternal);
     }
   }
 
@@ -453,11 +431,8 @@ class SharedLibrary {
   // The void* returned by dlopen(3).
   void* handle_;
 
-  // True if a native bridge is required.
-  bool needs_native_bridge_;
-
   // The ClassLoader this library is associated with.
-  GcRoot<mirror::Object> class_loader_;
+  mirror::Object* class_loader_;
 
   // Guards remaining items.
   Mutex jni_on_load_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
@@ -516,17 +491,9 @@ class Libraries {
         continue;
       }
       // Try the short name then the long name...
-      void* fn = nullptr;
-      if (UNLIKELY(library->NeedsNativeBridge())) {
-        fn = library->FindSymbolWithNativeBridge(jni_short_name, m);
-        if (fn == nullptr) {
-          fn = library->FindSymbolWithNativeBridge(jni_long_name, m);
-        }
-      } else {
-        fn = library->FindSymbol(jni_short_name);
-        if (fn == nullptr) {
-          fn = library->FindSymbol(jni_long_name);
-        }
+      void* fn = library->FindSymbol(jni_short_name);
+      if (fn == nullptr) {
+        fn = library->FindSymbol(jni_long_name);
       }
       if (fn != nullptr) {
         VLOG(jni) << "[Found native code for " << PrettyMethod(m)
@@ -548,7 +515,7 @@ class Libraries {
   }
 
  private:
-  AllocationTrackingSafeMap<std::string, SharedLibrary*, kAllocatorTagJNILibrarires> libraries_;
+  SafeMap<std::string, SharedLibrary*> libraries_;
 };
 
 #define CHECK_NON_NULL_ARGUMENT(value) \
@@ -621,12 +588,7 @@ class JNI {
     mirror::ArtMethod* m = soa.DecodeMethod(mid);
     CHECK(!kMovingMethods);
     jobject art_method = soa.AddLocalReference<jobject>(m);
-    jobject reflect_method;
-    if (m->IsConstructor()) {
-      reflect_method = env->AllocObject(WellKnownClasses::java_lang_reflect_Constructor);
-    } else {
-      reflect_method = env->AllocObject(WellKnownClasses::java_lang_reflect_Method);
-    }
+    jobject reflect_method = env->AllocObject(WellKnownClasses::java_lang_reflect_Method);
     if (env->ExceptionCheck()) {
       return nullptr;
     }
@@ -663,15 +625,13 @@ class JNI {
     return soa.AddLocalReference<jclass>(c->GetSuperClass());
   }
 
-  // Note: java_class1 should be safely castable to java_class2, and
-  // not the other way around.
   static jboolean IsAssignableFrom(JNIEnv* env, jclass java_class1, jclass java_class2) {
     CHECK_NON_NULL_ARGUMENT_RETURN(java_class1, JNI_FALSE);
     CHECK_NON_NULL_ARGUMENT_RETURN(java_class2, JNI_FALSE);
     ScopedObjectAccess soa(env);
     mirror::Class* c1 = soa.Decode<mirror::Class*>(java_class1);
     mirror::Class* c2 = soa.Decode<mirror::Class*>(java_class2);
-    return c2->IsAssignableFrom(c1) ? JNI_TRUE : JNI_FALSE;
+    return c1->IsAssignableFrom(c2) ? JNI_TRUE : JNI_FALSE;
   }
 
   static jboolean IsInstanceOf(JNIEnv* env, jobject jobj, jclass java_class) {
@@ -708,17 +668,11 @@ class JNI {
   }
 
   static void ExceptionClear(JNIEnv* env) {
-    ScopedObjectAccess soa(env);
-    soa.Self()->ClearException();
+    static_cast<JNIEnvExt*>(env)->self->ClearException();
   }
 
   static void ExceptionDescribe(JNIEnv* env) {
     ScopedObjectAccess soa(env);
-
-    // If we have no exception to describe, pass through.
-    if (!soa.Self()->GetException(nullptr)) {
-      return;
-    }
 
     StackHandleScope<3> hs(soa.Self());
     // TODO: Use nullptr instead of null handles?
@@ -726,7 +680,6 @@ class JNI {
     auto old_throw_method(hs.NewHandle<mirror::ArtMethod>(nullptr));
     auto old_exception(hs.NewHandle<mirror::Throwable>(nullptr));
     uint32_t old_throw_dex_pc;
-    bool old_is_exception_reported;
     {
       ThrowLocation old_throw_location;
       mirror::Throwable* old_exception_obj = soa.Self()->GetException(&old_throw_location);
@@ -734,7 +687,6 @@ class JNI {
       old_throw_method.Assign(old_throw_location.GetMethod());
       old_exception.Assign(old_exception_obj);
       old_throw_dex_pc = old_throw_location.GetDexPc();
-      old_is_exception_reported = soa.Self()->IsExceptionReportedToInstrumentation();
       soa.Self()->ClearException();
     }
     ScopedLocalRef<jthrowable> exception(env,
@@ -756,7 +708,6 @@ class JNI {
                                          old_throw_dex_pc);
 
     soa.Self()->SetException(gc_safe_throw_location, old_exception.Get());
-    soa.Self()->SetExceptionReportedToInstrumentation(old_is_exception_reported);
   }
 
   static jthrowable ExceptionOccurred(JNIEnv* env) {
@@ -770,9 +721,7 @@ class JNI {
   }
 
   static jint PushLocalFrame(JNIEnv* env, jint capacity) {
-    // TODO: SOA may not be necessary but I do it to please lock annotations.
-    ScopedObjectAccess soa(env);
-    if (EnsureLocalCapacity(soa, capacity, "PushLocalFrame") != JNI_OK) {
+    if (EnsureLocalCapacity(env, capacity, "PushLocalFrame") != JNI_OK) {
       return JNI_ERR;
     }
     static_cast<JNIEnvExt*>(env)->PushFrame(capacity);
@@ -787,9 +736,7 @@ class JNI {
   }
 
   static jint EnsureLocalCapacity(JNIEnv* env, jint desired_capacity) {
-    // TODO: SOA may not be necessary but I do it to please lock annotations.
-    ScopedObjectAccess soa(env);
-    return EnsureLocalCapacity(soa, desired_capacity, "EnsureLocalCapacity");
+    return EnsureLocalCapacity(env, desired_capacity, "EnsureLocalCapacity");
   }
 
   static jobject NewGlobalRef(JNIEnv* env, jobject obj) {
@@ -847,7 +794,6 @@ class JNI {
     if (obj == nullptr) {
       return;
     }
-    ScopedObjectAccess soa(env);
     IndirectReferenceTable& locals = reinterpret_cast<JNIEnvExt*>(env)->locals;
 
     uint32_t cookie = reinterpret_cast<JNIEnvExt*>(env)->local_ref_cookie;
@@ -1979,63 +1925,33 @@ class JNI {
     ScopedObjectAccess soa(env);
     mirror::String* s = soa.Decode<mirror::String*>(java_string);
     mirror::CharArray* chars = s->GetCharArray();
-    gc::Heap* heap = Runtime::Current()->GetHeap();
-    if (heap->IsMovableObject(chars)) {
-      if (is_copy != nullptr) {
-        *is_copy = JNI_TRUE;
-      }
-      int32_t char_count = s->GetLength();
-      int32_t offset = s->GetOffset();
-      jchar* bytes = new jchar[char_count];
-      for (int32_t i = 0; i < char_count; i++) {
-        bytes[i] = chars->Get(i + offset);
-      }
-      return bytes;
-    } else {
-      if (is_copy != nullptr) {
-        *is_copy = JNI_FALSE;
-      }
-      return static_cast<jchar*>(chars->GetData() + s->GetOffset());
+    PinPrimitiveArray(soa, chars);
+    if (is_copy != nullptr) {
+      *is_copy = JNI_TRUE;
     }
+    int32_t char_count = s->GetLength();
+    int32_t offset = s->GetOffset();
+    jchar* bytes = new jchar[char_count + 1];
+    for (int32_t i = 0; i < char_count; i++) {
+      bytes[i] = chars->Get(i + offset);
+    }
+    bytes[char_count] = '\0';
+    return bytes;
   }
 
   static void ReleaseStringChars(JNIEnv* env, jstring java_string, const jchar* chars) {
     CHECK_NON_NULL_ARGUMENT_RETURN_VOID(java_string);
+    delete[] chars;
     ScopedObjectAccess soa(env);
-    mirror::String* s = soa.Decode<mirror::String*>(java_string);
-    mirror::CharArray* s_chars = s->GetCharArray();
-    if (chars != (s_chars->GetData() + s->GetOffset())) {
-      delete[] chars;
-    }
+    UnpinPrimitiveArray(soa, soa.Decode<mirror::String*>(java_string)->GetCharArray());
   }
 
   static const jchar* GetStringCritical(JNIEnv* env, jstring java_string, jboolean* is_copy) {
-    CHECK_NON_NULL_ARGUMENT(java_string);
-    ScopedObjectAccess soa(env);
-    mirror::String* s = soa.Decode<mirror::String*>(java_string);
-    mirror::CharArray* chars = s->GetCharArray();
-    int32_t offset = s->GetOffset();
-    gc::Heap* heap = Runtime::Current()->GetHeap();
-    if (heap->IsMovableObject(chars)) {
-      StackHandleScope<1> hs(soa.Self());
-      HandleWrapper<mirror::CharArray> h(hs.NewHandleWrapper(&chars));
-      heap->IncrementDisableMovingGC(soa.Self());
-    }
-    if (is_copy != nullptr) {
-      *is_copy = JNI_FALSE;
-    }
-    return static_cast<jchar*>(chars->GetData() + offset);
+    return GetStringChars(env, java_string, is_copy);
   }
 
   static void ReleaseStringCritical(JNIEnv* env, jstring java_string, const jchar* chars) {
-    CHECK_NON_NULL_ARGUMENT_RETURN_VOID(java_string);
-    ScopedObjectAccess soa(env);
-    gc::Heap* heap = Runtime::Current()->GetHeap();
-    mirror::String* s = soa.Decode<mirror::String*>(java_string);
-    mirror::CharArray* s_chars = s->GetCharArray();
-    if (heap->IsMovableObject(s_chars)) {
-      heap->DecrementDisableMovingGC(soa.Self());
-    }
+    return ReleaseStringChars(env, java_string, chars);
   }
 
   static const char* GetStringUTFChars(JNIEnv* env, jstring java_string, jboolean* is_copy) {
@@ -2136,7 +2052,7 @@ class JNI {
         return nullptr;
       }
       ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-      array_class = class_linker->FindArrayClass(soa.Self(), &element_class);
+      array_class = class_linker->FindArrayClass(soa.Self(), element_class);
       if (UNLIKELY(array_class == nullptr)) {
         return nullptr;
       }
@@ -2183,6 +2099,7 @@ class JNI {
       // Re-decode in case the object moved since IncrementDisableGC waits for GC to complete.
       array = soa.Decode<mirror::Array*>(java_array);
     }
+    PinPrimitiveArray(soa, array);
     if (is_copy != nullptr) {
       *is_copy = JNI_FALSE;
     }
@@ -2383,17 +2300,6 @@ class JNI {
     for (jint i = 0; i < method_count; ++i) {
       const char* name = methods[i].name;
       const char* sig = methods[i].signature;
-      const void* fnPtr = methods[i].fnPtr;
-      if (UNLIKELY(name == nullptr)) {
-        ReportInvalidJNINativeMethod(soa, c, "method name", i, return_errors);
-        return JNI_ERR;
-      } else if (UNLIKELY(sig == nullptr)) {
-        ReportInvalidJNINativeMethod(soa, c, "method signature", i, return_errors);
-        return JNI_ERR;
-      } else if (UNLIKELY(fnPtr == nullptr)) {
-        ReportInvalidJNINativeMethod(soa, c, "native function", i, return_errors);
-        return JNI_ERR;
-      }
       bool is_fast = false;
       if (*sig == '!') {
         is_fast = true;
@@ -2421,7 +2327,7 @@ class JNI {
 
       VLOG(jni) << "[Registering JNI native method " << PrettyMethod(m) << "]";
 
-      m->RegisterNative(soa.Self(), fnPtr, is_fast);
+      m->RegisterNative(soa.Self(), methods[i].fnPtr, is_fast);
     }
     return JNI_OK;
   }
@@ -2494,18 +2400,13 @@ class JNI {
   static jobject NewDirectByteBuffer(JNIEnv* env, void* address, jlong capacity) {
     if (capacity < 0) {
       JniAbortF("NewDirectByteBuffer", "negative buffer capacity: %" PRId64, capacity);
-      return nullptr;
     }
     if (address == nullptr && capacity != 0) {
       JniAbortF("NewDirectByteBuffer", "non-zero capacity for nullptr pointer: %" PRId64, capacity);
-      return nullptr;
     }
 
-    // At the moment, the capacity of DirectByteBuffer is limited to a signed int.
-    if (capacity > INT_MAX) {
-      JniAbortF("NewDirectByteBuffer", "buffer capacity greater than maximum jint: %" PRId64, capacity);
-      return nullptr;
-    }
+    // At the moment, the capacity is limited to 32 bits.
+    CHECK_LE(capacity, 0xffffffff);
     jlong address_arg = reinterpret_cast<jlong>(address);
     jint capacity_arg = static_cast<jint>(capacity);
 
@@ -2534,9 +2435,7 @@ class JNI {
     switch (kind) {
     case kLocal: {
       ScopedObjectAccess soa(env);
-      // The local refs don't need a read barrier.
-      if (static_cast<JNIEnvExt*>(env)->locals.Get<kWithoutReadBarrier>(ref) !=
-          kInvalidIndirectRefObject) {
+      if (static_cast<JNIEnvExt*>(env)->locals.Get(ref) != kInvalidIndirectRefObject) {
         return JNILocalRefType;
       }
       return JNIInvalidRefType;
@@ -2557,17 +2456,18 @@ class JNI {
   }
 
  private:
-  static jint EnsureLocalCapacity(ScopedObjectAccess& soa, jint desired_capacity,
-                                  const char* caller) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  static jint EnsureLocalCapacity(JNIEnv* env, jint desired_capacity,
+                                  const char* caller) {
     // TODO: we should try to expand the table if necessary.
     if (desired_capacity < 0 || desired_capacity > static_cast<jint>(kLocalsMax)) {
       LOG(ERROR) << "Invalid capacity given to " << caller << ": " << desired_capacity;
       return JNI_ERR;
     }
     // TODO: this isn't quite right, since "capacity" includes holes.
-    const size_t capacity = soa.Env()->locals.Capacity();
+    size_t capacity = static_cast<JNIEnvExt*>(env)->locals.Capacity();
     bool okay = (static_cast<jint>(kLocalsMax - capacity) >= desired_capacity);
     if (!okay) {
+      ScopedObjectAccess soa(env);
       soa.Self()->ThrowOutOfMemoryError(caller);
     }
     return okay ? JNI_OK : JNI_ERR;
@@ -2609,6 +2509,7 @@ class JNI {
     if (UNLIKELY(array == nullptr)) {
       return nullptr;
     }
+    PinPrimitiveArray(soa, array);
     // Only make a copy if necessary.
     if (Runtime::Current()->GetHeap()->IsMovableObject(array)) {
       if (is_copy != nullptr) {
@@ -2670,6 +2571,7 @@ class JNI {
         // Non copy to a movable object must means that we had disabled the moving GC.
         heap->DecrementDisableMovingGC(soa.Self());
       }
+      UnpinPrimitiveArray(soa, array);
     }
   }
 
@@ -2989,14 +2891,13 @@ void JNIEnvExt::DumpReferenceTables(std::ostream& os) {
   monitors.Dump(os);
 }
 
-void JNIEnvExt::PushFrame(int capacity) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-  UNUSED(capacity);  // cpplint gets confused with (int) and thinks its a cast.
+void JNIEnvExt::PushFrame(int /*capacity*/) {
   // TODO: take 'capacity' into account.
   stacked_local_ref_cookies.push_back(local_ref_cookie);
   local_ref_cookie = locals.GetSegmentState();
 }
 
-void JNIEnvExt::PopFrame() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+void JNIEnvExt::PopFrame() {
   locals.SetSegmentState(local_ref_cookie);
   local_ref_cookie = stacked_local_ref_cookies.back();
   stacked_local_ref_cookies.pop_back();
@@ -3015,7 +2916,7 @@ extern "C" jint JNI_CreateJavaVM(JavaVM** p_vm, JNIEnv** p_env, void* vm_args) {
     LOG(ERROR) << "Bad JNI version passed to CreateJavaVM: " << args->version;
     return JNI_EVERSION;
   }
-  RuntimeOptions options;
+  Runtime::Options options;
   for (int i = 0; i < args->nOptions; ++i) {
     JavaVMOption* option = &args->options[i];
     options.push_back(std::make_pair(std::string(option->optionString), option->extraInfo));
@@ -3121,6 +3022,8 @@ JavaVMExt::JavaVMExt(Runtime* runtime, ParsedOptions* options)
       check_jni(false),
       force_copy(false),  // TODO: add a way to enable this
       trace(options->jni_trace_),
+      pins_lock("JNI pin table lock", kPinTableLock),
+      pin_table("pin table", kPinTableInitial, kPinTableMax),
       globals_lock("JNI global reference table lock"),
       globals(gGlobalsInitial, gGlobalsMax, kGlobal),
       libraries_lock("JNI shared libraries map lock", kLoadLibraryLock),
@@ -3171,6 +3074,10 @@ void JavaVMExt::DumpForSigQuit(std::ostream& os) {
   }
   Thread* self = Thread::Current();
   {
+    MutexLock mu(self, pins_lock);
+    os << "; pins=" << pin_table.Size();
+  }
+  {
     ReaderMutexLock mu(self, globals_lock);
     os << "; globals=" << globals.Capacity();
   }
@@ -3218,10 +3125,14 @@ void JavaVMExt::DumpReferenceTables(std::ostream& os) {
     MutexLock mu(self, weak_globals_lock_);
     weak_globals_.Dump(os);
   }
+  {
+    MutexLock mu(self, pins_lock);
+    pin_table.Dump(os);
+  }
 }
 
 bool JavaVMExt::LoadNativeLibrary(const std::string& path,
-                                  Handle<mirror::ClassLoader> class_loader,
+                                  const Handle<mirror::ClassLoader>& class_loader,
                                   std::string* detail) {
   detail->clear();
 
@@ -3271,15 +3182,7 @@ bool JavaVMExt::LoadNativeLibrary(const std::string& path,
   // This can execute slowly for a large library on a busy system, so we
   // want to switch from kRunnable while it executes.  This allows the GC to ignore us.
   self->TransitionFromRunnableToSuspended(kWaitingForJniOnLoad);
-  const char* path_str = path.empty() ? nullptr : path.c_str();
-  void* handle = dlopen(path_str, RTLD_LAZY);
-  bool needs_native_bridge = false;
-  if (handle == nullptr) {
-    if (android::NativeBridgeIsSupported(path_str)) {
-      handle = android::NativeBridgeLoadLibrary(path_str, RTLD_LAZY);
-      needs_native_bridge = true;
-    }
-  }
+  void* handle = dlopen(path.empty() ? nullptr : path.c_str(), RTLD_LAZY);
   self->TransitionFromSuspendedToRunnable();
 
   VLOG(jni) << "[Call to dlopen(\"" << path << "\", RTLD_LAZY) returned " << handle << "]";
@@ -3312,14 +3215,7 @@ bool JavaVMExt::LoadNativeLibrary(const std::string& path,
       << "]";
 
   bool was_successful = false;
-  void* sym = nullptr;
-  if (UNLIKELY(needs_native_bridge)) {
-    library->SetNeedsNativeBridge();
-    sym = library->FindSymbolWithNativeBridge("JNI_OnLoad", nullptr);
-  } else {
-    sym = dlsym(handle, "JNI_OnLoad");
-  }
-
+  void* sym = dlsym(handle, "JNI_OnLoad");
   if (sym == nullptr) {
     VLOG(jni) << "[No JNI_OnLoad found in \"" << path << "\"]";
     was_successful = true;
@@ -3368,7 +3264,8 @@ bool JavaVMExt::LoadNativeLibrary(const std::string& path,
 void* JavaVMExt::FindCodeForNativeMethod(mirror::ArtMethod* m) {
   CHECK(m->IsNative());
   mirror::Class* c = m->GetDeclaringClass();
-  // If this is a static method, it could be called before the class has been initialized.
+  // If this is a static method, it could be called before the class
+  // has been initialized.
   if (m->IsStatic()) {
     c = EnsureInitialized(Thread::Current(), c);
     if (c == nullptr) {
@@ -3395,7 +3292,6 @@ void* JavaVMExt::FindCodeForNativeMethod(mirror::ArtMethod* m) {
 void JavaVMExt::SweepJniWeakGlobals(IsMarkedCallback* callback, void* arg) {
   MutexLock mu(Thread::Current(), weak_globals_lock_);
   for (mirror::Object** entry : weak_globals_) {
-    // Since this is called by the GC, we don't need a read barrier.
     mirror::Object* obj = *entry;
     mirror::Object* new_obj = callback(obj, arg);
     if (new_obj == nullptr) {
@@ -3410,6 +3306,10 @@ void JavaVMExt::VisitRoots(RootCallback* callback, void* arg) {
   {
     ReaderMutexLock mu(self, globals_lock);
     globals.VisitRoots(callback, arg, 0, kRootJNIGlobal);
+  }
+  {
+    MutexLock mu(self, pins_lock);
+    pin_table.VisitRoots(callback, arg, 0, kRootVMInternal);
   }
   {
     MutexLock mu(self, libraries_lock);

@@ -21,6 +21,8 @@
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
+#include "mirror/proxy.h"
+#include "object_utils.h"
 #include "reflection.h"
 #include "scoped_fast_native_object_access.h"
 #include "well_known_classes.h"
@@ -37,7 +39,8 @@ static jobject Method_getExceptionTypesNative(JNIEnv* env, jobject javaMethod) {
   ScopedFastNativeObjectAccess soa(env);
   mirror::ArtMethod* proxy_method = mirror::ArtMethod::FromReflectedMethod(soa, javaMethod);
   CHECK(proxy_method->GetDeclaringClass()->IsProxyClass());
-  mirror::Class* proxy_class = proxy_method->GetDeclaringClass();
+  mirror::SynthesizedProxyClass* proxy_class =
+      down_cast<mirror::SynthesizedProxyClass*>(proxy_method->GetDeclaringClass());
   int throws_index = -1;
   size_t num_virt_methods = proxy_class->NumVirtualMethods();
   for (size_t i = 0; i < num_virt_methods; i++) {

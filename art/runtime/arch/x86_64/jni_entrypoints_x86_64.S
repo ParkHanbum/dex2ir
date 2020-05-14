@@ -23,13 +23,13 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_stub
     // Save callee and GPR args, mixed together to agree with core spills bitmap.
     PUSH r9   // Arg.
     PUSH r8   // Arg.
-    PUSH rdi  // JniEnv.
+    PUSH rdi  //
     PUSH rsi  // Arg.
     PUSH rdx  // Arg.
     PUSH rcx  // Arg.
     // Create space for FPR args, plus padding for alignment
-    subq LITERAL(72 + 4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(72 + 4 * 8)
+    subq LITERAL(72), %rsp
+    CFI_ADJUST_CFA_OFFSET(72)
     // Save FPRs.
     movq %xmm0, 0(%rsp)
     movq %xmm1, 8(%rsp)
@@ -39,12 +39,8 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_stub
     movq %xmm5, 40(%rsp)
     movq %xmm6, 48(%rsp)
     movq %xmm7, 56(%rsp)
-    movq %xmm12, 64(%rsp)
-    movq %xmm13, 72(%rsp)
-    movq %xmm14, 80(%rsp)
-    movq %xmm15, 88(%rsp)
     // prepare call
-    movq %gs:THREAD_SELF_OFFSET, %rdi      // RDI := Thread::Current()
+    movq %gs:THREAD_SELF_OFFSET, %rsi      // RSI := Thread::Current()
     // call
     call PLT_SYMBOL(artFindNativeMethod)  // (Thread*)
     // restore arguments
@@ -56,16 +52,12 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_stub
     movq 40(%rsp), %xmm5
     movq 48(%rsp), %xmm6
     movq 56(%rsp), %xmm7
-    movq 64(%rsp), %xmm12
-    movq 72(%rsp), %xmm13
-    movq 80(%rsp), %xmm14
-    movq 88(%rsp), %xmm15
-    addq LITERAL(72 + 4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-72 - 4 * 8)
+    addq LITERAL(72), %rsp
+    CFI_ADJUST_CFA_OFFSET(-72)
     POP rcx  // Arg.
     POP rdx  // Arg.
     POP rsi  // Arg.
-    POP rdi  // JniEnv.
+    POP rdi  //
     POP r8   // Arg.
     POP r9   // Arg.
     testq %rax, %rax         // check if returned method code is null

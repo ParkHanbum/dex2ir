@@ -59,6 +59,7 @@ void X86_64Assembler::call(Label* label) {
   EmitLabel(label, kSize);
 }
 
+
 void X86_64Assembler::pushq(CpuRegister reg) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitOptionalRex32(reg);
@@ -138,8 +139,8 @@ void X86_64Assembler::movq(CpuRegister dst, CpuRegister src) {
 void X86_64Assembler::movl(CpuRegister dst, CpuRegister src) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitOptionalRex32(dst, src);
-  EmitUint8(0x8B);
-  EmitRegisterOperand(dst.LowBits(), src.LowBits());
+  EmitUint8(0x89);
+  EmitRegisterOperand(src.LowBits(), dst.LowBits());
 }
 
 
@@ -283,8 +284,8 @@ void X86_64Assembler::movw(CpuRegister /*dst*/, const Address& /*src*/) {
 
 void X86_64Assembler::movw(const Address& dst, CpuRegister src) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitOperandSizeOverride();
   EmitOptionalRex32(src, dst);
+  EmitOperandSizeOverride();
   EmitUint8(0x89);
   EmitOperand(src.LowBits(), dst);
 }
@@ -821,15 +822,6 @@ void X86_64Assembler::xchgl(CpuRegister dst, CpuRegister src) {
   EmitRegisterOperand(dst.LowBits(), src.LowBits());
 }
 
-
-void X86_64Assembler::xchgq(CpuRegister dst, CpuRegister src) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitRex64(dst, src);
-  EmitUint8(0x87);
-  EmitOperand(dst.LowBits(), Operand(src));
-}
-
-
 void X86_64Assembler::xchgl(CpuRegister reg, const Address& address) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitOptionalRex32(reg, address);
@@ -866,22 +858,6 @@ void X86_64Assembler::cmpq(CpuRegister reg0, CpuRegister reg1) {
   EmitRex64(reg0, reg1);
   EmitUint8(0x3B);
   EmitOperand(reg0.LowBits(), Operand(reg1));
-}
-
-
-void X86_64Assembler::cmpq(CpuRegister reg, const Immediate& imm) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  CHECK(imm.is_int32());  // cmpq only supports 32b immediate.
-  EmitRex64(reg);
-  EmitComplex(7, Operand(reg), imm);
-}
-
-
-void X86_64Assembler::cmpq(CpuRegister reg, const Address& address) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitRex64(reg);
-  EmitUint8(0x3B);
-  EmitOperand(reg.LowBits(), address);
 }
 
 
@@ -950,14 +926,6 @@ void X86_64Assembler::testl(CpuRegister reg, const Immediate& immediate) {
 }
 
 
-void X86_64Assembler::testq(CpuRegister reg, const Address& address) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitRex64(reg);
-  EmitUint8(0x85);
-  EmitOperand(reg.LowBits(), address);
-}
-
-
 void X86_64Assembler::andl(CpuRegister dst, CpuRegister src) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitOptionalRex32(dst, src);
@@ -970,14 +938,6 @@ void X86_64Assembler::andl(CpuRegister dst, const Immediate& imm) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitOptionalRex32(dst);
   EmitComplex(4, Operand(dst), imm);
-}
-
-
-void X86_64Assembler::andq(CpuRegister reg, const Immediate& imm) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  CHECK(imm.is_int32());  // andq only supports 32b immediate.
-  EmitRex64(reg);
-  EmitComplex(4, Operand(reg), imm);
 }
 
 
@@ -999,14 +959,6 @@ void X86_64Assembler::orl(CpuRegister dst, const Immediate& imm) {
 void X86_64Assembler::xorl(CpuRegister dst, CpuRegister src) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitOptionalRex32(dst, src);
-  EmitUint8(0x33);
-  EmitOperand(dst.LowBits(), Operand(src));
-}
-
-
-void X86_64Assembler::xorq(CpuRegister dst, CpuRegister src) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitRex64(dst, src);
   EmitUint8(0x33);
   EmitOperand(dst.LowBits(), Operand(src));
 }
@@ -1087,14 +1039,6 @@ void X86_64Assembler::addq(CpuRegister reg, const Immediate& imm) {
 }
 
 
-void X86_64Assembler::addq(CpuRegister dst, const Address& address) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitRex64(dst);
-  EmitUint8(0x03);
-  EmitOperand(dst.LowBits(), address);
-}
-
-
 void X86_64Assembler::addq(CpuRegister dst, CpuRegister src) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   // 0x01 is addq r/m64 <- r/m64 + r64, with op1 in r/m and op2 in reg: so reverse EmitRex64
@@ -1147,14 +1091,6 @@ void X86_64Assembler::subq(CpuRegister dst, CpuRegister src) {
   EmitRex64(dst, src);
   EmitUint8(0x2B);
   EmitRegisterOperand(dst.LowBits(), src.LowBits());
-}
-
-
-void X86_64Assembler::subq(CpuRegister reg, const Address& address) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitRex64(reg);
-  EmitUint8(0x2B);
-  EmitOperand(reg.LowBits() & 7, address);
 }
 
 
@@ -1241,7 +1177,7 @@ void X86_64Assembler::mull(const Address& address) {
 
 
 void X86_64Assembler::shll(CpuRegister reg, const Immediate& imm) {
-  EmitGenericShift(false, 4, reg, imm);
+  EmitGenericShift(4, reg, imm);
 }
 
 
@@ -1251,12 +1187,7 @@ void X86_64Assembler::shll(CpuRegister operand, CpuRegister shifter) {
 
 
 void X86_64Assembler::shrl(CpuRegister reg, const Immediate& imm) {
-  EmitGenericShift(false, 5, reg, imm);
-}
-
-
-void X86_64Assembler::shrq(CpuRegister reg, const Immediate& imm) {
-  EmitGenericShift(true, 5, reg, imm);
+  EmitGenericShift(5, reg, imm);
 }
 
 
@@ -1266,7 +1197,7 @@ void X86_64Assembler::shrl(CpuRegister operand, CpuRegister shifter) {
 
 
 void X86_64Assembler::sarl(CpuRegister reg, const Immediate& imm) {
-  EmitGenericShift(false, 7, reg, imm);
+  EmitGenericShift(7, reg, imm);
 }
 
 
@@ -1582,15 +1513,11 @@ void X86_64Assembler::EmitLabelLink(Label* label) {
 }
 
 
-void X86_64Assembler::EmitGenericShift(bool wide,
-                                       int reg_or_opcode,
-                                       CpuRegister reg,
-                                       const Immediate& imm) {
+void X86_64Assembler::EmitGenericShift(int reg_or_opcode,
+                                    CpuRegister reg,
+                                    const Immediate& imm) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   CHECK(imm.is_int8());
-  if (wide) {
-    EmitRex64(reg);
-  }
   if (imm.value() == 1) {
     EmitUint8(0xD1);
     EmitOperand(reg_or_opcode, Operand(reg));
@@ -1603,8 +1530,8 @@ void X86_64Assembler::EmitGenericShift(bool wide,
 
 
 void X86_64Assembler::EmitGenericShift(int reg_or_opcode,
-                                       CpuRegister operand,
-                                       CpuRegister shifter) {
+                                    CpuRegister operand,
+                                    CpuRegister shifter) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   CHECK_EQ(shifter.AsRegister(), RCX);
   EmitUint8(0xD3);
@@ -1720,32 +1647,13 @@ void X86_64Assembler::BuildFrame(size_t frame_size, ManagedRegister method_reg,
                                  const std::vector<ManagedRegister>& spill_regs,
                                  const ManagedRegisterEntrySpills& entry_spills) {
   CHECK_ALIGNED(frame_size, kStackAlignment);
-  int gpr_count = 0;
   for (int i = spill_regs.size() - 1; i >= 0; --i) {
-    x86_64::X86_64ManagedRegister spill = spill_regs.at(i).AsX86_64();
-    if (spill.IsCpuRegister()) {
-      pushq(spill.AsCpuRegister());
-      gpr_count++;
-    }
+    pushq(spill_regs.at(i).AsX86_64().AsCpuRegister());
   }
   // return address then method on stack
-  int64_t rest_of_frame = static_cast<int64_t>(frame_size)
-                          - (gpr_count * kFramePointerSize)
-                          - kFramePointerSize /*return address*/;
-  subq(CpuRegister(RSP), Immediate(rest_of_frame));
-  // spill xmms
-  int64_t offset = rest_of_frame;
-  for (int i = spill_regs.size() - 1; i >= 0; --i) {
-    x86_64::X86_64ManagedRegister spill = spill_regs.at(i).AsX86_64();
-    if (spill.IsXmmRegister()) {
-      offset -= sizeof(double);
-      movsd(Address(CpuRegister(RSP), offset), spill.AsXmmRegister());
-    }
-  }
-
-  DCHECK_EQ(4U, sizeof(StackReference<mirror::ArtMethod>));
-
-  movl(Address(CpuRegister(RSP), 0), method_reg.AsX86_64().AsCpuRegister());
+  addq(CpuRegister(RSP), Immediate(-frame_size + (spill_regs.size() * kFramePointerSize) +
+                                   kFramePointerSize /*method*/ + kFramePointerSize /*return address*/));
+  pushq(method_reg.AsX86_64().AsCpuRegister());
 
   for (size_t i = 0; i < entry_spills.size(); ++i) {
     ManagedRegisterSpill spill = entry_spills.at(i);
@@ -1771,31 +1679,16 @@ void X86_64Assembler::BuildFrame(size_t frame_size, ManagedRegister method_reg,
 void X86_64Assembler::RemoveFrame(size_t frame_size,
                             const std::vector<ManagedRegister>& spill_regs) {
   CHECK_ALIGNED(frame_size, kStackAlignment);
-  int gpr_count = 0;
-  // unspill xmms
-  int64_t offset = static_cast<int64_t>(frame_size) - (spill_regs.size() * kFramePointerSize) - 2 * kFramePointerSize;
+  addq(CpuRegister(RSP), Immediate(frame_size - (spill_regs.size() * kFramePointerSize) - kFramePointerSize));
   for (size_t i = 0; i < spill_regs.size(); ++i) {
-    x86_64::X86_64ManagedRegister spill = spill_regs.at(i).AsX86_64();
-    if (spill.IsXmmRegister()) {
-      offset += sizeof(double);
-      movsd(spill.AsXmmRegister(), Address(CpuRegister(RSP), offset));
-    } else {
-      gpr_count++;
-    }
-  }
-  addq(CpuRegister(RSP), Immediate(static_cast<int64_t>(frame_size) - (gpr_count * kFramePointerSize) - kFramePointerSize));
-  for (size_t i = 0; i < spill_regs.size(); ++i) {
-    x86_64::X86_64ManagedRegister spill = spill_regs.at(i).AsX86_64();
-    if (spill.IsCpuRegister()) {
-      popq(spill.AsCpuRegister());
-    }
+    popq(spill_regs.at(i).AsX86_64().AsCpuRegister());
   }
   ret();
 }
 
 void X86_64Assembler::IncreaseFrameSize(size_t adjust) {
   CHECK_ALIGNED(adjust, kStackAlignment);
-  addq(CpuRegister(RSP), Immediate(-static_cast<int64_t>(adjust)));
+  addq(CpuRegister(RSP), Immediate(-adjust));
 }
 
 void X86_64Assembler::DecreaseFrameSize(size_t adjust) {
@@ -1839,7 +1732,7 @@ void X86_64Assembler::Store(FrameOffset offs, ManagedRegister msrc, size_t size)
 void X86_64Assembler::StoreRef(FrameOffset dest, ManagedRegister msrc) {
   X86_64ManagedRegister src = msrc.AsX86_64();
   CHECK(src.IsCpuRegister());
-  movl(Address(CpuRegister(RSP), dest), src.AsCpuRegister());
+  movq(Address(CpuRegister(RSP), dest), src.AsCpuRegister());
 }
 
 void X86_64Assembler::StoreRawPtr(FrameOffset dest, ManagedRegister msrc) {
@@ -2177,7 +2070,7 @@ void X86_64Assembler::Call(ManagedRegister mbase, Offset offset, ManagedRegister
 
 void X86_64Assembler::Call(FrameOffset base, Offset offset, ManagedRegister mscratch) {
   CpuRegister scratch = mscratch.AsX86_64().AsCpuRegister();
-  movl(scratch, Address(CpuRegister(RSP), base));
+  movq(scratch, Address(CpuRegister(RSP), base));
   call(Address(scratch, offset));
 }
 

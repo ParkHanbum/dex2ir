@@ -18,11 +18,11 @@
 #include "class_linker-inl.h"
 #include "common_throws.h"
 #include "dex_file-inl.h"
-#include "field_helper.h"
 #include "jni_internal.h"
 #include "mirror/art_field-inl.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
+#include "object_utils.h"
 #include "reflection.h"
 #include "scoped_fast_native_object_access.h"
 
@@ -90,13 +90,12 @@ static bool GetFieldValue(const ScopedFastNativeObjectAccess& soa, mirror::Objec
 }
 
 static bool CheckReceiver(const ScopedFastNativeObjectAccess& soa, jobject j_rcvr,
-                          mirror::ArtField** f, mirror::Object** class_or_rcvr)
+                          mirror::ArtField* f, mirror::Object** class_or_rcvr)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   soa.Self()->AssertThreadSuspensionIsAllowable();
-  if ((*f)->IsStatic()) {
-    StackHandleScope<2> hs(soa.Self());
-    HandleWrapper<mirror::ArtField> h_f(hs.NewHandleWrapper(f));
-    Handle<mirror::Class> h_klass(hs.NewHandle((*f)->GetDeclaringClass()));
+  if (f->IsStatic()) {
+    StackHandleScope<1> hs(soa.Self());
+    Handle<mirror::Class> h_klass(hs.NewHandle(f->GetDeclaringClass()));
     if (UNLIKELY(!Runtime::Current()->GetClassLinker()->EnsureInitialized(h_klass, true, true))) {
       DCHECK(soa.Self()->IsExceptionPending());
       *class_or_rcvr = nullptr;
@@ -107,7 +106,7 @@ static bool CheckReceiver(const ScopedFastNativeObjectAccess& soa, jobject j_rcv
   }
 
   *class_or_rcvr = soa.Decode<mirror::Object*>(j_rcvr);
-  mirror::Class* declaringClass = (*f)->GetDeclaringClass();
+  mirror::Class* declaringClass = f->GetDeclaringClass();
   if (!VerifyObjectIsClass(*class_or_rcvr, declaringClass)) {
     DCHECK(soa.Self()->IsExceptionPending());
     *class_or_rcvr = nullptr;
@@ -118,9 +117,10 @@ static bool CheckReceiver(const ScopedFastNativeObjectAccess& soa, jobject j_rcv
 
 static jobject Field_get(JNIEnv* env, jobject javaField, jobject javaObj, jboolean accessible) {
   ScopedFastNativeObjectAccess soa(env);
+  CHECK(!kMovingFields) << "CheckReceiver may trigger thread suspension for initialization";
   mirror::ArtField* f = mirror::ArtField::FromReflectedField(soa, javaField);
   mirror::Object* o = nullptr;
-  if (!CheckReceiver(soa, javaObj, &f, &o)) {
+  if (!CheckReceiver(soa, javaObj, f, &o)) {
     DCHECK(soa.Self()->IsExceptionPending());
     return nullptr;
   }
@@ -131,7 +131,7 @@ static jobject Field_get(JNIEnv* env, jobject javaField, jobject javaObj, jboole
   }
   // We now don't expect suspension unless an exception is thrown.
   // Get the field's value, boxing if necessary.
-  Primitive::Type field_type = f->GetTypeAsPrimitiveType();
+  Primitive::Type field_type = FieldHelper(f).GetTypeAsPrimitiveType();
   JValue value;
   if (!GetFieldValue(soa, o, f, field_type, true, &value)) {
     DCHECK(soa.Self()->IsExceptionPending());
@@ -143,9 +143,10 @@ static jobject Field_get(JNIEnv* env, jobject javaField, jobject javaObj, jboole
 static JValue GetPrimitiveField(JNIEnv* env, jobject javaField, jobject javaObj,
                                 char dst_descriptor, jboolean accessible) {
   ScopedFastNativeObjectAccess soa(env);
+  CHECK(!kMovingFields) << "CheckReceiver may trigger thread suspension for initialization";
   mirror::ArtField* f = mirror::ArtField::FromReflectedField(soa, javaField);
   mirror::Object* o = nullptr;
-  if (!CheckReceiver(soa, javaObj, &f, &o)) {
+  if (!CheckReceiver(soa, javaObj, f, &o)) {
     DCHECK(soa.Self()->IsExceptionPending());
     return JValue();
   }
@@ -158,7 +159,7 @@ static JValue GetPrimitiveField(JNIEnv* env, jobject javaField, jobject javaObj,
 
   // We now don't expect suspension unless an exception is thrown.
   // Read the value.
-  Primitive::Type field_type = f->GetTypeAsPrimitiveType();
+  Primitive::Type field_type = FieldHelper(f).GetTypeAsPrimitiveType();
   JValue field_value;
   if (!GetFieldValue(soa, o, f, field_type, false, &field_value)) {
     DCHECK(soa.Self()->IsExceptionPending());
@@ -256,29 +257,33 @@ static void SetFieldValue(ScopedFastNativeObjectAccess& soa, mirror::Object* o,
 static void Field_set(JNIEnv* env, jobject javaField, jobject javaObj, jobject javaValue,
                       jboolean accessible) {
   ScopedFastNativeObjectAccess soa(env);
+  CHECK(!kMovingFields) << "CheckReceiver may trigger thread suspension for initialization";
   mirror::ArtField* f = mirror::ArtField::FromReflectedField(soa, javaField);
   // Check that the receiver is non-null and an instance of the field's declaring class.
   mirror::Object* o = nullptr;
-  if (!CheckReceiver(soa, javaObj, &f, &o)) {
+  if (!CheckReceiver(soa, javaObj, f, &o)) {
     DCHECK(soa.Self()->IsExceptionPending());
     return;
   }
+  Primitive::Type field_prim_type;
   mirror::Class* field_type;
-  const char* field_type_desciptor = f->GetTypeDescriptor();
-  Primitive::Type field_prim_type = Primitive::GetType(field_type_desciptor[0]);
-  if (field_prim_type == Primitive::kPrimNot) {
-    StackHandleScope<2> hs(soa.Self());
-    HandleWrapper<mirror::Object> h_o(hs.NewHandleWrapper(&o));
-    HandleWrapper<mirror::ArtField> h_f(hs.NewHandleWrapper(&f));
-    FieldHelper fh(h_f);
-    // May cause resolution.
-    field_type = fh.GetType(true);
-    if (field_type == nullptr) {
-      DCHECK(soa.Self()->IsExceptionPending());
-      return;
+  {
+    FieldHelper fh(f);
+    const char* field_type_desciptor = fh.GetTypeDescriptor();
+    field_prim_type = Primitive::GetType(field_type_desciptor[0]);
+    if (field_prim_type == Primitive::kPrimNot) {
+      StackHandleScope<1> hs(soa.Self());
+      HandleWrapper<mirror::Object> h(hs.NewHandleWrapper(&o));
+      // May cause resolution.
+      CHECK(!kMovingFields) << "Resolution may trigger thread suspension";
+      field_type = fh.GetType(true);
+      if (field_type == nullptr) {
+        DCHECK(soa.Self()->IsExceptionPending());
+        return;
+      }
+    } else {
+      field_type = Runtime::Current()->GetClassLinker()->FindPrimitiveClass(field_type_desciptor[0]);
     }
-  } else {
-    field_type = Runtime::Current()->GetClassLinker()->FindPrimitiveClass(field_type_desciptor[0]);
   }
   // We now don't expect suspension unless an exception is thrown.
   // Unbox the value, if necessary.
@@ -301,10 +306,10 @@ static void SetPrimitiveField(JNIEnv* env, jobject javaField, jobject javaObj, c
   ScopedFastNativeObjectAccess soa(env);
   mirror::ArtField* f = mirror::ArtField::FromReflectedField(soa, javaField);
   mirror::Object* o = nullptr;
-  if (!CheckReceiver(soa, javaObj, &f, &o)) {
+  if (!CheckReceiver(soa, javaObj, f, &o)) {
     return;
   }
-  Primitive::Type field_type = f->GetTypeAsPrimitiveType();
+  Primitive::Type field_type = FieldHelper(f).GetTypeAsPrimitiveType();
   if (UNLIKELY(field_type == Primitive::kPrimNot)) {
     ThrowIllegalArgumentException(nullptr, StringPrintf("Not a primitive field: %s",
                                                         PrettyField(f).c_str()).c_str());

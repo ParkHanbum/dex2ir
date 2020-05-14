@@ -15,7 +15,6 @@
  */
 
 #include "entrypoints/interpreter/interpreter_entrypoints.h"
-#include "entrypoints/jni/jni_entrypoints.h"
 #include "entrypoints/portable/portable_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/entrypoint_utils.h"
@@ -36,7 +35,7 @@ extern "C" void art_portable_resolution_trampoline(mirror::ArtMethod*);
 extern "C" void art_portable_to_interpreter_bridge(mirror::ArtMethod*);
 
 // Cast entrypoints.
-extern "C" uint32_t art_quick_assignable_from_code(const mirror::Class* klass,
+extern "C" uint32_t artIsAssignableFromCode(const mirror::Class* klass,
                                             const mirror::Class* ref_class);
 extern "C" void art_quick_check_cast(void*, void*);
 
@@ -45,6 +44,9 @@ extern "C" void* art_quick_initialize_static_storage(uint32_t, void*);
 extern "C" void* art_quick_initialize_type(uint32_t, void*);
 extern "C" void* art_quick_initialize_type_and_verify_access(uint32_t, void*);
 extern "C" void* art_quick_resolve_string(void*, uint32_t);
+
+// Exception entrypoints.
+extern "C" void* GetAndClearException(Thread*);
 
 // Field entrypoints.
 extern "C" int art_quick_set32_instance(uint32_t, void*, int32_t);
@@ -70,16 +72,26 @@ extern "C" void art_quick_handle_fill_data(void*, void*);
 extern "C" void art_quick_lock_object(void*);
 extern "C" void art_quick_unlock_object(void*);
 
+// Math entrypoints.
+extern int32_t CmpgDouble(double a, double b);
+extern int32_t CmplDouble(double a, double b);
+extern int32_t CmpgFloat(float a, float b);
+extern int32_t CmplFloat(float a, float b);
+
 // Single-precision FP arithmetics.
-extern "C" float art_quick_fmodf(float a, float b);          // REM_FLOAT[_2ADDR]
+extern "C" float fmodf(float a, float b);          // REM_FLOAT[_2ADDR]
 
 // Double-precision FP arithmetics.
-extern "C" double art_quick_fmod(double a, double b);         // REM_DOUBLE[_2ADDR]
+extern "C" double fmod(double a, double b);         // REM_DOUBLE[_2ADDR]
 
-// Memcpy
-extern "C" void* art_quick_memcpy(void* __restrict, const void* __restrict, size_t);
+// Long long arithmetics - REM_LONG[_2ADDR] and DIV_LONG[_2ADDR]
+extern "C" int64_t art_quick_mul_long(int64_t, int64_t);
+extern "C" uint64_t art_quick_shl_long(uint64_t, uint32_t);
+extern "C" uint64_t art_quick_shr_long(uint64_t, uint32_t);
+extern "C" uint64_t art_quick_ushr_long(uint64_t, uint32_t);
 
 // Intrinsic entrypoints.
+extern "C" int32_t __memcmp16(void*, void*, int32_t);
 extern "C" int32_t art_quick_indexof(void*, uint32_t, uint32_t, uint32_t);
 extern "C" int32_t art_quick_string_compareto(void*, void*);
 
@@ -94,6 +106,7 @@ extern "C" void art_quick_invoke_super_trampoline_with_access_check(uint32_t, vo
 extern "C" void art_quick_invoke_virtual_trampoline_with_access_check(uint32_t, void*);
 
 // Thread entrypoints.
+extern void CheckSuspendFromCode(Thread* thread);
 extern "C" void art_quick_test_suspend();
 
 // Throw entrypoints.
@@ -126,7 +139,7 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   ResetQuickAllocEntryPoints(qpoints);
 
   // Cast
-  qpoints->pInstanceofNonTrivial = art_quick_assignable_from_code;
+  qpoints->pInstanceofNonTrivial = artIsAssignableFromCode;
   qpoints->pCheckCast = art_quick_check_cast;
 
   // DexCache
@@ -169,31 +182,33 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   qpoints->pUnlockObject = art_quick_unlock_object;
 
   // Math
-  // TODO nullptr entrypoints not needed for ARM64 - generate inline.
-  qpoints->pCmpgDouble = nullptr;
-  qpoints->pCmpgFloat = nullptr;
-  qpoints->pCmplDouble = nullptr;
-  qpoints->pCmplFloat = nullptr;
-  qpoints->pFmod = art_quick_fmod;
-  qpoints->pL2d = nullptr;
-  qpoints->pFmodf = art_quick_fmodf;
-  qpoints->pL2f = nullptr;
-  qpoints->pD2iz = nullptr;
-  qpoints->pF2iz = nullptr;
-  qpoints->pIdivmod = nullptr;
-  qpoints->pD2l = nullptr;
-  qpoints->pF2l = nullptr;
-  qpoints->pLdiv = nullptr;
-  qpoints->pLmod = nullptr;
-  qpoints->pLmul = nullptr;
-  qpoints->pShlLong = nullptr;
-  qpoints->pShrLong = nullptr;
-  qpoints->pUshrLong = nullptr;
+  // TODO NULL entrypoints not needed for ARM64 - generate inline.
+  qpoints->pCmpgDouble = CmpgDouble;
+  qpoints->pCmpgFloat = CmpgFloat;
+  qpoints->pCmplDouble = CmplDouble;
+  qpoints->pCmplFloat = CmplFloat;
+  qpoints->pFmod = fmod;
+  qpoints->pSqrt = sqrt;
+  qpoints->pL2d = NULL;
+  qpoints->pFmodf = fmodf;
+  qpoints->pL2f = NULL;
+  qpoints->pD2iz = NULL;
+  qpoints->pF2iz = NULL;
+  qpoints->pIdivmod = NULL;
+  qpoints->pD2l = NULL;
+  qpoints->pF2l = NULL;
+  qpoints->pLdiv = NULL;
+  qpoints->pLmod = NULL;
+  qpoints->pLmul = art_quick_mul_long;
+  qpoints->pShlLong = art_quick_shl_long;
+  qpoints->pShrLong = art_quick_shr_long;
+  qpoints->pUshrLong = art_quick_ushr_long;
 
   // Intrinsics
   qpoints->pIndexOf = art_quick_indexof;
+  qpoints->pMemcmp16 = __memcmp16;
   qpoints->pStringCompareTo = art_quick_string_compareto;
-  qpoints->pMemcpy = art_quick_memcpy;
+  qpoints->pMemcpy = memcpy;
 
   // Invocation
   qpoints->pQuickImtConflictTrampoline = art_quick_imt_conflict_trampoline;
@@ -206,6 +221,7 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   qpoints->pInvokeVirtualTrampolineWithAccessCheck = art_quick_invoke_virtual_trampoline_with_access_check;
 
   // Thread
+  qpoints->pCheckSuspend = CheckSuspendFromCode;
   qpoints->pTestSuspend = art_quick_test_suspend;
 
   // Throws

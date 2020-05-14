@@ -16,6 +16,9 @@
 
 #include "instruction_set.h"
 
+#include "globals.h"
+#include "base/logging.h"  // Logging is required for FATAL in the helper functions.
+
 namespace art {
 
 const char* GetInstructionSetString(const InstructionSet isa) {
@@ -42,19 +45,91 @@ const char* GetInstructionSetString(const InstructionSet isa) {
 InstructionSet GetInstructionSetFromString(const char* isa_str) {
   CHECK(isa_str != nullptr);
 
-  if (strcmp("arm", isa_str) == 0) {
+  if (!strcmp("arm", isa_str)) {
     return kArm;
-  } else if (strcmp("arm64", isa_str) == 0) {
+  } else if (!strcmp("arm64", isa_str)) {
     return kArm64;
-  } else if (strcmp("x86", isa_str) == 0) {
+  } else if (!strcmp("x86", isa_str)) {
     return kX86;
-  } else if (strcmp("x86_64", isa_str) == 0) {
+  } else if (!strcmp("x86_64", isa_str)) {
     return kX86_64;
-  } else if (strcmp("mips", isa_str) == 0) {
+  } else if (!strcmp("mips", isa_str)) {
     return kMips;
+  } else if (!strcmp("none", isa_str)) {
+    return kNone;
   }
 
+  LOG(FATAL) << "Unknown ISA " << isa_str;
   return kNone;
+}
+
+size_t GetInstructionSetPointerSize(InstructionSet isa) {
+  switch (isa) {
+    case kArm:
+      // Fall-through.
+    case kThumb2:
+      return kArmPointerSize;
+    case kArm64:
+      return kArm64PointerSize;
+    case kX86:
+      return kX86PointerSize;
+    case kX86_64:
+      return kX86_64PointerSize;
+    case kMips:
+      return kMipsPointerSize;
+    case kNone:
+      LOG(FATAL) << "ISA kNone does not have pointer size.";
+      return 0;
+    default:
+      LOG(FATAL) << "Unknown ISA " << isa;
+      return 0;
+  }
+}
+
+size_t GetBytesPerGprSpillLocation(InstructionSet isa) {
+  switch (isa) {
+    case kArm:
+      // Fall-through.
+    case kThumb2:
+      return 4;
+    case kArm64:
+      return 8;
+    case kX86:
+      return 4;
+    case kX86_64:
+      return 8;
+    case kMips:
+      return 4;
+    case kNone:
+      LOG(FATAL) << "ISA kNone does not have spills.";
+      return 0;
+    default:
+      LOG(FATAL) << "Unknown ISA " << isa;
+      return 0;
+  }
+}
+
+size_t GetBytesPerFprSpillLocation(InstructionSet isa) {
+  switch (isa) {
+    case kArm:
+      // Fall-through.
+    case kThumb2:
+      return 4;
+    case kArm64:
+      return 8;
+    case kX86:
+      return 8;
+    case kX86_64:
+      return 8;
+    case kMips:
+      return 4;
+    case kNone:
+      LOG(FATAL) << "ISA kNone does not have spills.";
+      return 0;
+    default:
+      LOG(FATAL) << "Unknown ISA " << isa;
+      return 0;
+  }
 }
 
 size_t GetInstructionSetAlignment(InstructionSet isa) {
@@ -80,39 +155,23 @@ size_t GetInstructionSetAlignment(InstructionSet isa) {
   }
 }
 
-
-static constexpr size_t kDefaultStackOverflowReservedBytes = 16 * KB;
-static constexpr size_t kMipsStackOverflowReservedBytes = kDefaultStackOverflowReservedBytes;
-
-static constexpr size_t kArmStackOverflowReservedBytes =    8 * KB;
-static constexpr size_t kArm64StackOverflowReservedBytes =  8 * KB;
-static constexpr size_t kX86StackOverflowReservedBytes =    8 * KB;
-static constexpr size_t kX86_64StackOverflowReservedBytes = 8 * KB;
-
-size_t GetStackOverflowReservedBytes(InstructionSet isa) {
+bool Is64BitInstructionSet(InstructionSet isa) {
   switch (isa) {
-    case kArm:      // Intentional fall-through.
+    case kArm:
     case kThumb2:
-      return kArmStackOverflowReservedBytes;
+    case kX86:
+    case kMips:
+      return false;
 
     case kArm64:
-      return kArm64StackOverflowReservedBytes;
-
-    case kMips:
-      return kMipsStackOverflowReservedBytes;
-
-    case kX86:
-      return kX86StackOverflowReservedBytes;
-
     case kX86_64:
-      return kX86_64StackOverflowReservedBytes;
+      return true;
 
     case kNone:
-      LOG(FATAL) << "kNone has no stack overflow size";
+      LOG(FATAL) << "ISA kNone does not have bit width.";
       return 0;
-
     default:
-      LOG(FATAL) << "Unknown instruction set" << isa;
+      LOG(FATAL) << "Unknown ISA " << isa;
       return 0;
   }
 }

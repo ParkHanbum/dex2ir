@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include "entrypoints/interpreter/interpreter_entrypoints.h"
-#include "entrypoints/jni/jni_entrypoints.h"
 #include "entrypoints/portable/portable_entrypoints.h"
 #include "entrypoints/quick/quick_alloc_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
@@ -71,8 +69,13 @@ extern "C" void art_quick_lock_object(void*);
 extern "C" void art_quick_unlock_object(void*);
 
 // Math entrypoints.
+extern "C" double art_quick_fmod(double, double);
+extern "C" float art_quick_fmodf(float, float);
+extern "C" double art_quick_l2d(int64_t);
+extern "C" float art_quick_l2f(int64_t);
 extern "C" int64_t art_quick_d2l(double);
 extern "C" int64_t art_quick_f2l(float);
+extern "C" int32_t art_quick_idivmod(int32_t, int32_t);
 extern "C" int64_t art_quick_ldiv(int64_t, int64_t);
 extern "C" int64_t art_quick_lmod(int64_t, int64_t);
 extern "C" int64_t art_quick_lmul(int64_t, int64_t);
@@ -81,6 +84,7 @@ extern "C" uint64_t art_quick_lshr(uint64_t, uint32_t);
 extern "C" uint64_t art_quick_lushr(uint64_t, uint32_t);
 
 // Intrinsic entrypoints.
+extern "C" int32_t art_quick_memcmp16(void*, void*, int32_t);
 extern "C" int32_t art_quick_string_compareto(void*, void*);
 extern "C" void* art_quick_memcpy(void*, const void*, size_t);
 
@@ -95,6 +99,7 @@ extern "C" void art_quick_invoke_super_trampoline_with_access_check(uint32_t, vo
 extern "C" void art_quick_invoke_virtual_trampoline_with_access_check(uint32_t, void*);
 
 // Thread entrypoints.
+extern void CheckSuspendFromCode(Thread* thread);
 extern "C" void art_quick_test_suspend();
 
 // Throw entrypoints.
@@ -174,13 +179,14 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   // points->pCmpgFloat = NULL;  // Not needed on x86.
   // points->pCmplDouble = NULL;  // Not needed on x86.
   // points->pCmplFloat = NULL;  // Not needed on x86.
-  // qpoints->pFmod = NULL;  // Not needed on x86.
-  // qpoints->pL2d = NULL;  // Not needed on x86.
-  // qpoints->pFmodf = NULL;  // Not needed on x86.
-  // qpoints->pL2f = NULL;  // Not needed on x86.
+  qpoints->pFmod = art_quick_fmod;
+  // qpoints->pSqrt = NULL;  // Not needed on x86.
+  qpoints->pL2d = art_quick_l2d;
+  qpoints->pFmodf = art_quick_fmodf;
+  qpoints->pL2f = art_quick_l2f;
   // points->pD2iz = NULL;  // Not needed on x86.
   // points->pF2iz = NULL;  // Not needed on x86.
-  // qpoints->pIdivmod = NULL;  // Not needed on x86.
+  qpoints->pIdivmod = art_quick_idivmod;
   qpoints->pD2l = art_quick_d2l;
   qpoints->pF2l = art_quick_f2l;
   qpoints->pLdiv = art_quick_ldiv;
@@ -192,6 +198,7 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
 
   // Intrinsics
   // qpoints->pIndexOf = nullptr;  // Not needed on x86
+  qpoints->pMemcmp16 = art_quick_memcmp16;
   qpoints->pStringCompareTo = art_quick_string_compareto;
   qpoints->pMemcpy = art_quick_memcpy;
 
@@ -206,6 +213,7 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   qpoints->pInvokeVirtualTrampolineWithAccessCheck = art_quick_invoke_virtual_trampoline_with_access_check;
 
   // Thread
+  qpoints->pCheckSuspend = CheckSuspendFromCode;
   qpoints->pTestSuspend = art_quick_test_suspend;
 
   // Throws

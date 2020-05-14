@@ -24,8 +24,6 @@
 #include "driver/dex_compilation_unit.h"
 #include "graph_visualizer.h"
 #include "nodes.h"
-#include "register_allocator.h"
-#include "ssa_phi_elimination.h"
 #include "ssa_liveness_analysis.h"
 #include "utils/arena_allocator.h"
 
@@ -78,18 +76,6 @@ CompiledMethod* OptimizingCompiler::TryCompile(const DexFile::CodeItem* code_ite
                                                uint32_t method_idx,
                                                jobject class_loader,
                                                const DexFile& dex_file) const {
-  InstructionSet instruction_set = GetCompilerDriver()->GetInstructionSet();
-  // Always use the thumb2 assembler: some runtime functionality (like implicit stack
-  // overflow checks) assume thumb2.
-  if (instruction_set == kArm) {
-    instruction_set = kThumb2;
-  }
-
-  // Do not attempt to compile on architectures we do not support.
-  if (instruction_set != kX86 && instruction_set != kX86_64 && instruction_set != kThumb2) {
-    return nullptr;
-  }
-
   DexCompilationUnit dex_compilation_unit(
     nullptr, class_loader, art::Runtime::Current()->GetClassLinker(), dex_file, code_item,
     class_def_idx, method_idx, access_flags,
@@ -98,12 +84,10 @@ CompiledMethod* OptimizingCompiler::TryCompile(const DexFile::CodeItem* code_ite
   // For testing purposes, we put a special marker on method names that should be compiled
   // with this compiler. This makes sure we're not regressing.
   bool shouldCompile = dex_compilation_unit.GetSymbol().find("00024opt_00024") != std::string::npos;
-  bool shouldOptimize =
-      dex_compilation_unit.GetSymbol().find("00024reg_00024") != std::string::npos;
 
   ArenaPool pool;
   ArenaAllocator arena(&pool);
-  HGraphBuilder builder(&arena, &dex_compilation_unit, &dex_file, GetCompilerDriver());
+  HGraphBuilder builder(&arena, &dex_compilation_unit, &dex_file);
 
   HGraph* graph = builder.BuildGraph(*code_item);
   if (graph == nullptr) {
@@ -112,7 +96,14 @@ CompiledMethod* OptimizingCompiler::TryCompile(const DexFile::CodeItem* code_ite
     }
     return nullptr;
   }
+  HGraphVisualizer visualizer(visualizer_output_.get(), graph, kStringFilter, dex_compilation_unit);
+  visualizer.DumpGraph("builder");
 
+  InstructionSet instruction_set = GetCompilerDriver()->GetInstructionSet();
+  // The optimizing compiler currently does not have a Thumb2 assembler.
+  if (instruction_set == kThumb2) {
+    instruction_set = kArm;
+  }
   CodeGenerator* codegen = CodeGenerator::Create(&arena, graph, instruction_set);
   if (codegen == nullptr) {
     if (shouldCompile) {
@@ -121,44 +112,8 @@ CompiledMethod* OptimizingCompiler::TryCompile(const DexFile::CodeItem* code_ite
     return nullptr;
   }
 
-  HGraphVisualizer visualizer(
-      visualizer_output_.get(), graph, kStringFilter, *codegen, dex_compilation_unit);
-  visualizer.DumpGraph("builder");
-
   CodeVectorAllocator allocator;
-
-  if (RegisterAllocator::CanAllocateRegistersFor(*graph, instruction_set)) {
-    graph->BuildDominatorTree();
-    graph->TransformToSSA();
-    visualizer.DumpGraph("ssa");
-    graph->FindNaturalLoops();
-
-    SsaRedundantPhiElimination(graph).Run();
-    SsaDeadPhiElimination(graph).Run();
-
-    SsaLivenessAnalysis liveness(*graph, codegen);
-    liveness.Analyze();
-    visualizer.DumpGraph(kLivenessPassName);
-
-    RegisterAllocator register_allocator(graph->GetArena(), codegen, liveness);
-    register_allocator.AllocateRegisters();
-
-    visualizer.DumpGraph(kRegisterAllocatorPassName);
-    codegen->CompileOptimized(&allocator);
-  } else if (shouldOptimize && RegisterAllocator::Supports(instruction_set)) {
-    LOG(FATAL) << "Could not allocate registers in optimizing compiler";
-  } else {
-    codegen->CompileBaseline(&allocator);
-
-    // Run these phases to get some test coverage.
-    graph->BuildDominatorTree();
-    graph->TransformToSSA();
-    visualizer.DumpGraph("ssa");
-    graph->FindNaturalLoops();
-    SsaLivenessAnalysis liveness(*graph, codegen);
-    liveness.Analyze();
-    visualizer.DumpGraph(kLivenessPassName);
-  }
+  codegen->Compile(&allocator);
 
   std::vector<uint8_t> mapping_table;
   codegen->BuildMappingTable(&mapping_table);
@@ -166,6 +121,14 @@ CompiledMethod* OptimizingCompiler::TryCompile(const DexFile::CodeItem* code_ite
   codegen->BuildVMapTable(&vmap_table);
   std::vector<uint8_t> gc_map;
   codegen->BuildNativeGCMap(&gc_map, dex_compilation_unit);
+
+  // Run these phases to get some test coverage.
+  graph->BuildDominatorTree();
+  graph->TransformToSSA();
+  visualizer.DumpGraph("ssa");
+
+  graph->FindNaturalLoops();
+  SsaLivenessAnalysis(*graph).Analyze();
 
   return new CompiledMethod(GetCompilerDriver(),
                             instruction_set,

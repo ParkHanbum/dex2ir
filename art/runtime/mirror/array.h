@@ -17,7 +17,6 @@
 #ifndef ART_RUNTIME_MIRROR_ARRAY_H_
 #define ART_RUNTIME_MIRROR_ARRAY_H_
 
-#include "gc_root.h"
 #include "gc/allocator_type.h"
 #include "object.h"
 #include "object_callbacks.h"
@@ -30,9 +29,6 @@ namespace mirror {
 
 class MANAGED Array : public Object {
  public:
-  // The size of a java.lang.Class representing an array.
-  static uint32_t ClassSize();
-
   // Allocates an array with the given properties, if fill_usable is true the array will be of at
   // least component_count size, however, if there's usable space at the end of the allocation the
   // array will fill it.
@@ -42,8 +38,8 @@ class MANAGED Array : public Object {
                       bool fill_usable = false)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  static Array* CreateMultiArray(Thread* self, Handle<Class> element_class,
-                                 Handle<IntArray> dimensions)
+  static Array* CreateMultiArray(Thread* self, const Handle<Class>& element_class,
+                                 const Handle<IntArray>& dimensions)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags,
@@ -159,26 +155,26 @@ class MANAGED PrimitiveArray : public Array {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   static void SetArrayClass(Class* array_class) {
-    CHECK(array_class_.IsNull());
+    CHECK(array_class_ == nullptr);
     CHECK(array_class != nullptr);
-    array_class_ = GcRoot<Class>(array_class);
+    array_class_ = array_class;
   }
 
-  static Class* GetArrayClass() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    DCHECK(!array_class_.IsNull());
-    return array_class_.Read();
+  static Class* GetArrayClass() {
+    DCHECK(array_class_ != nullptr);
+    return array_class_;
   }
 
   static void ResetArrayClass() {
-    CHECK(!array_class_.IsNull());
-    array_class_ = GcRoot<Class>(nullptr);
+    CHECK(array_class_ != nullptr);
+    array_class_ = nullptr;
   }
 
   static void VisitRoots(RootCallback* callback, void* arg)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
  private:
-  static GcRoot<Class> array_class_;
+  static Class* array_class_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PrimitiveArray);
 };

@@ -293,7 +293,7 @@ void DlMallocSpace::Clear() {
   madvise(GetMemMap()->Begin(), GetMemMap()->Size(), MADV_DONTNEED);
   live_bitmap_->Clear();
   mark_bitmap_->Clear();
-  SetEnd(Begin() + starting_size_);
+  end_ = Begin() + starting_size_;
   mspace_ = CreateMspace(mem_map_->Begin(), starting_size_, initial_size_);
   SetFootprintLimit(footprint_limit);
 }
@@ -303,30 +303,6 @@ void DlMallocSpace::CheckMoreCoreForPrecondition() {
   lock_.AssertHeld(Thread::Current());
 }
 #endif
-
-static void MSpaceChunkCallback(void* start, void* end, size_t used_bytes, void* arg) {
-  size_t chunk_size = reinterpret_cast<uint8_t*>(end) - reinterpret_cast<uint8_t*>(start);
-  if (used_bytes < chunk_size) {
-    size_t chunk_free_bytes = chunk_size - used_bytes;
-    size_t& max_contiguous_allocation = *reinterpret_cast<size_t*>(arg);
-    max_contiguous_allocation = std::max(max_contiguous_allocation, chunk_free_bytes);
-  }
-}
-
-void DlMallocSpace::LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes) {
-  Thread* self = Thread::Current();
-  size_t max_contiguous_allocation = 0;
-  // To allow the Walk/InspectAll() to exclusively-lock the mutator
-  // lock, temporarily release the shared access to the mutator
-  // lock here by transitioning to the suspended state.
-  Locks::mutator_lock_->AssertSharedHeld(self);
-  self->TransitionFromRunnableToSuspended(kSuspended);
-  Walk(MSpaceChunkCallback, &max_contiguous_allocation);
-  self->TransitionFromSuspendedToRunnable();
-  Locks::mutator_lock_->AssertSharedHeld(self);
-  os << "; failed due to fragmentation (largest possible contiguous allocation "
-     <<  max_contiguous_allocation << " bytes)";
-}
 
 }  // namespace space
 }  // namespace gc

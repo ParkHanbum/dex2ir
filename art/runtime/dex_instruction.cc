@@ -20,7 +20,6 @@
 
 #include <iomanip>
 
-#include "base/stringprintf.h"
 #include "dex_file-inl.h"
 #include "utils.h"
 

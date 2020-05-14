@@ -17,7 +17,6 @@
 #include "arm_lir.h"
 #include "codegen_arm.h"
 #include "dex/quick/mir_to_lir-inl.h"
-#include "dex/reg_storage_eq.h"
 
 namespace art {
 
@@ -88,9 +87,9 @@ LIR* ArmMir2Lir::LoadFPConstantValue(int r_dest, int value) {
   if (data_target == NULL) {
     data_target = AddWordData(&literal_list_, value);
   }
-  ScopedMemRefType mem_ref_type(this, ResourceMask::kLiteral);
   LIR* load_pc_rel = RawLIR(current_dalvik_offset_, kThumb2Vldrs,
                           r_dest, rs_r15pc.GetReg(), 0, 0, 0, data_target);
+  SetMemRefType(load_pc_rel, true, kLiteral);
   AppendLIR(load_pc_rel);
   return load_pc_rel;
 }
@@ -671,7 +670,6 @@ LIR* ArmMir2Lir::LoadConstantWide(RegStorage r_dest, int64_t value) {
     if (data_target == NULL) {
       data_target = AddWideData(&literal_list_, val_lo, val_hi);
     }
-    ScopedMemRefType mem_ref_type(this, ResourceMask::kLiteral);
     if (r_dest.IsFloat()) {
       res = RawLIR(current_dalvik_offset_, kThumb2Vldrd,
                    r_dest.GetReg(), rs_r15pc.GetReg(), 0, 0, 0, data_target);
@@ -680,6 +678,7 @@ LIR* ArmMir2Lir::LoadConstantWide(RegStorage r_dest, int64_t value) {
       res = RawLIR(current_dalvik_offset_, kThumb2LdrdPcRel8,
                    r_dest.GetLowReg(), r_dest.GetHighReg(), rs_r15pc.GetReg(), 0, 0, data_target);
     }
+    SetMemRefType(res, true, kLiteral);
     AppendLIR(res);
   }
   return res;
@@ -820,32 +819,6 @@ LIR* ArmMir2Lir::StoreBaseIndexed(RegStorage r_base, RegStorage r_index, RegStor
   return store;
 }
 
-// Helper function for LoadBaseDispBody()/StoreBaseDispBody().
-LIR* ArmMir2Lir::LoadStoreUsingInsnWithOffsetImm8Shl2(ArmOpcode opcode, RegStorage r_base,
-                                                      int displacement, RegStorage r_src_dest,
-                                                      RegStorage r_work) {
-  DCHECK_EQ(displacement & 3, 0);
-  constexpr int kOffsetMask = 0xff << 2;
-  int encoded_disp = (displacement & kOffsetMask) >> 2;  // Within range of the instruction.
-  RegStorage r_ptr = r_base;
-  if ((displacement & ~kOffsetMask) != 0) {
-    r_ptr = r_work.Valid() ? r_work : AllocTemp();
-    // Add displacement & ~kOffsetMask to base, it's a single instruction for up to +-256KiB.
-    OpRegRegImm(kOpAdd, r_ptr, r_base, displacement & ~kOffsetMask);
-  }
-  LIR* lir = nullptr;
-  if (!r_src_dest.IsPair()) {
-    lir = NewLIR3(opcode, r_src_dest.GetReg(), r_ptr.GetReg(), encoded_disp);
-  } else {
-    lir = NewLIR4(opcode, r_src_dest.GetLowReg(), r_src_dest.GetHighReg(), r_ptr.GetReg(),
-                  encoded_disp);
-  }
-  if ((displacement & ~kOffsetMask) != 0 && !r_work.Valid()) {
-    FreeTemp(r_ptr);
-  }
-  return lir;
-}
-
 /*
  * Load value from base + displacement.  Optionally perform null check
  * on base (which must have an associated s_reg and MIR).  If not
@@ -863,27 +836,40 @@ LIR* ArmMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStorag
   switch (size) {
     case kDouble:
     // Intentional fall-though.
-    case k64:
+    case k64: {
+      DCHECK_EQ(displacement & 3, 0);
+      encoded_disp = (displacement & 1020) >> 2;  // Within range of kThumb2Vldrd/kThumb2LdrdI8.
+      RegStorage r_ptr = r_base;
+      if ((displacement & ~1020) != 0) {
+        // For core register load, use the r_dest.GetLow() for the temporary pointer.
+        r_ptr = r_dest.IsFloat() ? AllocTemp() : r_dest.GetLow();
+        // Add displacement & ~1020 to base, it's a single instruction for up to +-256KiB.
+        OpRegRegImm(kOpAdd, r_ptr, r_base, displacement & ~1020);
+      }
       if (r_dest.IsFloat()) {
         DCHECK(!r_dest.IsPair());
-        load = LoadStoreUsingInsnWithOffsetImm8Shl2(kThumb2Vldrd, r_base, displacement, r_dest);
+        load = NewLIR3(kThumb2Vldrd, r_dest.GetReg(), r_ptr.GetReg(), encoded_disp);
       } else {
-        DCHECK(r_dest.IsPair());
-        // Use the r_dest.GetLow() for the temporary pointer if needed.
-        load = LoadStoreUsingInsnWithOffsetImm8Shl2(kThumb2LdrdI8, r_base, displacement, r_dest,
-                                                    r_dest.GetLow());
+        load = NewLIR4(kThumb2LdrdI8, r_dest.GetLowReg(), r_dest.GetHighReg(), r_base.GetReg(),
+                       encoded_disp);
+      }
+      if ((displacement & ~1020) != 0 && !r_dest.IsFloat()) {
+        FreeTemp(r_ptr);
       }
       already_generated = true;
       break;
+    }
     case kSingle:
     // Intentional fall-though.
     case k32:
     // Intentional fall-though.
     case kReference:
       if (r_dest.IsFloat()) {
-        DCHECK(r_dest.IsSingle());
-        load = LoadStoreUsingInsnWithOffsetImm8Shl2(kThumb2Vldrs, r_base, displacement, r_dest);
-        already_generated = true;
+        opcode = kThumb2Vldrs;
+        if (displacement <= 1020) {
+          short_form = true;
+          encoded_disp >>= 2;
+        }
         break;
       }
       if (r_dest.Low8() && (r_base == rs_rARM_PC) && (displacement <= 1020) &&
@@ -948,48 +934,49 @@ LIR* ArmMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStorag
     } else {
       RegStorage reg_offset = AllocTemp();
       LoadConstant(reg_offset, encoded_disp);
-      DCHECK(!r_dest.IsFloat());
-      load = LoadBaseIndexed(r_base, reg_offset, r_dest, 0, size);
+      if (r_dest.IsFloat()) {
+        // No index ops - must use a long sequence.  Turn the offset into a direct pointer.
+        OpRegReg(kOpAdd, reg_offset, r_base);
+        load = LoadBaseDispBody(reg_offset, 0, r_dest, size);
+      } else {
+        load = LoadBaseIndexed(r_base, reg_offset, r_dest, 0, size);
+      }
       FreeTemp(reg_offset);
     }
   }
 
   // TODO: in future may need to differentiate Dalvik accesses w/ spills
-  if (mem_ref_type_ == ResourceMask::kDalvikReg) {
-    DCHECK(r_base == rs_rARM_SP);
+  if (r_base == rs_rARM_SP) {
     AnnotateDalvikRegAccess(load, displacement >> 2, true /* is_load */, r_dest.Is64Bit());
   }
   return load;
 }
 
+LIR* ArmMir2Lir::LoadBaseDispVolatile(RegStorage r_base, int displacement, RegStorage r_dest,
+                                      OpSize size) {
+  // Only 64-bit load needs special handling.
+  if (UNLIKELY(size == k64 || size == kDouble)) {
+    DCHECK(!r_dest.IsFloat());  // See RegClassForFieldLoadSave().
+    // If the cpu supports LPAE, aligned LDRD is atomic - fall through to LoadBaseDisp().
+    if (!cu_->compiler_driver->GetInstructionSetFeatures().HasLpae()) {
+      // Use LDREXD for the atomic load. (Expect displacement > 0, don't optimize for == 0.)
+      RegStorage r_ptr = AllocTemp();
+      OpRegRegImm(kOpAdd, r_ptr, r_base, displacement);
+      LIR* lir = NewLIR3(kThumb2Ldrexd, r_dest.GetLowReg(), r_dest.GetHighReg(), r_ptr.GetReg());
+      FreeTemp(r_ptr);
+      return lir;
+    }
+  }
+  return LoadBaseDisp(r_base, displacement, r_dest, size);
+}
+
 LIR* ArmMir2Lir::LoadBaseDisp(RegStorage r_base, int displacement, RegStorage r_dest,
-                              OpSize size, VolatileKind is_volatile) {
+                              OpSize size) {
   // TODO: base this on target.
   if (size == kWord) {
     size = k32;
   }
-  LIR* load;
-  if (UNLIKELY(is_volatile == kVolatile &&
-               (size == k64 || size == kDouble) &&
-               !cu_->compiler_driver->GetInstructionSetFeatures().HasLpae())) {
-    // Only 64-bit load needs special handling.
-    // If the cpu supports LPAE, aligned LDRD is atomic - fall through to LoadBaseDisp().
-    DCHECK(!r_dest.IsFloat());  // See RegClassForFieldLoadSave().
-    // Use LDREXD for the atomic load. (Expect displacement > 0, don't optimize for == 0.)
-    RegStorage r_ptr = AllocTemp();
-    OpRegRegImm(kOpAdd, r_ptr, r_base, displacement);
-    LIR* lir = NewLIR3(kThumb2Ldrexd, r_dest.GetLowReg(), r_dest.GetHighReg(), r_ptr.GetReg());
-    FreeTemp(r_ptr);
-    return lir;
-  } else {
-    load = LoadBaseDispBody(r_base, displacement, r_dest, size);
-  }
-
-  if (UNLIKELY(is_volatile == kVolatile)) {
-    GenMemBarrier(kLoadAny);
-  }
-
-  return load;
+  return LoadBaseDispBody(r_base, displacement, r_dest, size);
 }
 
 
@@ -1005,16 +992,28 @@ LIR* ArmMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement, RegStora
   switch (size) {
     case kDouble:
     // Intentional fall-though.
-    case k64:
+    case k64: {
+      DCHECK_EQ(displacement & 3, 0);
+      encoded_disp = (displacement & 1020) >> 2;  // Within range of kThumb2Vstrd/kThumb2StrdI8.
+      RegStorage r_ptr = r_base;
+      if ((displacement & ~1020) != 0) {
+        r_ptr = AllocTemp();
+        // Add displacement & ~1020 to base, it's a single instruction for up to +-256KiB.
+        OpRegRegImm(kOpAdd, r_ptr, r_base, displacement & ~1020);
+      }
       if (r_src.IsFloat()) {
         DCHECK(!r_src.IsPair());
-        store = LoadStoreUsingInsnWithOffsetImm8Shl2(kThumb2Vstrd, r_base, displacement, r_src);
+        store = NewLIR3(kThumb2Vstrd, r_src.GetReg(), r_ptr.GetReg(), encoded_disp);
       } else {
-        DCHECK(r_src.IsPair());
-        store = LoadStoreUsingInsnWithOffsetImm8Shl2(kThumb2StrdI8, r_base, displacement, r_src);
+        store = NewLIR4(kThumb2StrdI8, r_src.GetLowReg(), r_src.GetHighReg(), r_ptr.GetReg(),
+                        encoded_disp);
+      }
+      if ((displacement & ~1020) != 0) {
+        FreeTemp(r_ptr);
       }
       already_generated = true;
       break;
+    }
     case kSingle:
     // Intentional fall-through.
     case k32:
@@ -1022,8 +1021,11 @@ LIR* ArmMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement, RegStora
     case kReference:
       if (r_src.IsFloat()) {
         DCHECK(r_src.IsSingle());
-        store = LoadStoreUsingInsnWithOffsetImm8Shl2(kThumb2Vstrs, r_base, displacement, r_src);
-        already_generated = true;
+        opcode = kThumb2Vstrs;
+        if (displacement <= 1020) {
+          short_form = true;
+          encoded_disp >>= 2;
+        }
         break;
       }
       if (r_src.Low8() && (r_base == rs_r13sp) && (displacement <= 1020) && (displacement >= 0)) {
@@ -1071,73 +1073,67 @@ LIR* ArmMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement, RegStora
     } else {
       RegStorage r_scratch = AllocTemp();
       LoadConstant(r_scratch, encoded_disp);
-      DCHECK(!r_src.IsFloat());
-      store = StoreBaseIndexed(r_base, r_scratch, r_src, 0, size);
+      if (r_src.IsFloat()) {
+        // No index ops - must use a long sequence.  Turn the offset into a direct pointer.
+        OpRegReg(kOpAdd, r_scratch, r_base);
+        store = StoreBaseDispBody(r_scratch, 0, r_src, size);
+      } else {
+        store = StoreBaseIndexed(r_base, r_scratch, r_src, 0, size);
+      }
       FreeTemp(r_scratch);
     }
   }
 
   // TODO: In future, may need to differentiate Dalvik & spill accesses
-  if (mem_ref_type_ == ResourceMask::kDalvikReg) {
-    DCHECK(r_base == rs_rARM_SP);
+  if (r_base == rs_rARM_SP) {
     AnnotateDalvikRegAccess(store, displacement >> 2, false /* is_load */, r_src.Is64Bit());
   }
   return store;
 }
 
-LIR* ArmMir2Lir::StoreBaseDisp(RegStorage r_base, int displacement, RegStorage r_src,
-                               OpSize size, VolatileKind is_volatile) {
-  if (UNLIKELY(is_volatile == kVolatile)) {
-    // Ensure that prior accesses become visible to other threads first.
-    GenMemBarrier(kAnyStore);
-  }
-
-  LIR* store;
-  if (UNLIKELY(is_volatile == kVolatile &&
-               (size == k64 || size == kDouble) &&
-               !cu_->compiler_driver->GetInstructionSetFeatures().HasLpae())) {
-    // Only 64-bit store needs special handling.
-    // If the cpu supports LPAE, aligned STRD is atomic - fall through to StoreBaseDisp().
-    // Use STREXD for the atomic store. (Expect displacement > 0, don't optimize for == 0.)
+LIR* ArmMir2Lir::StoreBaseDispVolatile(RegStorage r_base, int displacement, RegStorage r_src,
+                                       OpSize size) {
+  // Only 64-bit store needs special handling.
+  if (UNLIKELY(size == k64 || size == kDouble)) {
     DCHECK(!r_src.IsFloat());  // See RegClassForFieldLoadSave().
-    RegStorage r_ptr = AllocTemp();
-    OpRegRegImm(kOpAdd, r_ptr, r_base, displacement);
-    LIR* fail_target = NewLIR0(kPseudoTargetLabel);
-    // We have only 5 temporary registers available and if r_base, r_src and r_ptr already
-    // take 4, we can't directly allocate 2 more for LDREXD temps. In that case clobber r_ptr
-    // in LDREXD and recalculate it from r_base.
-    RegStorage r_temp = AllocTemp();
-    RegStorage r_temp_high = AllocTemp(false);  // We may not have another temp.
-    if (r_temp_high.Valid()) {
-      NewLIR3(kThumb2Ldrexd, r_temp.GetReg(), r_temp_high.GetReg(), r_ptr.GetReg());
-      FreeTemp(r_temp_high);
-      FreeTemp(r_temp);
-    } else {
-      // If we don't have another temp, clobber r_ptr in LDREXD and reload it.
-      NewLIR3(kThumb2Ldrexd, r_temp.GetReg(), r_ptr.GetReg(), r_ptr.GetReg());
-      FreeTemp(r_temp);  // May need the temp for kOpAdd.
+    // If the cpu supports LPAE, aligned STRD is atomic - fall through to StoreBaseDisp().
+    if (!cu_->compiler_driver->GetInstructionSetFeatures().HasLpae()) {
+      // Use STREXD for the atomic store. (Expect displacement > 0, don't optimize for == 0.)
+      RegStorage r_ptr = AllocTemp();
       OpRegRegImm(kOpAdd, r_ptr, r_base, displacement);
+      LIR* fail_target = NewLIR0(kPseudoTargetLabel);
+      // We have only 5 temporary registers available and if r_base, r_src and r_ptr already
+      // take 4, we can't directly allocate 2 more for LDREXD temps. In that case clobber r_ptr
+      // in LDREXD and recalculate it from r_base.
+      RegStorage r_temp = AllocTemp();
+      RegStorage r_temp_high = AllocFreeTemp();  // We may not have another temp.
+      if (r_temp_high.Valid()) {
+        NewLIR3(kThumb2Ldrexd, r_temp.GetReg(), r_temp_high.GetReg(), r_ptr.GetReg());
+        FreeTemp(r_temp_high);
+        FreeTemp(r_temp);
+      } else {
+        // If we don't have another temp, clobber r_ptr in LDREXD and reload it.
+        NewLIR3(kThumb2Ldrexd, r_temp.GetReg(), r_ptr.GetReg(), r_ptr.GetReg());
+        FreeTemp(r_temp);  // May need the temp for kOpAdd.
+        OpRegRegImm(kOpAdd, r_ptr, r_base, displacement);
+      }
+      LIR* lir = NewLIR4(kThumb2Strexd, r_temp.GetReg(), r_src.GetLowReg(), r_src.GetHighReg(),
+                         r_ptr.GetReg());
+      OpCmpImmBranch(kCondNe, r_temp, 0, fail_target);
+      FreeTemp(r_ptr);
+      return lir;
     }
-    store = NewLIR4(kThumb2Strexd, r_temp.GetReg(), r_src.GetLowReg(), r_src.GetHighReg(),
-                    r_ptr.GetReg());
-    OpCmpImmBranch(kCondNe, r_temp, 0, fail_target);
-    FreeTemp(r_ptr);
-  } else {
-    // TODO: base this on target.
-    if (size == kWord) {
-      size = k32;
-    }
-
-    store = StoreBaseDispBody(r_base, displacement, r_src, size);
   }
+  return StoreBaseDisp(r_base, displacement, r_src, size);
+}
 
-  if (UNLIKELY(is_volatile == kVolatile)) {
-    // Preserve order with respect to any subsequent volatile loads.
-    // We need StoreLoad, but that generally requires the most expensive barrier.
-    GenMemBarrier(kAnyAny);
+LIR* ArmMir2Lir::StoreBaseDisp(RegStorage r_base, int displacement, RegStorage r_src,
+                               OpSize size) {
+  // TODO: base this on target.
+  if (size == kWord) {
+    size = k32;
   }
-
-  return store;
+  return StoreBaseDispBody(r_base, displacement, r_src, size);
 }
 
 LIR* ArmMir2Lir::OpFpRegCopy(RegStorage r_dest, RegStorage r_src) {
@@ -1160,26 +1156,36 @@ LIR* ArmMir2Lir::OpFpRegCopy(RegStorage r_dest, RegStorage r_src) {
   return res;
 }
 
+LIR* ArmMir2Lir::OpThreadMem(OpKind op, ThreadOffset<4> thread_offset) {
+  LOG(FATAL) << "Unexpected use of OpThreadMem for Arm";
+  return NULL;
+}
+
+LIR* ArmMir2Lir::OpThreadMem(OpKind op, ThreadOffset<8> thread_offset) {
+  UNIMPLEMENTED(FATAL) << "Should not be called.";
+  return nullptr;
+}
+
 LIR* ArmMir2Lir::OpMem(OpKind op, RegStorage r_base, int disp) {
   LOG(FATAL) << "Unexpected use of OpMem for Arm";
   return NULL;
 }
 
-LIR* ArmMir2Lir::InvokeTrampoline(OpKind op, RegStorage r_tgt, QuickEntrypointEnum trampoline) {
-  return OpReg(op, r_tgt);
+LIR* ArmMir2Lir::StoreBaseIndexedDisp(RegStorage r_base, RegStorage r_index, int scale,
+                                      int displacement, RegStorage r_src, OpSize size) {
+  LOG(FATAL) << "Unexpected use of StoreBaseIndexedDisp for Arm";
+  return NULL;
 }
 
-size_t ArmMir2Lir::GetInstructionOffset(LIR* lir) {
-  uint64_t check_flags = GetTargetInstFlags(lir->opcode);
-  DCHECK((check_flags & IS_LOAD) || (check_flags & IS_STORE));
-  size_t offset = (check_flags & IS_TERTIARY_OP) ? lir->operands[2] : 0;
+LIR* ArmMir2Lir::OpRegMem(OpKind op, RegStorage r_dest, RegStorage r_base, int offset) {
+  LOG(FATAL) << "Unexpected use of OpRegMem for Arm";
+  return NULL;
+}
 
-  if (check_flags & SCALED_OFFSET_X2) {
-    offset = offset * 2;
-  } else if (check_flags & SCALED_OFFSET_X4) {
-    offset = offset * 4;
-  }
-  return offset;
+LIR* ArmMir2Lir::LoadBaseIndexedDisp(RegStorage r_base, RegStorage r_index, int scale,
+                                     int displacement, RegStorage r_dest, OpSize size) {
+  LOG(FATAL) << "Unexpected use of LoadBaseIndexedDisp for Arm";
+  return NULL;
 }
 
 }  // namespace art

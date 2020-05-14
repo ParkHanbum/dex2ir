@@ -29,7 +29,8 @@ namespace mirror {
 }  // namespace mirror
 union JValue;
 class MethodHelper;
-class ScopedObjectAccessAlreadyRunnable;
+class ScopedObjectAccess;
+class ScopedObjectAccessUnchecked;
 class ShadowFrame;
 class ThrowLocation;
 
@@ -47,19 +48,18 @@ bool ConvertPrimitiveValue(const ThrowLocation* throw_location, bool unbox_for_r
                            const JValue& src, JValue* dst)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-JValue InvokeWithVarArgs(const ScopedObjectAccessAlreadyRunnable& soa, jobject obj, jmethodID mid,
-                         va_list args)
+JValue InvokeWithVarArgs(const ScopedObjectAccess& soa, jobject obj, jmethodID mid, va_list args)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-JValue InvokeWithJValues(const ScopedObjectAccessAlreadyRunnable& soa, mirror::Object* receiver,
+JValue InvokeWithJValues(const ScopedObjectAccessUnchecked& soa, mirror::Object* receiver,
                          jmethodID mid, jvalue* args)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-JValue InvokeVirtualOrInterfaceWithJValues(const ScopedObjectAccessAlreadyRunnable& soa,
+JValue InvokeVirtualOrInterfaceWithJValues(const ScopedObjectAccess& soa,
                                            mirror::Object* receiver, jmethodID mid, jvalue* args)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-JValue InvokeVirtualOrInterfaceWithVarArgs(const ScopedObjectAccessAlreadyRunnable& soa,
+JValue InvokeVirtualOrInterfaceWithVarArgs(const ScopedObjectAccess& soa,
                                            jobject obj, jmethodID mid, va_list args)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -67,7 +67,7 @@ void InvokeWithShadowFrame(Thread* self, ShadowFrame* shadow_frame, uint16_t arg
                            MethodHelper& mh, JValue* result)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-jobject InvokeMethod(const ScopedObjectAccessAlreadyRunnable& soa, jobject method, jobject receiver,
+jobject InvokeMethod(const ScopedObjectAccess& soa, jobject method, jobject receiver,
                      jobject args, bool accessible)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 

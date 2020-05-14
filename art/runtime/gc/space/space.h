@@ -17,14 +17,12 @@
 #ifndef ART_RUNTIME_GC_SPACE_SPACE_H_
 #define ART_RUNTIME_GC_SPACE_SPACE_H_
 
-#include <memory>
 #include <string>
 
-#include "atomic.h"
+#include "UniquePtr.h"
 #include "base/macros.h"
 #include "base/mutex.h"
 #include "gc/accounting/space_bitmap.h"
-#include "gc/collector/garbage_collector.h"
 #include "globals.h"
 #include "image.h"
 #include "mem_map.h"
@@ -174,6 +172,16 @@ class Space {
   std::string name_;
 
  protected:
+  struct SweepCallbackContext {
+   public:
+    SweepCallbackContext(bool swap_bitmaps, space::Space* space);
+    const bool swap_bitmaps;
+    space::Space* const space;
+    Thread* const self;
+    size_t freed_objects;
+    size_t freed_bytes;
+  };
+
   // When should objects within this space be reclaimed? Not constant as we vary it in the case
   // of Zygote forking.
   GcRetentionPolicy gc_retention_policy_;
@@ -223,17 +231,7 @@ class AllocSpace {
   // threads, if the alloc space implementation uses any.
   virtual void RevokeAllThreadLocalBuffers() = 0;
 
-  virtual void LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes) = 0;
-
  protected:
-  struct SweepCallbackContext {
-    SweepCallbackContext(bool swap_bitmaps, space::Space* space);
-    const bool swap_bitmaps;
-    space::Space* const space;
-    Thread* const self;
-    collector::ObjectBytePair freed;
-  };
-
   AllocSpace() {}
   virtual ~AllocSpace() {}
 
@@ -252,7 +250,7 @@ class ContinuousSpace : public Space {
 
   // Current address at which the space ends, which may vary as the space is filled.
   byte* End() const {
-    return end_.LoadRelaxed();
+    return end_;
   }
 
   // The end of the address range covered by the space.
@@ -263,7 +261,7 @@ class ContinuousSpace : public Space {
   // Change the end of the space. Be careful with use since changing the end of a space to an
   // invalid value may break the GC.
   void SetEnd(byte* end) {
-    end_.StoreRelaxed(end);
+    end_ = end;
   }
 
   void SetLimit(byte* limit) {
@@ -310,7 +308,7 @@ class ContinuousSpace : public Space {
   byte* begin_;
 
   // Current end of the space.
-  Atomic<byte*> end_;
+  byte* volatile end_;
 
   // Limit of the space.
   byte* limit_;
@@ -341,8 +339,8 @@ class DiscontinuousSpace : public Space {
  protected:
   DiscontinuousSpace(const std::string& name, GcRetentionPolicy gc_retention_policy);
 
-  std::unique_ptr<accounting::LargeObjectBitmap> live_bitmap_;
-  std::unique_ptr<accounting::LargeObjectBitmap> mark_bitmap_;
+  UniquePtr<accounting::LargeObjectBitmap> live_bitmap_;
+  UniquePtr<accounting::LargeObjectBitmap> mark_bitmap_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DiscontinuousSpace);
@@ -376,7 +374,7 @@ class MemMapSpace : public ContinuousSpace {
   }
 
   // Underlying storage of the space
-  std::unique_ptr<MemMap> mem_map_;
+  UniquePtr<MemMap> mem_map_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MemMapSpace);
@@ -409,21 +407,21 @@ class ContinuousMemMapAllocSpace : public MemMapSpace, public AllocSpace {
   // Clear the space back to an empty space.
   virtual void Clear() = 0;
 
-  accounting::ContinuousSpaceBitmap* GetLiveBitmap() const OVERRIDE {
+  accounting::ContinuousSpaceBitmap* GetLiveBitmap() const {
     return live_bitmap_.get();
   }
 
-  accounting::ContinuousSpaceBitmap* GetMarkBitmap() const OVERRIDE {
+  accounting::ContinuousSpaceBitmap* GetMarkBitmap() const {
     return mark_bitmap_.get();
   }
 
-  collector::ObjectBytePair Sweep(bool swap_bitmaps);
+  void Sweep(bool swap_bitmaps, size_t* freed_objects, size_t* freed_bytes);
   virtual accounting::ContinuousSpaceBitmap::SweepCallback* GetSweepCallback() = 0;
 
  protected:
-  std::unique_ptr<accounting::ContinuousSpaceBitmap> live_bitmap_;
-  std::unique_ptr<accounting::ContinuousSpaceBitmap> mark_bitmap_;
-  std::unique_ptr<accounting::ContinuousSpaceBitmap> temp_bitmap_;
+  UniquePtr<accounting::ContinuousSpaceBitmap> live_bitmap_;
+  UniquePtr<accounting::ContinuousSpaceBitmap> mark_bitmap_;
+  UniquePtr<accounting::ContinuousSpaceBitmap> temp_bitmap_;
 
   ContinuousMemMapAllocSpace(const std::string& name, MemMap* mem_map, byte* begin,
                              byte* end, byte* limit, GcRetentionPolicy gc_retention_policy)

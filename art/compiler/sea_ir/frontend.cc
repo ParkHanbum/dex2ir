@@ -88,6 +88,7 @@ extern "C" art::CompiledMethod*
                                class_def_idx, method_idx, class_loader, dex_file,
                                NULL /* use thread llvm_info */);
 }
-#endif
 
 }  // namespace art
+#endif
+

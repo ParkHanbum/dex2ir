@@ -227,7 +227,7 @@ size_t RosAllocSpace::FreeList(Thread* self, size_t num_ptrs, mirror::Object** p
 // Callback from rosalloc when it needs to increase the footprint
 extern "C" void* art_heap_rosalloc_morecore(allocator::RosAlloc* rosalloc, intptr_t increment) {
   Heap* heap = Runtime::Current()->GetHeap();
-  RosAllocSpace* rosalloc_space = heap->GetRosAllocSpace(rosalloc);
+  RosAllocSpace* rosalloc_space = heap->GetRosAllocSpace();
   DCHECK(rosalloc_space != nullptr);
   DCHECK_EQ(rosalloc_space->GetRosAlloc(), rosalloc);
   return rosalloc_space->MoreCore(increment);
@@ -349,7 +349,7 @@ void RosAllocSpace::Clear() {
   madvise(GetMemMap()->Begin(), GetMemMap()->Size(), MADV_DONTNEED);
   live_bitmap_->Clear();
   mark_bitmap_->Clear();
-  SetEnd(begin_ + starting_size_);
+  end_ = begin_ + starting_size_;
   delete rosalloc_;
   rosalloc_ = CreateRosAlloc(mem_map_->Begin(), starting_size_, initial_size_, Capacity(),
                              low_memory_mode_);

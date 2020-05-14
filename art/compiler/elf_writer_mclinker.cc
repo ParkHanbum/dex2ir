@@ -159,7 +159,7 @@ void ElfWriterMclinker::Init() {
 void ElfWriterMclinker::AddOatInput(std::vector<uint8_t>& oat_contents) {
   // Add an artificial memory input. Based on LinkerTest.
   std::string error_msg;
-  std::unique_ptr<OatFile> oat_file(OatFile::OpenMemory(oat_contents, elf_file_->GetPath(), &error_msg));
+  UniquePtr<OatFile> oat_file(OatFile::OpenMemory(oat_contents, elf_file_->GetPath(), &error_msg));
   CHECK(oat_file.get() != NULL) << elf_file_->GetPath() << ": " << error_msg;
 
   const char* oat_data_start = reinterpret_cast<const char*>(&oat_file->GetOatHeader());
@@ -347,7 +347,7 @@ bool ElfWriterMclinker::Link() {
 
 void ElfWriterMclinker::FixupOatMethodOffsets(const std::vector<const DexFile*>& dex_files) {
   std::string error_msg;
-  std::unique_ptr<ElfFile> elf_file(ElfFile::Open(elf_file_, true, false, &error_msg));
+  UniquePtr<ElfFile> elf_file(ElfFile::Open(elf_file_, true, false, &error_msg));
   CHECK(elf_file.get() != NULL) << elf_file_->GetPath() << ": " << error_msg;
 
   uint32_t oatdata_address = GetOatDataAddress(elf_file.get());
@@ -361,11 +361,10 @@ void ElfWriterMclinker::FixupOatMethodOffsets(const std::vector<const DexFile*>&
       ClassLinker* linker = Runtime::Current()->GetClassLinker();
       // Unchecked as we hold mutator_lock_ on entry.
       ScopedObjectAccessUnchecked soa(Thread::Current());
-      StackHandleScope<1> hs(soa.Self());
+      StackHandleScope<2> hs(soa.Self());
       Handle<mirror::DexCache> dex_cache(hs.NewHandle(linker->FindDexCache(dex_file)));
-      method = linker->ResolveMethod(dex_file, method_idx, dex_cache,
-                                     NullHandle<mirror::ClassLoader>(),
-                                     NullHandle<mirror::ArtMethod>(), invoke_type);
+      auto class_loader(hs.NewHandle<mirror::ClassLoader>(nullptr));
+      method = linker->ResolveMethod(dex_file, method_idx, dex_cache, class_loader, NULL, invoke_type);
       CHECK(method != NULL);
     }
     const CompiledMethod* compiled_method =

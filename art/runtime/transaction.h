@@ -57,16 +57,16 @@ class Transaction {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Record intern string table changes.
-  void RecordStrongStringInsertion(mirror::String* s)
+  void RecordStrongStringInsertion(mirror::String* s, uint32_t hash_code)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_)
       LOCKS_EXCLUDED(log_lock_);
-  void RecordWeakStringInsertion(mirror::String* s)
+  void RecordWeakStringInsertion(mirror::String* s, uint32_t hash_code)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_)
       LOCKS_EXCLUDED(log_lock_);
-  void RecordStrongStringRemoval(mirror::String* s)
+  void RecordStrongStringRemoval(mirror::String* s, uint32_t hash_code)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_)
       LOCKS_EXCLUDED(log_lock_);
-  void RecordWeakStringRemoval(mirror::String* s)
+  void RecordWeakStringRemoval(mirror::String* s, uint32_t hash_code)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_)
       LOCKS_EXCLUDED(log_lock_);
 
@@ -142,18 +142,17 @@ class Transaction {
       kInsert,
       kRemove
     };
-    InternStringLog(mirror::String* s, StringKind kind, StringOp op)
-      : str_(s), string_kind_(kind), string_op_(op) {
+    InternStringLog(mirror::String* s, uint32_t hash_code, StringKind kind, StringOp op)
+      : str_(s), hash_code_(hash_code), string_kind_(kind), string_op_(op) {
       DCHECK(s != nullptr);
     }
 
-    void Undo(InternTable* intern_table)
-        SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-        EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_);
+    void Undo(InternTable* intern_table) EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_);
     void VisitRoots(RootCallback* callback, void* arg);
 
    private:
     mirror::String* str_;
+    uint32_t hash_code_;
     StringKind string_kind_;
     StringOp string_op_;
   };
@@ -170,8 +169,7 @@ class Transaction {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void UndoInternStringTableModifications()
       EXCLUSIVE_LOCKS_REQUIRED(Locks::intern_table_lock_)
-      EXCLUSIVE_LOCKS_REQUIRED(log_lock_)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+      EXCLUSIVE_LOCKS_REQUIRED(log_lock_);
 
   void VisitObjectLogs(RootCallback* callback, void* arg)
       EXCLUSIVE_LOCKS_REQUIRED(log_lock_)

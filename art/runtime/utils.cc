@@ -22,13 +22,13 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
-#include <memory>
 
+#include <unistd.h>
+
+#include "UniquePtr.h"
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"
 #include "dex_file-inl.h"
-#include "field_helper.h"
 #include "mirror/art_field-inl.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
@@ -36,6 +36,7 @@
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/string.h"
+#include "object_utils.h"
 #include "os.h"
 #include "scoped_thread_state_change.h"
 #include "utf-inl.h"
@@ -53,7 +54,7 @@
 #include <sys/syscall.h>
 #endif
 
-// #include <backtrace/Backtrace.h>  // For DumpNativeStack.
+#include <backtrace/Backtrace.h>  // For DumpNativeStack.
 
 #if defined(__linux__)
 #include <linux/unistd.h>
@@ -82,7 +83,7 @@ std::string GetThreadName(pid_t tid) {
   return result;
 }
 
-void GetThreadStack(pthread_t thread, void** stack_base, size_t* stack_size, size_t* guard_size) {
+void GetThreadStack(pthread_t thread, void** stack_base, size_t* stack_size) {
 #if defined(__APPLE__)
   *stack_size = pthread_get_stacksize_np(thread);
   void* stack_addr = pthread_get_stackaddr_np(thread);
@@ -95,23 +96,16 @@ void GetThreadStack(pthread_t thread, void** stack_base, size_t* stack_size, siz
   } else {
     *stack_base = stack_addr;
   }
-
-  // This is wrong, but there doesn't seem to be a way to get the actual value on the Mac.
-  pthread_attr_t attributes;
-  CHECK_PTHREAD_CALL(pthread_attr_init, (&attributes), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_getguardsize, (&attributes, guard_size), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_destroy, (&attributes), __FUNCTION__);
 #else
   pthread_attr_t attributes;
   CHECK_PTHREAD_CALL(pthread_getattr_np, (thread, &attributes), __FUNCTION__);
   CHECK_PTHREAD_CALL(pthread_attr_getstack, (&attributes, stack_base, stack_size), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_getguardsize, (&attributes, guard_size), __FUNCTION__);
   CHECK_PTHREAD_CALL(pthread_attr_destroy, (&attributes), __FUNCTION__);
 #endif
 }
 
 bool ReadFileToString(const std::string& file_name, std::string* result) {
-  std::unique_ptr<File> file(new File);
+  UniquePtr<File> file(new File);
   if (!file->Open(file_name, O_RDONLY)) {
     return false;
   }
@@ -229,20 +223,19 @@ std::string PrettyDescriptor(mirror::String* java_descriptor) {
   if (java_descriptor == NULL) {
     return "null";
   }
-  return PrettyDescriptor(java_descriptor->ToModifiedUtf8().c_str());
+  return PrettyDescriptor(java_descriptor->ToModifiedUtf8());
 }
 
 std::string PrettyDescriptor(mirror::Class* klass) {
   if (klass == NULL) {
     return "null";
   }
-  std::string temp;
-  return PrettyDescriptor(klass->GetDescriptor(&temp));
+  return PrettyDescriptor(ClassHelper(klass).GetDescriptor());
 }
 
-std::string PrettyDescriptor(const char* descriptor) {
+std::string PrettyDescriptor(const std::string& descriptor) {
   // Count the number of '['s to get the dimensionality.
-  const char* c = descriptor;
+  const char* c = descriptor.c_str();
   size_t dim = 0;
   while (*c == '[') {
     dim++;
@@ -283,25 +276,30 @@ std::string PrettyDescriptor(const char* descriptor) {
     result.push_back(ch);
   }
   // ...and replace the semicolon with 'dim' "[]" pairs:
-  for (size_t i = 0; i < dim; ++i) {
+  while (dim--) {
     result += "[]";
   }
   return result;
+}
+
+std::string PrettyDescriptor(Primitive::Type type) {
+  std::string descriptor_string(Primitive::Descriptor(type));
+  return PrettyDescriptor(descriptor_string);
 }
 
 std::string PrettyField(mirror::ArtField* f, bool with_type) {
   if (f == NULL) {
     return "null";
   }
+  FieldHelper fh(f);
   std::string result;
   if (with_type) {
-    result += PrettyDescriptor(f->GetTypeDescriptor());
+    result += PrettyDescriptor(fh.GetTypeDescriptor());
     result += ' ';
   }
-  StackHandleScope<1> hs(Thread::Current());
-  result += PrettyDescriptor(FieldHelper(hs.NewHandle(f)).GetDeclaringClassDescriptor());
+  result += PrettyDescriptor(fh.GetDeclaringClassDescriptor());
   result += '.';
-  result += f->GetName();
+  result += fh.GetName();
   return result;
 }
 
@@ -344,10 +342,8 @@ std::string PrettyArguments(const char* signature) {
     } else {
       ++argument_length;
     }
-    {
-      std::string argument_descriptor(signature, argument_length);
-      result += PrettyDescriptor(argument_descriptor.c_str());
-    }
+    std::string argument_descriptor(signature, argument_length);
+    result += PrettyDescriptor(argument_descriptor);
     if (signature[argument_length] != ')') {
       result += ", ";
     }
@@ -370,14 +366,15 @@ std::string PrettyMethod(mirror::ArtMethod* m, bool with_signature) {
   if (m == nullptr) {
     return "null";
   }
-  std::string result(PrettyDescriptor(m->GetDeclaringClassDescriptor()));
+  MethodHelper mh(m);
+  std::string result(PrettyDescriptor(mh.GetDeclaringClassDescriptor()));
   result += '.';
-  result += m->GetName();
+  result += mh.GetName();
   if (UNLIKELY(m->IsFastNative())) {
     result += "!";
   }
   if (with_signature) {
-    const Signature signature = m->GetSignature();
+    const Signature signature = mh.GetSignature();
     std::string sig_as_string(signature.ToString());
     if (signature == Signature::NoSignature()) {
       return result + sig_as_string;
@@ -415,10 +412,11 @@ std::string PrettyTypeOf(mirror::Object* obj) {
   if (obj->GetClass() == NULL) {
     return "(raw)";
   }
-  std::string temp;
-  std::string result(PrettyDescriptor(obj->GetClass()->GetDescriptor(&temp)));
+  ClassHelper kh(obj->GetClass());
+  std::string result(PrettyDescriptor(kh.GetDescriptor()));
   if (obj->IsClass()) {
-    result += "<" + PrettyDescriptor(obj->AsClass()->GetDescriptor(&temp)) + ">";
+    kh.ChangeClass(obj->AsClass());
+    result += "<" + PrettyDescriptor(kh.GetDescriptor()) + ">";
   }
   return result;
 }
@@ -474,12 +472,11 @@ std::string PrettySize(int64_t byte_count) {
                       negative_str, byte_count / kBytesPerUnit[i], kUnitStrings[i]);
 }
 
-std::string PrettyDuration(uint64_t nano_duration, size_t max_fraction_digits) {
+std::string PrettyDuration(uint64_t nano_duration) {
   if (nano_duration == 0) {
     return "0";
   } else {
-    return FormatDuration(nano_duration, GetAppropriateTimeUnit(nano_duration),
-                          max_fraction_digits);
+    return FormatDuration(nano_duration, GetAppropriateTimeUnit(nano_duration));
   }
 }
 
@@ -516,62 +513,52 @@ uint64_t GetNsToTimeUnitDivisor(TimeUnit time_unit) {
   return 0;
 }
 
-std::string FormatDuration(uint64_t nano_duration, TimeUnit time_unit,
-                           size_t max_fraction_digits) {
-  const char* unit = nullptr;
+std::string FormatDuration(uint64_t nano_duration, TimeUnit time_unit) {
+  const char* unit = NULL;
   uint64_t divisor = GetNsToTimeUnitDivisor(time_unit);
+  uint32_t zero_fill = 1;
   switch (time_unit) {
     case kTimeUnitSecond:
       unit = "s";
+      zero_fill = 9;
       break;
     case kTimeUnitMillisecond:
       unit = "ms";
+      zero_fill = 6;
       break;
     case kTimeUnitMicrosecond:
       unit = "us";
+      zero_fill = 3;
       break;
     case kTimeUnitNanosecond:
       unit = "ns";
+      zero_fill = 0;
       break;
   }
-  const uint64_t whole_part = nano_duration / divisor;
+
+  uint64_t whole_part = nano_duration / divisor;
   uint64_t fractional_part = nano_duration % divisor;
   if (fractional_part == 0) {
     return StringPrintf("%" PRIu64 "%s", whole_part, unit);
   } else {
-    static constexpr size_t kMaxDigits = 30;
-    size_t avail_digits = kMaxDigits;
-    char fraction_buffer[kMaxDigits];
-    char* ptr = fraction_buffer;
-    uint64_t multiplier = 10;
-    // This infinite loops if fractional part is 0.
-    while (avail_digits > 1 && fractional_part * multiplier < divisor) {
-      multiplier *= 10;
-      *ptr++ = '0';
-      avail_digits--;
+    while ((fractional_part % 1000) == 0) {
+      zero_fill -= 3;
+      fractional_part /= 1000;
     }
-    snprintf(ptr, avail_digits, "%" PRIu64, fractional_part);
-    fraction_buffer[std::min(kMaxDigits - 1, max_fraction_digits)] = '\0';
-    return StringPrintf("%" PRIu64 ".%s%s", whole_part, fraction_buffer, unit);
+    if (zero_fill == 3) {
+      return StringPrintf("%" PRIu64 ".%03" PRIu64 "%s", whole_part, fractional_part, unit);
+    } else if (zero_fill == 6) {
+      return StringPrintf("%" PRIu64 ".%06" PRIu64 "%s", whole_part, fractional_part, unit);
+    } else {
+      return StringPrintf("%" PRIu64 ".%09" PRIu64 "%s", whole_part, fractional_part, unit);
+    }
   }
 }
 
-std::string PrintableChar(uint16_t ch) {
-  std::string result;
-  result += '\'';
-  if (NeedsEscaping(ch)) {
-    StringAppendF(&result, "\\u%04x", ch);
-  } else {
-    result += ch;
-  }
-  result += '\'';
-  return result;
-}
-
-std::string PrintableString(const char* utf) {
+std::string PrintableString(const std::string& utf) {
   std::string result;
   result += '"';
-  const char* p = utf;
+  const char* p = utf.c_str();
   size_t char_count = CountModifiedUtf8Chars(p);
   for (size_t i = 0; i < char_count; ++i) {
     uint16_t ch = GetUtf16FromUtf8(&p);
@@ -628,20 +615,11 @@ std::string DotToDescriptor(const char* class_name) {
 
 std::string DescriptorToDot(const char* descriptor) {
   size_t length = strlen(descriptor);
-  if (length > 1) {
-    if (descriptor[0] == 'L' && descriptor[length - 1] == ';') {
-      // Descriptors have the leading 'L' and trailing ';' stripped.
-      std::string result(descriptor + 1, length - 2);
-      std::replace(result.begin(), result.end(), '/', '.');
-      return result;
-    } else {
-      // For arrays the 'L' and ';' remain intact.
-      std::string result(descriptor);
-      std::replace(result.begin(), result.end(), '/', '.');
-      return result;
-    }
+  if (descriptor[0] == 'L' && descriptor[length - 1] == ';') {
+    std::string result(descriptor + 1, length - 2);
+    std::replace(result.begin(), result.end(), '/', '.');
+    return result;
   }
-  // Do nothing for non-class/array descriptors.
   return descriptor;
 }
 
@@ -655,14 +633,15 @@ std::string DescriptorToName(const char* descriptor) {
 }
 
 std::string JniShortName(mirror::ArtMethod* m) {
-  std::string class_name(m->GetDeclaringClassDescriptor());
+  MethodHelper mh(m);
+  std::string class_name(mh.GetDeclaringClassDescriptor());
   // Remove the leading 'L' and trailing ';'...
   CHECK_EQ(class_name[0], 'L') << class_name;
   CHECK_EQ(class_name[class_name.size() - 1], ';') << class_name;
   class_name.erase(0, 1);
   class_name.erase(class_name.size() - 1, 1);
 
-  std::string method_name(m->GetName());
+  std::string method_name(mh.GetName());
 
   std::string short_name;
   short_name += "Java_";
@@ -677,7 +656,7 @@ std::string JniLongName(mirror::ArtMethod* m) {
   long_name += JniShortName(m);
   long_name += "__";
 
-  std::string signature(m->GetSignature().ToString());
+  std::string signature(MethodHelper(m).GetSignature().ToString());
   signature.erase(0, 1);
   signature.erase(signature.begin() + signature.find(')'), signature.end());
 
@@ -1068,9 +1047,7 @@ void DumpNativeStack(std::ostream& os, pid_t tid, const char* prefix,
   if (current_method != nullptr) {
     Locks::mutator_lock_->AssertSharedHeld(Thread::Current());
   }
-  /*
-#ifdef __linux__
-  std::unique_ptr<Backtrace> backtrace(Backtrace::Create(BACKTRACE_CURRENT_PROCESS, tid));
+  UniquePtr<Backtrace> backtrace(Backtrace::Create(BACKTRACE_CURRENT_PROCESS, tid));
   if (!backtrace->Unwind(0)) {
     os << prefix << "(backtrace::Unwind failed for thread " << tid << ")\n";
     return;
@@ -1111,8 +1088,6 @@ void DumpNativeStack(std::ostream& os, pid_t tid, const char* prefix,
     }
     os << "\n";
   }
-#endif
-*/
 }
 
 #if defined(__APPLE__)
@@ -1176,53 +1151,20 @@ const char* GetAndroidRoot() {
 }
 
 const char* GetAndroidData() {
-  std::string error_msg;
-  const char* dir = GetAndroidDataSafe(&error_msg);
-  if (dir != nullptr) {
-    return dir;
-  } else {
-    LOG(FATAL) << error_msg;
-    return "";
-  }
-}
-
-const char* GetAndroidDataSafe(std::string* error_msg) {
   const char* android_data = getenv("ANDROID_DATA");
   if (android_data == NULL) {
     if (OS::DirectoryExists("/data")) {
       android_data = "/data";
     } else {
-      *error_msg = "ANDROID_DATA not set and /data does not exist";
-      return nullptr;
+      LOG(FATAL) << "ANDROID_DATA not set and /data does not exist";
+      return "";
     }
   }
   if (!OS::DirectoryExists(android_data)) {
-    *error_msg = StringPrintf("Failed to find ANDROID_DATA directory %s", android_data);
-    return nullptr;
+    LOG(FATAL) << "Failed to find ANDROID_DATA directory " << android_data;
+    return "";
   }
   return android_data;
-}
-
-void GetDalvikCache(const char* subdir, const bool create_if_absent, std::string* dalvik_cache,
-                    bool* have_android_data, bool* dalvik_cache_exists) {
-  CHECK(subdir != nullptr);
-  std::string error_msg;
-  const char* android_data = GetAndroidDataSafe(&error_msg);
-  if (android_data == nullptr) {
-    *have_android_data = false;
-    *dalvik_cache_exists = false;
-    return;
-  } else {
-    *have_android_data = true;
-  }
-  const std::string dalvik_cache_root(StringPrintf("%s/dalvik-cache/", android_data));
-  *dalvik_cache = dalvik_cache_root + subdir;
-  *dalvik_cache_exists = OS::DirectoryExists(dalvik_cache->c_str());
-  if (create_if_absent && !*dalvik_cache_exists && strcmp(android_data, "/data") != 0) {
-    // Don't create the system's /data/dalvik-cache/... because it needs special permissions.
-    *dalvik_cache_exists = ((mkdir(dalvik_cache_root.c_str(), 0700) == 0 || errno == EEXIST) &&
-                            (mkdir(dalvik_cache->c_str(), 0700) == 0 || errno == EEXIST));
-  }
 }
 
 std::string GetDalvikCacheOrDie(const char* subdir, const bool create_if_absent) {
@@ -1251,61 +1193,17 @@ std::string GetDalvikCacheOrDie(const char* subdir, const bool create_if_absent)
   return dalvik_cache;
 }
 
-bool GetDalvikCacheFilename(const char* location, const char* cache_location,
-                            std::string* filename, std::string* error_msg) {
+std::string GetDalvikCacheFilenameOrDie(const char* location, const char* cache_location) {
   if (location[0] != '/') {
-    *error_msg = StringPrintf("Expected path in location to be absolute: %s", location);
-    return false;
+    LOG(FATAL) << "Expected path in location to be absolute: "<< location;
   }
   std::string cache_file(&location[1]);  // skip leading slash
-  if (!EndsWith(location, ".dex") && !EndsWith(location, ".art") && !EndsWith(location, ".oat")) {
+  if (!EndsWith(location, ".dex") && !EndsWith(location, ".art")) {
     cache_file += "/";
     cache_file += DexFile::kClassesDex;
   }
   std::replace(cache_file.begin(), cache_file.end(), '/', '@');
-  *filename = StringPrintf("%s/%s", cache_location, cache_file.c_str());
-  return true;
-}
-
-std::string GetDalvikCacheFilenameOrDie(const char* location, const char* cache_location) {
-  std::string ret;
-  std::string error_msg;
-  if (!GetDalvikCacheFilename(location, cache_location, &ret, &error_msg)) {
-    LOG(FATAL) << error_msg;
-  }
-  return ret;
-}
-
-static void InsertIsaDirectory(const InstructionSet isa, std::string* filename) {
-  // in = /foo/bar/baz
-  // out = /foo/bar/<isa>/baz
-  size_t pos = filename->rfind('/');
-  CHECK_NE(pos, std::string::npos) << *filename << " " << isa;
-  filename->insert(pos, "/", 1);
-  filename->insert(pos + 1, GetInstructionSetString(isa));
-}
-
-std::string GetSystemImageFilename(const char* location, const InstructionSet isa) {
-  // location = /system/framework/boot.art
-  // filename = /system/framework/<isa>/boot.art
-  std::string filename(location);
-  InsertIsaDirectory(isa, &filename);
-  return filename;
-}
-
-std::string DexFilenameToOdexFilename(const std::string& location, const InstructionSet isa) {
-  // location = /foo/bar/baz.jar
-  // odex_location = /foo/bar/<isa>/baz.odex
-
-  CHECK_GE(location.size(), 4U) << location;  // must be at least .123
-  std::string odex_location(location);
-  InsertIsaDirectory(isa, &odex_location);
-  size_t dot_index = odex_location.size() - 3 - 1;  // 3=dex or zip or apk
-  CHECK_EQ('.', odex_location[dot_index]) << location;
-  odex_location.resize(dot_index + 1);
-  CHECK_EQ('.', odex_location[odex_location.size()-1]) << location << " " << odex_location;
-  odex_location += "odex";
-  return odex_location;
+  return StringPrintf("%s/%s", cache_location, cache_file.c_str());
 }
 
 bool IsZipMagic(uint32_t magic) {

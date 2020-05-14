@@ -19,29 +19,21 @@
 
 #include <gtest/gtest.h>
 
-#include "gc_root.h"
-#include "object.h"
+#include "class.h"
 #include "object_callbacks.h"
 
 namespace art {
 
 template<class T> class Handle;
+struct StringClassOffsets;
 struct StringOffsets;
 class StringPiece;
 
 namespace mirror {
 
 // C++ mirror of java.lang.String
-class MANAGED String FINAL : public Object {
+class MANAGED String : public Object {
  public:
-  // Size of java.lang.String.class.
-  static uint32_t ClassSize();
-
-  // Size of an instance of java.lang.String not including its value array.
-  static constexpr uint32_t InstanceSize() {
-    return sizeof(String);
-  }
-
   static MemberOffset CountOffset() {
     return OFFSET_OF_OBJECT_MEMBER(String, count_);
   }
@@ -66,8 +58,7 @@ class MANAGED String FINAL : public Object {
 
   int32_t GetHashCode() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  // Computes, stores, and returns the hash code.
-  int32_t ComputeHashCode() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void ComputeHashCode() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   int32_t GetUtfLength() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -111,9 +102,9 @@ class MANAGED String FINAL : public Object {
 
   int32_t CompareTo(String* other) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  static Class* GetJavaLangString() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    DCHECK(!java_lang_String_.IsNull());
-    return java_lang_String_.Read();
+  static Class* GetJavaLangString() {
+    DCHECK(java_lang_String_ != NULL);
+    return java_lang_String_;
   }
 
   static void SetClass(Class* java_lang_String);
@@ -146,7 +137,7 @@ class MANAGED String FINAL : public Object {
   static String* Alloc(Thread* self, int32_t utf16_length)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  static String* Alloc(Thread* self, Handle<CharArray> array)
+  static String* Alloc(Thread* self, const Handle<CharArray>& array)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   void SetArray(CharArray* new_array) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -160,11 +151,21 @@ class MANAGED String FINAL : public Object {
 
   int32_t offset_;
 
-  static GcRoot<Class> java_lang_String_;
+  static Class* java_lang_String_;
 
   friend struct art::StringOffsets;  // for verifying offset information
   FRIEND_TEST(ObjectTest, StringLength);  // for SetOffset and SetCount
   DISALLOW_IMPLICIT_CONSTRUCTORS(String);
+};
+
+class MANAGED StringClass : public Class {
+ private:
+  HeapReference<CharArray> ASCII_;
+  HeapReference<Object> CASE_INSENSITIVE_ORDER_;
+  uint32_t REPLACEMENT_CHAR_;
+  int64_t serialVersionUID_;
+  friend struct art::StringClassOffsets;  // for verifying offset information
+  DISALLOW_IMPLICIT_CONSTRUCTORS(StringClass);
 };
 
 }  // namespace mirror

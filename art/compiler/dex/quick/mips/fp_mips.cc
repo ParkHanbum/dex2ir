@@ -50,8 +50,9 @@ void MipsMir2Lir::GenArithOpFloat(Instruction::Code opcode,
     case Instruction::REM_FLOAT_2ADDR:
     case Instruction::REM_FLOAT:
       FlushAllRegs();   // Send everything to home location
-      CallRuntimeHelperRegLocationRegLocation(kQuickFmodf, rl_src1, rl_src2, false);
-      rl_result = GetReturn(kFPReg);
+      CallRuntimeHelperRegLocationRegLocation(QUICK_ENTRYPOINT_OFFSET(4, pFmodf), rl_src1, rl_src2,
+                                              false);
+      rl_result = GetReturn(true);
       StoreValue(rl_dest, rl_result);
       return;
     case Instruction::NEG_FLOAT:
@@ -92,8 +93,9 @@ void MipsMir2Lir::GenArithOpDouble(Instruction::Code opcode,
     case Instruction::REM_DOUBLE_2ADDR:
     case Instruction::REM_DOUBLE:
       FlushAllRegs();   // Send everything to home location
-      CallRuntimeHelperRegLocationRegLocation(kQuickFmod, rl_src1, rl_src2, false);
-      rl_result = GetReturnWide(kFPReg);
+      CallRuntimeHelperRegLocationRegLocation(QUICK_ENTRYPOINT_OFFSET(4, pFmod), rl_src1, rl_src2,
+                                              false);
+      rl_result = GetReturnWide(true);
       StoreValueWide(rl_dest, rl_result);
       return;
     case Instruction::NEG_DOUBLE:
@@ -131,22 +133,22 @@ void MipsMir2Lir::GenConversion(Instruction::Code opcode, RegLocation rl_dest,
       op = kMipsFcvtdw;
       break;
     case Instruction::FLOAT_TO_INT:
-      GenConversionCall(kQuickF2iz, rl_dest, rl_src);
+      GenConversionCall(QUICK_ENTRYPOINT_OFFSET(4, pF2iz), rl_dest, rl_src);
       return;
     case Instruction::DOUBLE_TO_INT:
-      GenConversionCall(kQuickD2iz, rl_dest, rl_src);
+      GenConversionCall(QUICK_ENTRYPOINT_OFFSET(4, pD2iz), rl_dest, rl_src);
       return;
     case Instruction::LONG_TO_DOUBLE:
-      GenConversionCall(kQuickL2d, rl_dest, rl_src);
+      GenConversionCall(QUICK_ENTRYPOINT_OFFSET(4, pL2d), rl_dest, rl_src);
       return;
     case Instruction::FLOAT_TO_LONG:
-      GenConversionCall(kQuickF2l, rl_dest, rl_src);
+      GenConversionCall(QUICK_ENTRYPOINT_OFFSET(4, pF2l), rl_dest, rl_src);
       return;
     case Instruction::LONG_TO_FLOAT:
-      GenConversionCall(kQuickL2f, rl_dest, rl_src);
+      GenConversionCall(QUICK_ENTRYPOINT_OFFSET(4, pL2f), rl_dest, rl_src);
       return;
     case Instruction::DOUBLE_TO_LONG:
-      GenConversionCall(kQuickD2l, rl_dest, rl_src);
+      GenConversionCall(QUICK_ENTRYPOINT_OFFSET(4, pD2l), rl_dest, rl_src);
       return;
     default:
       LOG(FATAL) << "Unexpected opcode: " << opcode;
@@ -168,26 +170,25 @@ void MipsMir2Lir::GenConversion(Instruction::Code opcode, RegLocation rl_dest,
 void MipsMir2Lir::GenCmpFP(Instruction::Code opcode, RegLocation rl_dest,
                            RegLocation rl_src1, RegLocation rl_src2) {
   bool wide = true;
-  QuickEntrypointEnum target;
+  ThreadOffset<4> offset(-1);
 
   switch (opcode) {
     case Instruction::CMPL_FLOAT:
-      target = kQuickCmplFloat;
+      offset = QUICK_ENTRYPOINT_OFFSET(4, pCmplFloat);
       wide = false;
       break;
     case Instruction::CMPG_FLOAT:
-      target = kQuickCmpgFloat;
+      offset = QUICK_ENTRYPOINT_OFFSET(4, pCmpgFloat);
       wide = false;
       break;
     case Instruction::CMPL_DOUBLE:
-      target = kQuickCmplDouble;
+      offset = QUICK_ENTRYPOINT_OFFSET(4, pCmplDouble);
       break;
     case Instruction::CMPG_DOUBLE:
-      target = kQuickCmpgDouble;
+      offset = QUICK_ENTRYPOINT_OFFSET(4, pCmpgDouble);
       break;
     default:
       LOG(FATAL) << "Unexpected opcode: " << opcode;
-      target = kQuickCmplFloat;
   }
   FlushAllRegs();
   LockCallTemps();
@@ -200,10 +201,10 @@ void MipsMir2Lir::GenCmpFP(Instruction::Code opcode, RegLocation rl_dest,
     LoadValueDirectFixed(rl_src1, rs_rMIPS_FARG0);
     LoadValueDirectFixed(rl_src2, rs_rMIPS_FARG2);
   }
-  RegStorage r_tgt = LoadHelper(target);
+  RegStorage r_tgt = LoadHelper(offset);
   // NOTE: not a safepoint
   OpReg(kOpBlx, r_tgt);
-  RegLocation rl_result = GetReturn(kCoreReg);
+  RegLocation rl_result = GetReturn(false);
   StoreValue(rl_dest, rl_result);
 }
 
@@ -229,7 +230,7 @@ void MipsMir2Lir::GenNegDouble(RegLocation rl_dest, RegLocation rl_src) {
   StoreValueWide(rl_dest, rl_result);
 }
 
-bool MipsMir2Lir::GenInlinedMinMax(CallInfo* info, bool is_min, bool is_long) {
+bool MipsMir2Lir::GenInlinedMinMaxInt(CallInfo* info, bool is_min) {
   // TODO: need Mips implementation
   return false;
 }

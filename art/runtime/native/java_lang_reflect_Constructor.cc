@@ -20,6 +20,7 @@
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
+#include "object_utils.h"
 #include "reflection.h"
 #include "scoped_fast_native_object_access.h"
 #include "well_known_classes.h"

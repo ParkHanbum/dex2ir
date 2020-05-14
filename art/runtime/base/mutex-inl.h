@@ -23,9 +23,8 @@
 
 #define ATRACE_TAG ATRACE_TAG_DALVIK
 
+#include "cutils/atomic-inline.h"
 #include "cutils/trace.h"
-
-#include "base/stringprintf.h"
 #include "runtime.h"
 #include "thread.h"
 
@@ -44,6 +43,54 @@ static inline int futex(volatile int *uaddr, int op, int val, const struct times
 }
 #endif  // ART_USE_FUTEXES
 
+#if defined(__APPLE__)
+
+// This works on Mac OS 10.6 but hasn't been tested on older releases.
+struct __attribute__((__may_alias__)) darwin_pthread_mutex_t {
+  long padding0;  // NOLINT(runtime/int) exact match to darwin type
+  int padding1;
+  uint32_t padding2;
+  int16_t padding3;
+  int16_t padding4;
+  uint32_t padding5;
+  pthread_t darwin_pthread_mutex_owner;
+  // ...other stuff we don't care about.
+};
+
+struct __attribute__((__may_alias__)) darwin_pthread_rwlock_t {
+  long padding0;  // NOLINT(runtime/int) exact match to darwin type
+  pthread_mutex_t padding1;
+  int padding2;
+  pthread_cond_t padding3;
+  pthread_cond_t padding4;
+  int padding5;
+  int padding6;
+  pthread_t darwin_pthread_rwlock_owner;
+  // ...other stuff we don't care about.
+};
+
+#endif  // __APPLE__
+
+#if defined(__GLIBC__)
+
+struct __attribute__((__may_alias__)) glibc_pthread_mutex_t {
+  int32_t padding0[2];
+  int owner;
+  // ...other stuff we don't care about.
+};
+
+struct __attribute__((__may_alias__)) glibc_pthread_rwlock_t {
+#ifdef __LP64__
+  int32_t padding0[6];
+#else
+  int32_t padding0[7];
+#endif
+  int writer;
+  // ...other stuff we don't care about.
+};
+
+#endif  // __GLIBC__
+
 class ScopedContentionRecorder {
  public:
   ScopedContentionRecorder(BaseMutex* mutex, uint64_t blocked_tid, uint64_t owner_tid)
@@ -51,11 +98,9 @@ class ScopedContentionRecorder {
         blocked_tid_(kLogLockContentions ? blocked_tid : 0),
         owner_tid_(kLogLockContentions ? owner_tid : 0),
         start_nano_time_(kLogLockContentions ? NanoTime() : 0) {
-    if (ATRACE_ENABLED()) {
-      std::string msg = StringPrintf("Lock contention on %s (owner tid: %" PRIu64 ")",
-                                     mutex->GetName(), owner_tid);
-      ATRACE_BEGIN(msg.c_str());
-    }
+    std::string msg = StringPrintf("Lock contention on %s (owner tid: %" PRIu64 ")",
+                                   mutex->GetName(), owner_tid);
+    ATRACE_BEGIN(msg.c_str());
   }
 
   ~ScopedContentionRecorder() {
@@ -87,21 +132,9 @@ static inline void CheckUnattachedThread(LockLevel level) NO_THREAD_SAFETY_ANALY
   // TODO: tighten this check.
   if (kDebugLocking) {
     Runtime* runtime = Runtime::Current();
-    CHECK(runtime == nullptr || !runtime->IsStarted() || runtime->IsShuttingDownLocked() ||
-          // Used during thread creation to avoid races with runtime shutdown. Thread::Current not
-          // yet established.
-          level == kRuntimeShutdownLock ||
-          // Thread Ids are allocated/released before threads are established.
-          level == kAllocatedThreadIdsLock ||
-          // Thread LDT's are initialized without Thread::Current established.
-          level == kModifyLdtLock ||
-          // Threads are unregistered while holding the thread list lock, during this process they
-          // no longer exist and so we expect an unlock with no self.
-          level == kThreadListLock ||
-          // Ignore logging which may or may not have set up thread data structures.
-          level == kLoggingLock ||
-          // Avoid recursive death.
-          level == kAbortLock) << level;
+    CHECK(runtime == NULL || !runtime->IsStarted() || runtime->IsShuttingDownLocked() ||
+          level == kDefaultMutexLevel  || level == kRuntimeShutdownLock ||
+          level == kThreadListLock || level == kLoggingLock || level == kAbortLock);
   }
 }
 
@@ -153,50 +186,44 @@ inline void ReaderWriterMutex::SharedLock(Thread* self) {
 #if ART_USE_FUTEXES
   bool done = false;
   do {
-    int32_t cur_state = state_.LoadRelaxed();
+    int32_t cur_state = state_;
     if (LIKELY(cur_state >= 0)) {
       // Add as an extra reader.
-      done = state_.CompareExchangeWeakAcquire(cur_state, cur_state + 1);
+      done = android_atomic_acquire_cas(cur_state, cur_state + 1, &state_) == 0;
     } else {
       // Owner holds it exclusively, hang up.
       ScopedContentionRecorder scr(this, GetExclusiveOwnerTid(), SafeGetTid(self));
-      ++num_pending_readers_;
-      if (futex(state_.Address(), FUTEX_WAIT, cur_state, NULL, NULL, 0) != 0) {
+      android_atomic_inc(&num_pending_readers_);
+      if (futex(&state_, FUTEX_WAIT, cur_state, NULL, NULL, 0) != 0) {
         if (errno != EAGAIN) {
           PLOG(FATAL) << "futex wait failed for " << name_;
         }
       }
-      --num_pending_readers_;
+      android_atomic_dec(&num_pending_readers_);
     }
   } while (!done);
 #else
   CHECK_MUTEX_CALL(pthread_rwlock_rdlock, (&rwlock_));
 #endif
-  DCHECK(exclusive_owner_ == 0U || exclusive_owner_ == -1U);
   RegisterAsLocked(self);
   AssertSharedHeld(self);
 }
 
 inline void ReaderWriterMutex::SharedUnlock(Thread* self) {
   DCHECK(self == NULL || self == Thread::Current());
-  DCHECK(exclusive_owner_ == 0U || exclusive_owner_ == -1U);
   AssertSharedHeld(self);
   RegisterAsUnlocked(self);
 #if ART_USE_FUTEXES
   bool done = false;
   do {
-    int32_t cur_state = state_.LoadRelaxed();
+    int32_t cur_state = state_;
     if (LIKELY(cur_state > 0)) {
-      // Reduce state by 1 and impose lock release load/store ordering.
-      // Note, the relaxed loads below musn't reorder before the CompareExchange.
-      // TODO: the ordering here is non-trivial as state is split across 3 fields, fix by placing
-      // a status bit into the state on contention.
-      done = state_.CompareExchangeWeakSequentiallyConsistent(cur_state, cur_state - 1);
-      if (done && (cur_state - 1) == 0) {  // Weak CAS may fail spuriously.
-        if (num_pending_writers_.LoadRelaxed() > 0 ||
-            num_pending_readers_.LoadRelaxed() > 0) {
+      // Reduce state by 1.
+      done = android_atomic_release_cas(cur_state, cur_state - 1, &state_) == 0;
+      if (done && (cur_state - 1) == 0) {  // cas may fail due to noise?
+        if (num_pending_writers_ > 0 || num_pending_readers_ > 0) {
           // Wake any exclusive waiters as there are now no readers.
-          futex(state_.Address(), FUTEX_WAKE, -1, NULL, NULL, 0);
+          futex(&state_, FUTEX_WAKE, -1, NULL, NULL, 0);
         }
       }
     } else {
@@ -221,7 +248,26 @@ inline bool Mutex::IsExclusiveHeld(const Thread* self) const {
 }
 
 inline uint64_t Mutex::GetExclusiveOwnerTid() const {
+#if ART_USE_FUTEXES
   return exclusive_owner_;
+#elif defined(__BIONIC__)
+  return static_cast<uint64_t>((mutex_.value >> 16) & 0xffff);
+#elif defined(__GLIBC__)
+  return reinterpret_cast<const glibc_pthread_mutex_t*>(&mutex_)->owner;
+#elif defined(__APPLE__)
+  const darwin_pthread_mutex_t* dpmutex = reinterpret_cast<const darwin_pthread_mutex_t*>(&mutex_);
+  pthread_t owner = dpmutex->darwin_pthread_mutex_owner;
+  // 0 for unowned, -1 for PTHREAD_MTX_TID_SWITCHING
+  // TODO: should we make darwin_pthread_mutex_owner volatile and recheck until not -1?
+  if ((owner == (pthread_t)0) || (owner == (pthread_t)-1)) {
+    return 0;
+  }
+  uint64_t tid;
+  CHECK_PTHREAD_CALL(pthread_threadid_np, (owner, &tid), __FUNCTION__);  // Requires Mac OS 10.6
+  return tid;
+#else
+#error unsupported C library
+#endif
 }
 
 inline bool ReaderWriterMutex::IsExclusiveHeld(const Thread* self) const {
@@ -238,7 +284,7 @@ inline bool ReaderWriterMutex::IsExclusiveHeld(const Thread* self) const {
 
 inline uint64_t ReaderWriterMutex::GetExclusiveOwnerTid() const {
 #if ART_USE_FUTEXES
-  int32_t state = state_.LoadRelaxed();
+  int32_t state = state_;
   if (state == 0) {
     return 0;  // No owner.
   } else if (state > 0) {
@@ -247,7 +293,23 @@ inline uint64_t ReaderWriterMutex::GetExclusiveOwnerTid() const {
     return exclusive_owner_;
   }
 #else
-  return exclusive_owner_;
+#if defined(__BIONIC__)
+  return rwlock_.writerThreadId;
+#elif defined(__GLIBC__)
+  return reinterpret_cast<const glibc_pthread_rwlock_t*>(&rwlock_)->writer;
+#elif defined(__APPLE__)
+  const darwin_pthread_rwlock_t*
+      dprwlock = reinterpret_cast<const darwin_pthread_rwlock_t*>(&rwlock_);
+  pthread_t owner = dprwlock->darwin_pthread_rwlock_owner;
+  if (owner == (pthread_t)0) {
+    return 0;
+  }
+  uint64_t tid;
+  CHECK_PTHREAD_CALL(pthread_threadid_np, (owner, &tid), __FUNCTION__);  // Requires Mac OS 10.6
+  return tid;
+#else
+#error unsupported C library
+#endif
 #endif
 }
 

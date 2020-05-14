@@ -18,14 +18,15 @@
 #define ART_COMPILER_OAT_WRITER_H_
 
 #include <stdint.h>
+
 #include <cstddef>
-#include <memory>
 
 #include "driver/compiler_driver.h"
 #include "mem_map.h"
 #include "oat.h"
 #include "mirror/class.h"
 #include "safe_map.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -79,10 +80,9 @@ class OatWriter {
   OatWriter(const std::vector<const DexFile*>& dex_files,
             uint32_t image_file_location_oat_checksum,
             uintptr_t image_file_location_oat_begin,
-            int32_t image_patch_delta,
+            const std::string& image_file_location,
             const CompilerDriver* compiler,
-            TimingLogger* timings,
-            SafeMap<std::string, std::string>* key_value_store);
+            TimingLogger* timings);
 
   const OatHeader& GetOatHeader() const {
     return *oat_header_;
@@ -107,10 +107,6 @@ class OatWriter {
 
   const std::vector<DebugInfo>& GetCFIMethodInfo() const {
     return method_info_;
-  }
-
-  bool DidAddSymbols() const {
-    return compiler_driver_->DidIncludeDebugSymbols();
   }
 
  private:
@@ -254,29 +250,28 @@ class OatWriter {
   // dependencies on the image.
   uint32_t image_file_location_oat_checksum_;
   uintptr_t image_file_location_oat_begin_;
-  int32_t image_patch_delta_;
+  std::string image_file_location_;
 
   // data to write
-  SafeMap<std::string, std::string>* key_value_store_;
   OatHeader* oat_header_;
   std::vector<OatDexFile*> oat_dex_files_;
   std::vector<OatClass*> oat_classes_;
-  std::unique_ptr<const std::vector<uint8_t>> interpreter_to_interpreter_bridge_;
-  std::unique_ptr<const std::vector<uint8_t>> interpreter_to_compiled_code_bridge_;
-  std::unique_ptr<const std::vector<uint8_t>> jni_dlsym_lookup_;
-  std::unique_ptr<const std::vector<uint8_t>> portable_imt_conflict_trampoline_;
-  std::unique_ptr<const std::vector<uint8_t>> portable_resolution_trampoline_;
-  std::unique_ptr<const std::vector<uint8_t>> portable_to_interpreter_bridge_;
-  std::unique_ptr<const std::vector<uint8_t>> quick_generic_jni_trampoline_;
-  std::unique_ptr<const std::vector<uint8_t>> quick_imt_conflict_trampoline_;
-  std::unique_ptr<const std::vector<uint8_t>> quick_resolution_trampoline_;
-  std::unique_ptr<const std::vector<uint8_t>> quick_to_interpreter_bridge_;
+  UniquePtr<const std::vector<uint8_t> > interpreter_to_interpreter_bridge_;
+  UniquePtr<const std::vector<uint8_t> > interpreter_to_compiled_code_bridge_;
+  UniquePtr<const std::vector<uint8_t> > jni_dlsym_lookup_;
+  UniquePtr<const std::vector<uint8_t> > portable_imt_conflict_trampoline_;
+  UniquePtr<const std::vector<uint8_t> > portable_resolution_trampoline_;
+  UniquePtr<const std::vector<uint8_t> > portable_to_interpreter_bridge_;
+  UniquePtr<const std::vector<uint8_t> > quick_generic_jni_trampoline_;
+  UniquePtr<const std::vector<uint8_t> > quick_imt_conflict_trampoline_;
+  UniquePtr<const std::vector<uint8_t> > quick_resolution_trampoline_;
+  UniquePtr<const std::vector<uint8_t> > quick_to_interpreter_bridge_;
 
   // output stats
   uint32_t size_dex_file_alignment_;
   uint32_t size_executable_offset_alignment_;
   uint32_t size_oat_header_;
-  uint32_t size_oat_header_key_value_store_;
+  uint32_t size_oat_header_image_file_location_;
   uint32_t size_dex_file_;
   uint32_t size_interpreter_to_interpreter_bridge_;
   uint32_t size_interpreter_to_compiled_code_bridge_;

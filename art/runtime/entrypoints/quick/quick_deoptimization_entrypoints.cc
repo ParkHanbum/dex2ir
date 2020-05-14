@@ -21,13 +21,14 @@
 #include "mirror/class-inl.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/object-inl.h"
+#include "object_utils.h"
 #include "stack.h"
 #include "thread.h"
 #include "verifier/method_verifier.h"
 
 namespace art {
 
-extern "C" void artDeoptimize(Thread* self, StackReference<mirror::ArtMethod>* sp)
+extern "C" void artDeoptimize(Thread* self, mirror::ArtMethod** sp)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kSaveAll);
   self->SetException(ThrowLocation(), Thread::GetDeoptimizationException());

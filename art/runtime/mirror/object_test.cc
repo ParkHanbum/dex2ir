@@ -18,27 +18,25 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <memory>
 
 #include "array-inl.h"
 #include "art_field-inl.h"
-#include "art_method-inl.h"
 #include "asm_support.h"
 #include "class-inl.h"
 #include "class_linker.h"
 #include "class_linker-inl.h"
 #include "common_runtime_test.h"
 #include "dex_file.h"
-#include "entrypoints/entrypoint_utils-inl.h"
+#include "entrypoints/entrypoint_utils.h"
 #include "gc/accounting/card_table-inl.h"
 #include "gc/heap.h"
-#include "handle_scope-inl.h"
 #include "iftable-inl.h"
-#include "method_helper-inl.h"
+#include "art_method-inl.h"
 #include "object-inl.h"
 #include "object_array-inl.h"
-#include "scoped_thread_state_change.h"
+#include "handle_scope-inl.h"
 #include "string-inl.h"
+#include "UniquePtr.h"
 
 namespace art {
 namespace mirror {
@@ -50,7 +48,7 @@ class ObjectTest : public CommonRuntimeTest {
                     const char* utf16_expected_le,
                     int32_t expected_hash)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    std::unique_ptr<uint16_t[]> utf16_expected(new uint16_t[expected_utf16_length]);
+    UniquePtr<uint16_t[]> utf16_expected(new uint16_t[expected_utf16_length]);
     for (int32_t i = 0; i < expected_utf16_length; i++) {
       uint16_t ch = (((utf16_expected_le[i*2 + 0] & 0xff) << 8) |
                      ((utf16_expected_le[i*2 + 1] & 0xff) << 0));
@@ -90,9 +88,7 @@ TEST_F(ObjectTest, AsmConstants) {
   EXPECT_EQ(STRING_DATA_OFFSET, Array::DataOffset(sizeof(uint16_t)).Int32Value());
 
   EXPECT_EQ(METHOD_DEX_CACHE_METHODS_OFFSET, ArtMethod::DexCacheResolvedMethodsOffset().Int32Value());
-#if defined(ART_USE_PORTABLE_COMPILER)
   EXPECT_EQ(METHOD_PORTABLE_CODE_OFFSET, ArtMethod::EntryPointFromPortableCompiledCodeOffset().Int32Value());
-#endif
   EXPECT_EQ(METHOD_QUICK_CODE_OFFSET, ArtMethod::EntryPointFromQuickCompiledCodeOffset().Int32Value());
 }
 
@@ -108,7 +104,7 @@ TEST_F(ObjectTest, IsInSamePackage) {
 
 TEST_F(ObjectTest, Clone) {
   ScopedObjectAccess soa(Thread::Current());
-  StackHandleScope<2> hs(soa.Self());
+  StackHandleScope<1> hs(soa.Self());
   Handle<ObjectArray<Object>> a1(
       hs.NewHandle(class_linker_->AllocObjectArray<Object>(soa.Self(), 256)));
   size_t s1 = a1->SizeOf();
@@ -119,8 +115,8 @@ TEST_F(ObjectTest, Clone) {
 
 TEST_F(ObjectTest, AllocObjectArray) {
   ScopedObjectAccess soa(Thread::Current());
-  StackHandleScope<2> hs(soa.Self());
-  Handle<ObjectArray<Object>> oa(
+  StackHandleScope<1> hs(soa.Self());
+  Handle<ObjectArray<Object> > oa(
       hs.NewHandle(class_linker_->AllocObjectArray<Object>(soa.Self(), 2)));
   EXPECT_EQ(2, oa->GetLength());
   EXPECT_TRUE(oa->Get(0) == NULL);
@@ -146,12 +142,12 @@ TEST_F(ObjectTest, AllocObjectArray) {
   soa.Self()->ClearException();
 
   ASSERT_TRUE(oa->GetClass() != NULL);
-  Handle<mirror::Class> klass(hs.NewHandle(oa->GetClass()));
-  ASSERT_EQ(2U, klass->NumDirectInterfaces());
+  ClassHelper oa_ch(oa->GetClass());
+  ASSERT_EQ(2U, oa_ch.NumDirectInterfaces());
   EXPECT_EQ(class_linker_->FindSystemClass(soa.Self(), "Ljava/lang/Cloneable;"),
-            mirror::Class::GetDirectInterface(soa.Self(), klass, 0));
+            oa_ch.GetDirectInterface(0));
   EXPECT_EQ(class_linker_->FindSystemClass(soa.Self(), "Ljava/io/Serializable;"),
-            mirror::Class::GetDirectInterface(soa.Self(), klass, 1));
+            oa_ch.GetDirectInterface(1));
 }
 
 TEST_F(ObjectTest, AllocArray) {
@@ -455,7 +451,7 @@ TEST_F(ObjectTest, DescriptorCompare) {
 
   jobject jclass_loader_1 = LoadDex("ProtoCompare");
   jobject jclass_loader_2 = LoadDex("ProtoCompare2");
-  StackHandleScope<4> hs(soa.Self());
+  StackHandleScope<2> hs(soa.Self());
   Handle<ClassLoader> class_loader_1(hs.NewHandle(soa.Decode<ClassLoader*>(jclass_loader_1)));
   Handle<ClassLoader> class_loader_2(hs.NewHandle(soa.Decode<ClassLoader*>(jclass_loader_2)));
 
@@ -465,25 +461,33 @@ TEST_F(ObjectTest, DescriptorCompare) {
   ASSERT_TRUE(klass2 != NULL);
 
   ArtMethod* m1_1 = klass1->GetVirtualMethod(0);
-  EXPECT_STREQ(m1_1->GetName(), "m1");
+  MethodHelper mh(m1_1);
+  EXPECT_STREQ(mh.GetName(), "m1");
   ArtMethod* m2_1 = klass1->GetVirtualMethod(1);
-  EXPECT_STREQ(m2_1->GetName(), "m2");
+  mh.ChangeMethod(m2_1);
+  EXPECT_STREQ(mh.GetName(), "m2");
   ArtMethod* m3_1 = klass1->GetVirtualMethod(2);
-  EXPECT_STREQ(m3_1->GetName(), "m3");
+  mh.ChangeMethod(m3_1);
+  EXPECT_STREQ(mh.GetName(), "m3");
   ArtMethod* m4_1 = klass1->GetVirtualMethod(3);
-  EXPECT_STREQ(m4_1->GetName(), "m4");
+  mh.ChangeMethod(m4_1);
+  EXPECT_STREQ(mh.GetName(), "m4");
 
   ArtMethod* m1_2 = klass2->GetVirtualMethod(0);
-  EXPECT_STREQ(m1_2->GetName(), "m1");
+  mh.ChangeMethod(m1_2);
+  EXPECT_STREQ(mh.GetName(), "m1");
   ArtMethod* m2_2 = klass2->GetVirtualMethod(1);
-  EXPECT_STREQ(m2_2->GetName(), "m2");
+  mh.ChangeMethod(m2_2);
+  EXPECT_STREQ(mh.GetName(), "m2");
   ArtMethod* m3_2 = klass2->GetVirtualMethod(2);
-  EXPECT_STREQ(m3_2->GetName(), "m3");
+  mh.ChangeMethod(m3_2);
+  EXPECT_STREQ(mh.GetName(), "m3");
   ArtMethod* m4_2 = klass2->GetVirtualMethod(3);
-  EXPECT_STREQ(m4_2->GetName(), "m4");
+  mh.ChangeMethod(m4_2);
+  EXPECT_STREQ(mh.GetName(), "m4");
 
-  MethodHelper mh(hs.NewHandle(m1_1));
-  MethodHelper mh2(hs.NewHandle(m1_2));
+  mh.ChangeMethod(m1_1);
+  MethodHelper mh2(m1_2);
   EXPECT_TRUE(mh.HasSameNameAndSignature(&mh2));
   EXPECT_TRUE(mh2.HasSameNameAndSignature(&mh));
 
@@ -678,31 +682,26 @@ TEST_F(ObjectTest, FindInstanceField) {
 
 TEST_F(ObjectTest, FindStaticField) {
   ScopedObjectAccess soa(Thread::Current());
-  StackHandleScope<4> hs(soa.Self());
+  StackHandleScope<1> hs(soa.Self());
   Handle<String> s(hs.NewHandle(String::AllocFromModifiedUtf8(soa.Self(), "ABC")));
   ASSERT_TRUE(s.Get() != NULL);
-  Handle<Class> c(hs.NewHandle(s->GetClass()));
-  ASSERT_TRUE(c.Get() != NULL);
+  Class* c = s->GetClass();
+  ASSERT_TRUE(c != NULL);
 
   // Wrong type.
   EXPECT_TRUE(c->FindDeclaredStaticField("CASE_INSENSITIVE_ORDER", "I") == NULL);
-  EXPECT_TRUE(mirror::Class::FindStaticField(soa.Self(), c, "CASE_INSENSITIVE_ORDER", "I") == NULL);
+  EXPECT_TRUE(c->FindStaticField("CASE_INSENSITIVE_ORDER", "I") == NULL);
 
   // Wrong name.
   EXPECT_TRUE(c->FindDeclaredStaticField("cASE_INSENSITIVE_ORDER", "Ljava/util/Comparator;") == NULL);
-  EXPECT_TRUE(
-      mirror::Class::FindStaticField(soa.Self(), c, "cASE_INSENSITIVE_ORDER",
-                                     "Ljava/util/Comparator;") == NULL);
+  EXPECT_TRUE(c->FindStaticField("cASE_INSENSITIVE_ORDER", "Ljava/util/Comparator;") == NULL);
 
   // Right name and type.
-  Handle<ArtField> f1(hs.NewHandle(
-      c->FindDeclaredStaticField("CASE_INSENSITIVE_ORDER", "Ljava/util/Comparator;")));
-  Handle<ArtField> f2(hs.NewHandle(
-      mirror::Class::FindStaticField(soa.Self(), c, "CASE_INSENSITIVE_ORDER",
-                                     "Ljava/util/Comparator;")));
-  EXPECT_TRUE(f1.Get() != NULL);
-  EXPECT_TRUE(f2.Get() != NULL);
-  EXPECT_EQ(f1.Get(), f2.Get());
+  ArtField* f1 = c->FindDeclaredStaticField("CASE_INSENSITIVE_ORDER", "Ljava/util/Comparator;");
+  ArtField* f2 = c->FindStaticField("CASE_INSENSITIVE_ORDER", "Ljava/util/Comparator;");
+  EXPECT_TRUE(f1 != NULL);
+  EXPECT_TRUE(f2 != NULL);
+  EXPECT_EQ(f1, f2);
 
   // TODO: test static fields via superclasses.
   // TODO: test static fields via interfaces.

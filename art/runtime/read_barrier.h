@@ -33,17 +33,9 @@ namespace mirror {
 
 class ReadBarrier {
  public:
-  // It's up to the implementation whether the given field gets
-  // updated whereas the return value must be an updated reference.
   template <typename MirrorType, ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
   ALWAYS_INLINE static MirrorType* Barrier(
       mirror::Object* obj, MemberOffset offset, mirror::HeapReference<MirrorType>* ref_addr)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  // It's up to the implementation whether the given root gets updated
-  // whereas the return value must be an updated reference.
-  template <typename MirrorType, ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
-  ALWAYS_INLINE static MirrorType* BarrierForRoot(MirrorType** root)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 };
 

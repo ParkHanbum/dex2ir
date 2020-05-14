@@ -39,8 +39,6 @@ enum GcCause {
   kGcCauseDisableMovingGc,
   // Not a real GC cause, used when we trim the heap.
   kGcCauseTrim,
-  // GC triggered for background transition when both foreground and background collector are CMS.
-  kGcCauseHomogeneousSpaceCompact,
 };
 
 const char* PrettyCause(GcCause cause);

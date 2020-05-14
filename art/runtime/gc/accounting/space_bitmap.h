@@ -17,22 +17,23 @@
 #ifndef ART_RUNTIME_GC_ACCOUNTING_SPACE_BITMAP_H_
 #define ART_RUNTIME_GC_ACCOUNTING_SPACE_BITMAP_H_
 
-#include <limits.h>
-#include <stdint.h>
-#include <memory>
-#include <set>
-#include <vector>
-
 #include "base/mutex.h"
+#include "gc_allocator.h"
 #include "globals.h"
+#include "mem_map.h"
 #include "object_callbacks.h"
+#include "UniquePtr.h"
+
+#include <limits.h>
+#include <set>
+#include <stdint.h>
+#include <vector>
 
 namespace art {
 
 namespace mirror {
   class Object;
 }  // namespace mirror
-class MemMap;
 
 namespace gc {
 namespace accounting {
@@ -41,6 +42,7 @@ template<size_t kAlignment>
 class SpaceBitmap {
  public:
   typedef void ScanCallback(mirror::Object* obj, void* finger, void* arg);
+
   typedef void SweepCallback(size_t ptr_count, mirror::Object** ptrs, void* arg);
 
   // Initialize a space bitmap so that it points to a bitmap large enough to cover a heap at
@@ -53,22 +55,23 @@ class SpaceBitmap {
   static SpaceBitmap* CreateFromMemMap(const std::string& name, MemMap* mem_map,
                                        byte* heap_begin, size_t heap_capacity);
 
-  ~SpaceBitmap();
+  ~SpaceBitmap() {
+  }
 
   // <offset> is the difference from .base to a pointer address.
   // <index> is the index of .bits that contains the bit representing
   //         <offset>.
-  static constexpr size_t OffsetToIndex(size_t offset) {
+  static size_t OffsetToIndex(size_t offset) ALWAYS_INLINE {
     return offset / kAlignment / kBitsPerWord;
   }
 
   template<typename T>
-  static constexpr T IndexToOffset(T index) {
+  static T IndexToOffset(T index) {
     return static_cast<T>(index * kAlignment * kBitsPerWord);
   }
 
   // Bits are packed in the obvious way.
-  static constexpr uword OffsetToMask(uintptr_t offset) {
+  static uword OffsetToMask(uintptr_t offset) ALWAYS_INLINE {
     return (static_cast<size_t>(1)) << ((offset / kAlignment) % kBitsPerWord);
   }
 
@@ -180,7 +183,10 @@ class SpaceBitmap {
     name_ = name;
   }
 
-  std::string Dump() const;
+  std::string Dump() const {
+    return StringPrintf("%s: %p-%p", name_.c_str(), reinterpret_cast<void*>(HeapBegin()),
+                        reinterpret_cast<void*>(HeapLimit()));
+  }
 
   const void* GetObjectWordAddress(const mirror::Object* obj) const {
     uintptr_t addr = reinterpret_cast<uintptr_t>(obj);
@@ -211,7 +217,7 @@ class SpaceBitmap {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Backing storage for bitmap.
-  std::unique_ptr<MemMap> mem_map_;
+  UniquePtr<MemMap> mem_map_;
 
   // This bitmap itself, word sized for efficiency in scanning.
   uword* const bitmap_begin_;

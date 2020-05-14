@@ -24,13 +24,13 @@
 #include "class.h"
 #include "class-inl.h"
 #include "class_linker-inl.h"
-#include "field_helper.h"
 #include "gc/accounting/card_table-inl.h"
 #include "gc/heap.h"
 #include "iftable-inl.h"
 #include "monitor.h"
 #include "object-inl.h"
 #include "object_array-inl.h"
+#include "object_utils.h"
 #include "runtime.h"
 #include "handle_scope-inl.h"
 #include "throwable.h"
@@ -57,7 +57,7 @@ class CopyReferenceFieldsWithReadBarrierVisitor {
       ALWAYS_INLINE SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     // Copy java.lang.ref.Reference.referent which isn't visited in
     // Object::VisitReferences().
-    DCHECK(klass->IsTypeOfReferenceClass());
+    DCHECK(klass->IsReferenceClass());
     this->operator()(ref, mirror::Reference::ReferentOffset(), false);
   }
 
@@ -65,8 +65,8 @@ class CopyReferenceFieldsWithReadBarrierVisitor {
   Object* const dest_obj_;
 };
 
-Object* Object::CopyObject(Thread* self, mirror::Object* dest, mirror::Object* src,
-                           size_t num_bytes) {
+static Object* CopyObject(Thread* self, mirror::Object* dest, mirror::Object* src, size_t num_bytes)
+    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   // Copy instance data.  We assume memcpy copies by words.
   // TODO: expose and use move32.
   byte* src_bytes = reinterpret_cast<byte*>(src);
@@ -107,7 +107,7 @@ class CopyObjectVisitor {
   void operator()(Object* obj, size_t usable_size) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     UNUSED(usable_size);
-    Object::CopyObject(self_, obj, orig_->Get(), num_bytes_);
+    CopyObject(self_, obj, orig_->Get(), num_bytes_);
   }
 
  private:
@@ -139,10 +139,10 @@ int32_t Object::GenerateIdentityHashCode() {
   static AtomicInteger seed(987654321 + std::time(nullptr));
   int32_t expected_value, new_value;
   do {
-    expected_value = static_cast<uint32_t>(seed.LoadRelaxed());
+    expected_value = static_cast<uint32_t>(seed.Load());
     new_value = expected_value * 1103515245 + 12345;
   } while ((expected_value & LockWord::kHashMask) == 0 ||
-      !seed.CompareExchangeWeakRelaxed(expected_value, new_value));
+      !seed.CompareAndSwap(expected_value, new_value));
   return expected_value & LockWord::kHashMask;
 }
 
@@ -156,14 +156,13 @@ int32_t Object::IdentityHashCode() const {
         // loop iteration.
         LockWord hash_word(LockWord::FromHashCode(GenerateIdentityHashCode()));
         DCHECK_EQ(hash_word.GetState(), LockWord::kHashCode);
-        if (const_cast<Object*>(this)->CasLockWordWeakRelaxed(lw, hash_word)) {
+        if (const_cast<Object*>(this)->CasLockWord(lw, hash_word)) {
           return hash_word.GetHashCode();
         }
         break;
       }
       case LockWord::kThinLocked: {
-        // Inflate the thin lock to a monitor and stick the hash code inside of the monitor. May
-        // fail spuriously.
+        // Inflate the thin lock to a monitor and stick the hash code inside of the monitor.
         Thread* self = Thread::Current();
         StackHandleScope<1> hs(self);
         Handle<mirror::Object> h_this(hs.NewHandle(current_this));
@@ -205,8 +204,7 @@ void Object::CheckFieldAssignmentImpl(MemberOffset field_offset, Object* new_val
       for (size_t i = 0; i < num_ref_ifields; ++i) {
         ArtField* field = fields->Get(i);
         if (field->GetOffset().Int32Value() == field_offset.Int32Value()) {
-          StackHandleScope<1> hs(Thread::Current());
-          FieldHelper fh(hs.NewHandle(field));
+          FieldHelper fh(field);
           CHECK(fh.GetType()->IsAssignableFrom(new_value->GetClass()));
           return;
         }
@@ -224,8 +222,7 @@ void Object::CheckFieldAssignmentImpl(MemberOffset field_offset, Object* new_val
       for (size_t i = 0; i < num_ref_sfields; ++i) {
         ArtField* field = fields->Get(i);
         if (field->GetOffset().Int32Value() == field_offset.Int32Value()) {
-          StackHandleScope<1> hs(Thread::Current());
-          FieldHelper fh(hs.NewHandle(field));
+          FieldHelper fh(field);
           CHECK(fh.GetType()->IsAssignableFrom(new_value->GetClass()));
           return;
         }

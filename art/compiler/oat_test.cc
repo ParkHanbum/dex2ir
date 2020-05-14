@@ -15,18 +15,14 @@
  */
 
 #include "common_compiler_test.h"
-#include "compiler.h"
-#include "dex/verification_results.h"
-#include "dex/quick/dex_file_to_method_inliner_map.h"
-#include "dex/quick_compiler_callbacks.h"
+#include "compiler/compiler.h"
+#include "compiler/oat_writer.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
-#include "mirror/object_array-inl.h"
 #include "mirror/object-inl.h"
+#include "mirror/object_array-inl.h"
 #include "oat_file-inl.h"
-#include "oat_writer.h"
-#include "scoped_thread_state_change.h"
 #include "vector_output_stream.h"
 
 namespace art {
@@ -98,8 +94,8 @@ TEST_F(OatTest, WriteRead) {
   compiler_options_.reset(new CompilerOptions);
   verification_results_.reset(new VerificationResults(compiler_options_.get()));
   method_inliner_map_.reset(new DexFileToMethodInlinerMap);
-  callbacks_.reset(new QuickCompilerCallbacks(verification_results_.get(),
-                                              method_inliner_map_.get()));
+  callbacks_.reset(new CompilerCallbacksImpl(verification_results_.get(),
+                                             method_inliner_map_.get()));
   timer_.reset(new CumulativeLogger("Compilation times"));
   compiler_driver_.reset(new CompilerDriver(compiler_options_.get(),
                                             verification_results_.get(),
@@ -115,15 +111,12 @@ TEST_F(OatTest, WriteRead) {
 
   ScopedObjectAccess soa(Thread::Current());
   ScratchFile tmp;
-  SafeMap<std::string, std::string> key_value_store;
-  key_value_store.Put(OatHeader::kImageLocationKey, "lue.art");
   OatWriter oat_writer(class_linker->GetBootClassPath(),
                        42U,
                        4096U,
-                       0,
+                       "lue.art",
                        compiler_driver_.get(),
-                       &timings,
-                       &key_value_store);
+                       &timings);
   bool success = compiler_driver_->WriteElf(GetTestAndroidRoot(),
                                             !kIsTargetBuild,
                                             class_linker->GetBootClassPath(),
@@ -135,7 +128,7 @@ TEST_F(OatTest, WriteRead) {
     compiler_driver_->CompileAll(class_loader, class_linker->GetBootClassPath(), &timings);
   }
   std::string error_msg;
-  std::unique_ptr<OatFile> oat_file(OatFile::Open(tmp.GetFilename(), tmp.GetFilename(), NULL, false,
+  UniquePtr<OatFile> oat_file(OatFile::Open(tmp.GetFilename(), tmp.GetFilename(), NULL, false,
                                             &error_msg));
   ASSERT_TRUE(oat_file.get() != nullptr) << error_msg;
   const OatHeader& oat_header = oat_file->GetOatHeader();
@@ -143,7 +136,7 @@ TEST_F(OatTest, WriteRead) {
   ASSERT_EQ(1U, oat_header.GetDexFileCount());  // core
   ASSERT_EQ(42U, oat_header.GetImageFileLocationOatChecksum());
   ASSERT_EQ(4096U, oat_header.GetImageFileLocationOatDataBegin());
-  ASSERT_EQ("lue.art", std::string(oat_header.GetStoreValueByKey(OatHeader::kImageLocationKey)));
+  ASSERT_EQ("lue.art", oat_header.GetImageFileLocation());
 
   const DexFile* dex_file = java_lang_dex_file_;
   uint32_t dex_file_checksum = dex_file->GetLocationChecksum();
@@ -161,8 +154,8 @@ TEST_F(OatTest, WriteRead) {
     }
     const char* descriptor = dex_file->GetClassDescriptor(class_def);
     StackHandleScope<1> hs(soa.Self());
-    mirror::Class* klass = class_linker->FindClass(soa.Self(), descriptor,
-                                                   NullHandle<mirror::ClassLoader>());
+    auto loader(hs.NewHandle<mirror::ClassLoader>(nullptr));
+    mirror::Class* klass = class_linker->FindClass(soa.Self(), descriptor, loader);
 
     const OatFile::OatClass oat_class = oat_dex_file->GetOatClass(i);
     CHECK_EQ(mirror::Class::Status::kStatusNotReady, oat_class.GetStatus()) << descriptor;
@@ -184,10 +177,10 @@ TEST_F(OatTest, WriteRead) {
 TEST_F(OatTest, OatHeaderSizeCheck) {
   // If this test is failing and you have to update these constants,
   // it is time to update OatHeader::kOatVersion
-  EXPECT_EQ(84U, sizeof(OatHeader));
+  EXPECT_EQ(80U, sizeof(OatHeader));
   EXPECT_EQ(8U, sizeof(OatMethodOffsets));
   EXPECT_EQ(24U, sizeof(OatQuickMethodHeader));
-  EXPECT_EQ(79 * GetInstructionSetPointerSize(kRuntimeISA), sizeof(QuickEntryPoints));
+  EXPECT_EQ(80 * GetInstructionSetPointerSize(kRuntimeISA), sizeof(QuickEntryPoints));
 }
 
 TEST_F(OatTest, OatHeaderIsValid) {
@@ -196,20 +189,20 @@ TEST_F(OatTest, OatHeaderIsValid) {
     std::vector<const DexFile*> dex_files;
     uint32_t image_file_location_oat_checksum = 0;
     uint32_t image_file_location_oat_begin = 0;
-    OatHeader* oat_header = OatHeader::Create(instruction_set,
-                                              instruction_set_features,
-                                              &dex_files,
-                                              image_file_location_oat_checksum,
-                                              image_file_location_oat_begin,
-                                              nullptr);
-    ASSERT_NE(oat_header, nullptr);
-    ASSERT_TRUE(oat_header->IsValid());
+    const std::string image_file_location;
+    OatHeader oat_header(instruction_set,
+                         instruction_set_features,
+                         &dex_files,
+                         image_file_location_oat_checksum,
+                         image_file_location_oat_begin,
+                         image_file_location);
+    ASSERT_TRUE(oat_header.IsValid());
 
-    char* magic = const_cast<char*>(oat_header->GetMagic());
+    char* magic = const_cast<char*>(oat_header.GetMagic());
     strcpy(magic, "");  // bad magic
-    ASSERT_FALSE(oat_header->IsValid());
+    ASSERT_FALSE(oat_header.IsValid());
     strcpy(magic, "oat\n000");  // bad version
-    ASSERT_FALSE(oat_header->IsValid());
+    ASSERT_FALSE(oat_header.IsValid());
 }
 
 }  // namespace art

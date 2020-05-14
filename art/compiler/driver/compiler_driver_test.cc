@@ -18,20 +18,19 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <memory>
 
+#include "UniquePtr.h"
 #include "class_linker.h"
 #include "common_compiler_test.h"
 #include "dex_file.h"
 #include "gc/heap.h"
 #include "mirror/art_method-inl.h"
+#include "mirror/class.h"
 #include "mirror/class-inl.h"
-#include "mirror/class_loader.h"
 #include "mirror/dex_cache-inl.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/object-inl.h"
 #include "handle_scope-inl.h"
-#include "scoped_thread_state_change.h"
 
 namespace art {
 
@@ -39,12 +38,12 @@ class CompilerDriverTest : public CommonCompilerTest {
  protected:
   void CompileAll(jobject class_loader) LOCKS_EXCLUDED(Locks::mutator_lock_) {
     TimingLogger timings("CompilerDriverTest::CompileAll", false, false);
-    TimingLogger::ScopedTiming t(__FUNCTION__, &timings);
+    timings.StartSplit("CompileAll");
     compiler_driver_->CompileAll(class_loader,
                                  Runtime::Current()->GetCompileTimeClassPath(class_loader),
                                  &timings);
-    t.NewTiming("MakeAllExecutable");
     MakeAllExecutable(class_loader);
+    timings.EndSplit();
   }
 
   void EnsureCompiled(jobject class_loader, const char* class_name, const char* method,
@@ -129,12 +128,10 @@ TEST_F(CompilerDriverTest, DISABLED_LARGE_CompileDexLibCore) {
                                            << " "
                                            << dex->GetMethodDeclaringClassDescriptor(dex->GetMethodId(i))
                                            << " " << dex->GetMethodName(dex->GetMethodId(i));
-#if defined(ART_USE_PORTABLE_COMPILER)
     EXPECT_TRUE(method->GetEntryPointFromPortableCompiledCode() != NULL) << "method_idx=" << i
                                            << " "
                                            << dex->GetMethodDeclaringClassDescriptor(dex->GetMethodId(i))
                                            << " " << dex->GetMethodName(dex->GetMethodId(i));
-#endif
   }
   EXPECT_EQ(dex->NumFieldIds(), dex_cache->NumResolvedFields());
   for (size_t i = 0; i < dex_cache->NumResolvedFields(); i++) {
@@ -155,9 +152,10 @@ TEST_F(CompilerDriverTest, AbstractMethodErrorStub) {
   jobject class_loader;
   {
     ScopedObjectAccess soa(Thread::Current());
-    CompileVirtualMethod(NullHandle<mirror::ClassLoader>(), "java.lang.Class", "isFinalizable",
-                         "()Z");
-    CompileDirectMethod(NullHandle<mirror::ClassLoader>(), "java.lang.Object", "<init>", "()V");
+    StackHandleScope<1> hs(soa.Self());
+    auto null_loader(hs.NewHandle<mirror::ClassLoader>(nullptr));
+    CompileVirtualMethod(null_loader, "java.lang.Class", "isFinalizable", "()Z");
+    CompileDirectMethod(null_loader, "java.lang.Object", "<init>", "()V");
     class_loader = LoadDex("AbstractMethod");
   }
   ASSERT_TRUE(class_loader != NULL);
@@ -176,10 +174,7 @@ TEST_F(CompilerDriverTest, AbstractMethodErrorStub) {
   env_->ExceptionClear();
   jclass jlame = env_->FindClass("java/lang/AbstractMethodError");
   EXPECT_TRUE(env_->IsInstanceOf(exception, jlame));
-  {
-    ScopedObjectAccess soa(Thread::Current());
-    Thread::Current()->ClearException();
-  }
+  Thread::Current()->ClearException();
 }
 
 // TODO: need check-cast test (when stub complete & we can throw/catch

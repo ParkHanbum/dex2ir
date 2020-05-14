@@ -15,9 +15,7 @@
  */
 
 #include "ssa_builder.h"
-
 #include "nodes.h"
-#include "ssa_type_propagation.h"
 
 namespace art {
 
@@ -35,17 +33,12 @@ void SsaBuilder::BuildSsa() {
     for (HInstructionIterator it(block->GetPhis()); !it.Done(); it.Advance()) {
       HPhi* phi = it.Current()->AsPhi();
       for (size_t pred = 0; pred < block->GetPredecessors().Size(); pred++) {
-        HInstruction* input = ValueOfLocal(block->GetPredecessors().Get(pred), phi->GetRegNumber());
-        phi->AddInput(input);
+        phi->AddInput(ValueOfLocal(block->GetPredecessors().Get(pred), phi->GetRegNumber()));
       }
     }
   }
 
-  // 3) Propagate types of phis.
-  SsaTypePropagation type_propagation(GetGraph());
-  type_propagation.Run();
-
-  // 4) Clear locals.
+  // 3) Clear locals.
   // TODO: Move this to a dead code eliminator phase.
   for (HInstructionIterator it(GetGraph()->GetEntryBlock()->GetInstructions());
        !it.Done();
@@ -72,6 +65,7 @@ void SsaBuilder::VisitBasicBlock(HBasicBlock* block) {
     for (size_t local = 0; local < current_locals_->Size(); local++) {
       HInstruction* incoming = ValueOfLocal(block->GetLoopInformation()->GetPreHeader(), local);
       if (incoming != nullptr) {
+        // TODO: Compute union type.
         HPhi* phi = new (GetGraph()->GetArena()) HPhi(
             GetGraph()->GetArena(), local, 0, Primitive::kPrimVoid);
         block->AddPhi(phi);
@@ -85,32 +79,20 @@ void SsaBuilder::VisitBasicBlock(HBasicBlock* block) {
     // All predecessors have already been visited because we are visiting in reverse post order.
     // We merge the values of all locals, creating phis if those values differ.
     for (size_t local = 0; local < current_locals_->Size(); local++) {
-      bool one_predecessor_has_no_value = false;
       bool is_different = false;
       HInstruction* value = ValueOfLocal(block->GetPredecessors().Get(0), local);
-
-      for (size_t i = 0, e = block->GetPredecessors().Size(); i < e; ++i) {
-        HInstruction* current = ValueOfLocal(block->GetPredecessors().Get(i), local);
-        if (current == nullptr) {
-          one_predecessor_has_no_value = true;
-          break;
-        } else if (current != value) {
+      for (size_t i = 1; i < block->GetPredecessors().Size(); i++) {
+        if (ValueOfLocal(block->GetPredecessors().Get(i), local) != value) {
           is_different = true;
+          break;
         }
       }
-
-      if (one_predecessor_has_no_value) {
-        // If one predecessor has no value for this local, we trust the verifier has
-        // successfully checked that there is a store dominating any read after this block.
-        continue;
-      }
-
       if (is_different) {
+        // TODO: Compute union type.
         HPhi* phi = new (GetGraph()->GetArena()) HPhi(
             GetGraph()->GetArena(), local, block->GetPredecessors().Size(), Primitive::kPrimVoid);
         for (size_t i = 0; i < block->GetPredecessors().Size(); i++) {
-          HInstruction* value = ValueOfLocal(block->GetPredecessors().Get(i), local);
-          phi->SetRawInputAt(i, value);
+          phi->SetRawInputAt(i, ValueOfLocal(block->GetPredecessors().Get(i), local));
         }
         block->AddPhi(phi);
         value = phi;

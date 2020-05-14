@@ -43,12 +43,12 @@ BitVector::BitVector(uint32_t start_bits,
   : allocator_(allocator),
     expandable_(expandable),
     storage_size_(storage_size),
-    storage_(storage) {
-  COMPILE_ASSERT(sizeof(*storage_) == kWordBytes, check_word_bytes);
-  COMPILE_ASSERT(sizeof(*storage_) * 8u == kWordBits, check_word_bits);
+    storage_(storage),
+    number_of_bits_(start_bits) {
+  DCHECK_EQ(sizeof(*storage_), 4U);  // Assuming 32-bit units.
   if (storage_ == nullptr) {
     storage_size_ = BitsToWords(start_bits);
-    storage_ = static_cast<uint32_t*>(allocator_->Alloc(storage_size_ * kWordBytes));
+    storage_ = static_cast<uint32_t*>(allocator_->Alloc(storage_size_ * sizeof(*storage_)));
   }
 }
 
@@ -61,7 +61,7 @@ BitVector::~BitVector() {
  */
 bool BitVector::IsBitSet(uint32_t num) const {
   // If the index is over the size:
-  if (num >= storage_size_ * kWordBits) {
+  if (num >= storage_size_ * sizeof(*storage_) * 8) {
     // Whether it is expandable or not, this bit does not exist: thus it is not set.
     return false;
   }
@@ -71,7 +71,7 @@ bool BitVector::IsBitSet(uint32_t num) const {
 
 // Mark all bits bit as "clear".
 void BitVector::ClearAllBits() {
-  memset(storage_, 0, storage_size_ * kWordBytes);
+  memset(storage_, 0, storage_size_ * sizeof(*storage_));
 }
 
 // Mark the specified bit as "set".
@@ -80,20 +80,21 @@ void BitVector::ClearAllBits() {
  * not using it badly or change resize mechanism.
  */
 void BitVector::SetBit(uint32_t num) {
-  if (num >= storage_size_ * kWordBits) {
+  if (num >= storage_size_ * sizeof(*storage_) * 8) {
     DCHECK(expandable_) << "Attempted to expand a non-expandable bitmap to position " << num;
 
     /* Round up to word boundaries for "num+1" bits */
     uint32_t new_size = BitsToWords(num + 1);
     DCHECK_GT(new_size, storage_size_);
     uint32_t *new_storage =
-        static_cast<uint32_t*>(allocator_->Alloc(new_size * kWordBytes));
-    memcpy(new_storage, storage_, storage_size_ * kWordBytes);
+        static_cast<uint32_t*>(allocator_->Alloc(new_size * sizeof(*storage_)));
+    memcpy(new_storage, storage_, storage_size_ * sizeof(*storage_));
     // Zero out the new storage words.
-    memset(&new_storage[storage_size_], 0, (new_size - storage_size_) * kWordBytes);
+    memset(&new_storage[storage_size_], 0, (new_size - storage_size_) * sizeof(*storage_));
     // TOTO: collect stats on space wasted because of resize.
     storage_ = new_storage;
     storage_size_ = new_size;
+    number_of_bits_ = num;
   }
 
   storage_[num >> 5] |= check_masks[num & 0x1f];
@@ -102,7 +103,7 @@ void BitVector::SetBit(uint32_t num) {
 // Mark the specified bit as "unset".
 void BitVector::ClearBit(uint32_t num) {
   // If the index is over the size, we don't have to do anything, it is cleared.
-  if (num < storage_size_ * kWordBits) {
+  if (num < storage_size_ * sizeof(*storage_) * 8) {
     // Otherwise, go ahead and clear it.
     storage_[num >> 5] &= ~check_masks[num & 0x1f];
   }
@@ -131,7 +132,7 @@ bool BitVector::SameBitsSet(const BitVector *src) {
   //   - Therefore, min_size goes up to at least that, we are thus comparing at least what we need to, but not less.
   //      ie. we are comparing all storage cells that could have difference, if both vectors have cells above our_highest_index,
   //          they are automatically at 0.
-  return (memcmp(storage_, src->GetRawStorage(), our_highest_index * kWordBytes) == 0);
+  return (memcmp(storage_, src->GetRawStorage(), our_highest_index * sizeof(*storage_)) == 0);
 }
 
 // Intersect with another bit vector.
@@ -179,7 +180,7 @@ bool BitVector::Union(const BitVector* src) {
     SetBit(highest_bit);
 
     // Paranoid: storage size should be big enough to hold this bit now.
-    DCHECK_LT(static_cast<uint32_t> (highest_bit), storage_size_ * kWordBits);
+    DCHECK_LT(static_cast<uint32_t> (highest_bit), storage_size_ * sizeof(*(storage_)) * 8);
   }
 
   for (uint32_t idx = 0; idx < src_size; idx++) {
@@ -214,7 +215,7 @@ bool BitVector::UnionIfNotIn(const BitVector* union_with, const BitVector* not_i
     SetBit(highest_bit);
 
     // Paranoid: storage size should be big enough to hold this bit now.
-    DCHECK_LT(static_cast<uint32_t> (highest_bit), storage_size_ * kWordBits);
+    DCHECK_LT(static_cast<uint32_t> (highest_bit), storage_size_ * sizeof(*(storage_)) * 8);
   }
 
   uint32_t not_in_size = not_in->GetStorageSize();
@@ -267,8 +268,12 @@ uint32_t BitVector::NumSetBits() const {
 
 // Count the number of bits that are set in range [0, end).
 uint32_t BitVector::NumSetBits(uint32_t end) const {
-  DCHECK_LE(end, storage_size_ * kWordBits);
+  DCHECK_LE(end, storage_size_ * sizeof(*storage_) * 8);
   return NumSetBits(storage_, end);
+}
+
+BitVector::Iterator* BitVector::GetIterator() const {
+  return new (allocator_) Iterator(this);
 }
 
 /*
@@ -324,7 +329,7 @@ int BitVector::GetHighestBitSet() const {
       }
 
       // Return cnt + how many storage units still remain * the number of bits per unit.
-      int res = cnt + (idx * kWordBits);
+      int res = cnt + (idx * (sizeof(*storage_) * 8));
       return res;
     }
   }
@@ -364,14 +369,14 @@ void BitVector::Copy(const BitVector *src) {
   SetBit(highest_bit);
 
   // Now set until highest bit's storage.
-  uint32_t size = 1 + (highest_bit / kWordBits);
-  memcpy(storage_, src->GetRawStorage(), kWordBytes * size);
+  uint32_t size = 1 + (highest_bit / (sizeof(*storage_) * 8));
+  memcpy(storage_, src->GetRawStorage(), sizeof(*storage_) * size);
 
   // Set upper bits to 0.
   uint32_t left = storage_size_ - size;
 
   if (left > 0) {
-    memset(storage_ + size, 0, kWordBytes * left);
+    memset(storage_ + size, 0, sizeof(*storage_) * left);
   }
 }
 
@@ -396,12 +401,14 @@ uint32_t BitVector::NumSetBits(const uint32_t* storage, uint32_t end) {
 
 void BitVector::Dump(std::ostream& os, const char *prefix) const {
   std::ostringstream buffer;
-  DumpHelper(prefix, buffer);
+  DumpHelper(buffer, prefix);
   os << buffer.str() << std::endl;
 }
 
+void BitVector::DumpDot(FILE* file, const char* prefix, bool last_entry) const {
+  std::ostringstream buffer;
+  Dump(buffer, prefix);
 
-void BitVector::DumpDotHelper(bool last_entry, FILE* file, std::ostringstream& buffer) const {
   // Now print it to the file.
   fprintf(file, "    {%s}", buffer.str().c_str());
 
@@ -414,39 +421,14 @@ void BitVector::DumpDotHelper(bool last_entry, FILE* file, std::ostringstream& b
   fprintf(file, "\\\n");
 }
 
-void BitVector::DumpDot(FILE* file, const char* prefix, bool last_entry) const {
-  std::ostringstream buffer;
-  DumpHelper(prefix, buffer);
-  DumpDotHelper(last_entry, file, buffer);
-}
-
-void BitVector::DumpIndicesDot(FILE* file, const char* prefix, bool last_entry) const {
-  std::ostringstream buffer;
-  DumpIndicesHelper(prefix, buffer);
-  DumpDotHelper(last_entry, file, buffer);
-}
-
-void BitVector::DumpIndicesHelper(const char* prefix, std::ostringstream& buffer) const {
-  // Initialize it.
-  if (prefix != nullptr) {
-    buffer << prefix;
-  }
-
-  for (size_t i = 0; i < storage_size_ * kWordBits; i++) {
-    if (IsBitSet(i)) {
-      buffer << i << " ";
-    }
-  }
-}
-
-void BitVector::DumpHelper(const char* prefix, std::ostringstream& buffer) const {
+void BitVector::DumpHelper(std::ostringstream& buffer, const char* prefix) const {
   // Initialize it.
   if (prefix != nullptr) {
     buffer << prefix;
   }
 
   buffer << '(';
-  for (size_t i = 0; i < storage_size_ * kWordBits; i++) {
+  for (size_t i = 0; i < number_of_bits_; i++) {
     buffer << IsBitSet(i);
   }
   buffer << ')';

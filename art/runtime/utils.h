@@ -19,19 +19,13 @@
 
 #include <pthread.h>
 
-#include <limits>
-#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/stringprintf.h"
 #include "globals.h"
-#include "instruction_set.h"
-#include "base/mutex.h"
-
-#ifdef HAVE_ANDROID_OS
-#include "cutils/properties.h"
-#endif
+#include "primitive.h"
 
 namespace art {
 
@@ -52,34 +46,6 @@ enum TimeUnit {
   kTimeUnitSecond,
 };
 
-template <typename T>
-bool ParseUint(const char *in, T* out) {
-  char* end;
-  unsigned long long int result = strtoull(in, &end, 0);  // NOLINT(runtime/int)
-  if (in == end || *end != '\0') {
-    return false;
-  }
-  if (std::numeric_limits<T>::max() < result) {
-    return false;
-  }
-  *out = static_cast<T>(result);
-  return true;
-}
-
-template <typename T>
-bool ParseInt(const char* in, T* out) {
-  char* end;
-  long long int result = strtoll(in, &end, 0);  // NOLINT(runtime/int)
-  if (in == end || *end != '\0') {
-    return false;
-  }
-  if (result < std::numeric_limits<T>::min() || std::numeric_limits<T>::max() < result) {
-    return false;
-  }
-  *out = static_cast<T>(result);
-  return true;
-}
-
 template<typename T>
 static constexpr bool IsPowerOfTwo(T x) {
   return (x & (x - 1)) == 0;
@@ -87,7 +53,6 @@ static constexpr bool IsPowerOfTwo(T x) {
 
 template<int n, typename T>
 static inline bool IsAligned(T x) {
-  COMPILE_ASSERT((n & (n - 1)) == 0, n_not_power_of_two);
   return (x & (n - 1)) == 0;
 }
 
@@ -168,17 +133,12 @@ struct TypeIdentity {
 
 // For rounding integers.
 template<typename T>
-static constexpr T RoundDown(T x, typename TypeIdentity<T>::type n) WARN_UNUSED;
-
-template<typename T>
 static constexpr T RoundDown(T x, typename TypeIdentity<T>::type n) {
   return
-      DCHECK_CONSTEXPR(IsPowerOfTwo(n), , T(0))
-      (x & -n);
+      // DCHECK(IsPowerOfTwo(n)) in a form acceptable in a constexpr function:
+      (kIsDebugBuild && !IsPowerOfTwo(n)) ? (LOG(FATAL) << n << " isn't a power of 2", T(0))
+      : (x & -n);
 }
-
-template<typename T>
-static constexpr T RoundUp(T x, typename TypeIdentity<T>::type n) WARN_UNUSED;
 
 template<typename T>
 static constexpr T RoundUp(T x, typename TypeIdentity<T>::type n) {
@@ -187,15 +147,9 @@ static constexpr T RoundUp(T x, typename TypeIdentity<T>::type n) {
 
 // For aligning pointers.
 template<typename T>
-static inline T* AlignDown(T* x, uintptr_t n) WARN_UNUSED;
-
-template<typename T>
 static inline T* AlignDown(T* x, uintptr_t n) {
   return reinterpret_cast<T*>(RoundDown(reinterpret_cast<uintptr_t>(x), n));
 }
-
-template<typename T>
-static inline T* AlignUp(T* x, uintptr_t n) WARN_UNUSED;
 
 template<typename T>
 static inline T* AlignUp(T* x, uintptr_t n) {
@@ -245,24 +199,21 @@ static inline bool NeedsEscaping(uint16_t ch) {
   return (ch < ' ' || ch > '~');
 }
 
-// Interpret the bit pattern of input (type U) as type V. Requires the size
-// of V >= size of U (compile-time checked).
-template<typename U, typename V>
-static inline V bit_cast(U in) {
-  COMPILE_ASSERT(sizeof(U) <= sizeof(V), size_of_u_not_le_size_of_v);
-  union {
-    U u;
-    V v;
-  } tmp;
-  tmp.u = in;
-  return tmp.v;
+static inline std::string PrintableChar(uint16_t ch) {
+  std::string result;
+  result += '\'';
+  if (NeedsEscaping(ch)) {
+    StringAppendF(&result, "\\u%04x", ch);
+  } else {
+    result += ch;
+  }
+  result += '\'';
+  return result;
 }
-
-std::string PrintableChar(uint16_t ch);
 
 // Returns an ASCII string corresponding to the given UTF-8 string.
 // Java escapes are used for non-ASCII characters.
-std::string PrintableString(const char* utf8);
+std::string PrintableString(const std::string& utf8);
 
 // Tests whether 's' starts with 'prefix'.
 bool StartsWith(const std::string& s, const char* prefix);
@@ -277,7 +228,8 @@ bool EndsWith(const std::string& s, const char* suffix);
 // "java.lang.String[]", and so forth.
 std::string PrettyDescriptor(mirror::String* descriptor)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-std::string PrettyDescriptor(const char* descriptor);
+std::string PrettyDescriptor(const std::string& descriptor);
+std::string PrettyDescriptor(Primitive::Type type);
 std::string PrettyDescriptor(mirror::Class* klass)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
@@ -319,11 +271,10 @@ std::string PrettySize(int64_t size_in_bytes);
 // Returns a human-readable time string which prints every nanosecond while trying to limit the
 // number of trailing zeros. Prints using the largest human readable unit up to a second.
 // e.g. "1ms", "1.000000001s", "1.001us"
-std::string PrettyDuration(uint64_t nano_duration, size_t max_fraction_digits = 3);
+std::string PrettyDuration(uint64_t nano_duration);
 
 // Format a nanosecond time to specified units.
-std::string FormatDuration(uint64_t nano_duration, TimeUnit time_unit,
-                           size_t max_fraction_digits);
+std::string FormatDuration(uint64_t nano_duration, TimeUnit time_unit);
 
 // Get the appropriate unit for a nanosecond duration.
 TimeUnit GetAppropriateTimeUnit(uint64_t nano_duration);
@@ -338,12 +289,10 @@ std::string MangleForJni(const std::string& s);
 // Turn "java.lang.String" into "Ljava/lang/String;".
 std::string DotToDescriptor(const char* class_name);
 
-// Turn "Ljava/lang/String;" into "java.lang.String" using the conventions of
-// java.lang.Class.getName().
+// Turn "Ljava/lang/String;" into "java.lang.String".
 std::string DescriptorToDot(const char* descriptor);
 
-// Turn "Ljava/lang/String;" into "java/lang/String" using the opposite conventions of
-// java.lang.Class.getName().
+// Turn "Ljava/lang/String;" into "java/lang/String".
 std::string DescriptorToName(const char* descriptor);
 
 // Tests for whether 's' is a valid class name in the three common forms:
@@ -417,7 +366,7 @@ pid_t GetTid();
 std::string GetThreadName(pid_t tid);
 
 // Returns details of the given thread's stack.
-void GetThreadStack(pthread_t thread, void** stack_base, size_t* stack_size, size_t* guard_size);
+void GetThreadStack(pthread_t thread, void** stack_base, size_t* stack_size);
 
 // Reads data from "/proc/self/task/${tid}/stat".
 void GetTaskStats(pid_t tid, char* state, int* utime, int* stime, int* task_cpu);
@@ -442,34 +391,15 @@ const char* GetAndroidRoot();
 
 // Find $ANDROID_DATA, /data, or abort.
 const char* GetAndroidData();
-// Find $ANDROID_DATA, /data, or return nullptr.
-const char* GetAndroidDataSafe(std::string* error_msg);
 
 // Returns the dalvik-cache location, or dies trying. subdir will be
 // appended to the cache location.
 std::string GetDalvikCacheOrDie(const char* subdir, bool create_if_absent = true);
-// Return true if we found the dalvik cache and stored it in the dalvik_cache argument.
-// have_android_data will be set to true if we have an ANDROID_DATA that exists,
-// dalvik_cache_exists will be true if there is a dalvik-cache directory that is present.
-void GetDalvikCache(const char* subdir, bool create_if_absent, std::string* dalvik_cache,
-                    bool* have_android_data, bool* dalvik_cache_exists);
 
-// Returns the absolute dalvik-cache path for a DexFile or OatFile. The path returned will be
-// rooted at cache_location.
-bool GetDalvikCacheFilename(const char* file_location, const char* cache_location,
-                            std::string* filename, std::string* error_msg);
 // Returns the absolute dalvik-cache path for a DexFile or OatFile, or
 // dies trying. The path returned will be rooted at cache_location.
 std::string GetDalvikCacheFilenameOrDie(const char* file_location,
                                         const char* cache_location);
-
-// Returns the system location for an image
-std::string GetSystemImageFilename(const char* location, InstructionSet isa);
-
-// Returns an .odex file name next adjacent to the dex location.
-// For example, for "/foo/bar/baz.jar", return "/foo/bar/<isa>/baz.odex".
-// Note: does not support multidex location strings.
-std::string DexFilenameToOdexFilename(const std::string& location, InstructionSet isa);
 
 // Check whether the given magic matches a known file type.
 bool IsZipMagic(uint32_t magic);
@@ -499,18 +429,6 @@ class VoidFunctor {
     UNUSED(c);
   }
 };
-
-// Deleter using free() for use with std::unique_ptr<>. See also UniqueCPtr<> below.
-struct FreeDelete {
-  // NOTE: Deleting a const object is valid but free() takes a non-const pointer.
-  void operator()(const void* ptr) const {
-    free(const_cast<void*>(ptr));
-  }
-};
-
-// Alias for std::unique_ptr<> that uses the C function free() to delete objects.
-template <typename T>
-using UniqueCPtr = std::unique_ptr<T, FreeDelete>;
 
 }  // namespace art
 

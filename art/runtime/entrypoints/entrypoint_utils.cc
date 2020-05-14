@@ -16,16 +16,16 @@
 
 #include "entrypoints/entrypoint_utils.h"
 
-#include "base/mutex.h"
 #include "class_linker-inl.h"
 #include "dex_file-inl.h"
 #include "gc/accounting/card_table-inl.h"
-#include "method_helper-inl.h"
 #include "mirror/art_field-inl.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
+#include "object_utils.h"
 #include "mirror/object_array-inl.h"
+#include "mirror/proxy.h"
 #include "reflection.h"
 #include "scoped_thread_state_change.h"
 #include "ScopedLocalRef.h"
@@ -33,17 +33,15 @@
 
 namespace art {
 
-static inline mirror::Class* CheckFilledNewArrayAlloc(uint32_t type_idx,
-                                                      mirror::ArtMethod* referrer,
-                                                      int32_t component_count,
-                                                      Thread* self,
+static inline mirror::Class* CheckFilledNewArrayAlloc(uint32_t type_idx, mirror::ArtMethod* referrer,
+                                                      int32_t component_count, Thread* self,
                                                       bool access_check)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   if (UNLIKELY(component_count < 0)) {
     ThrowNegativeArraySizeException(component_count);
     return nullptr;  // Failure
   }
-  mirror::Class* klass = referrer->GetDexCacheResolvedType<false>(type_idx);
+  mirror::Class* klass = referrer->GetDexCacheResolvedTypes()->GetWithoutChecks(type_idx);
   if (UNLIKELY(klass == NULL)) {  // Not in dex cache so try to resolve
     klass = Runtime::Current()->GetClassLinker()->ResolveType(type_idx, referrer);
     if (klass == NULL) {  // Error
@@ -58,10 +56,9 @@ static inline mirror::Class* CheckFilledNewArrayAlloc(uint32_t type_idx,
     } else {
       ThrowLocation throw_location = self->GetCurrentLocationForThrow();
       DCHECK(throw_location.GetMethod() == referrer);
-      self->ThrowNewExceptionF(
-          throw_location, "Ljava/lang/InternalError;",
-          "Found type %s; filled-new-array not implemented for anything but 'int'",
-          PrettyDescriptor(klass).c_str());
+      self->ThrowNewExceptionF(throw_location, "Ljava/lang/InternalError;",
+                               "Found type %s; filled-new-array not implemented for anything but 'int'",
+                               PrettyDescriptor(klass).c_str());
     }
     return nullptr;  // Failure
   }
@@ -95,10 +92,8 @@ mirror::Array* CheckAndAllocArrayFromCode(uint32_t type_idx, mirror::ArtMethod* 
 }
 
 // Helper function to allocate array for FILLED_NEW_ARRAY.
-mirror::Array* CheckAndAllocArrayFromCodeInstrumented(uint32_t type_idx,
-                                                      mirror::ArtMethod* referrer,
-                                                      int32_t component_count,
-                                                      Thread* self,
+mirror::Array* CheckAndAllocArrayFromCodeInstrumented(uint32_t type_idx, mirror::ArtMethod* referrer,
+                                                      int32_t component_count, Thread* self,
                                                       bool access_check,
                                                       gc::AllocatorType /* allocator_type */) {
   mirror::Class* klass = CheckFilledNewArrayAlloc(type_idx, referrer, component_count, self,
@@ -115,123 +110,36 @@ mirror::Array* CheckAndAllocArrayFromCodeInstrumented(uint32_t type_idx,
 
 void ThrowStackOverflowError(Thread* self) {
   if (self->IsHandlingStackOverflow()) {
-    LOG(ERROR) << "Recursive stack overflow.";
-    // We don't fail here because SetStackEndForStackOverflow will print better diagnostics.
+      LOG(ERROR) << "Recursive stack overflow.";
+      // We don't fail here because SetStackEndForStackOverflow will print better diagnostics.
+  }
+
+  if (Runtime::Current()->GetInstrumentation()->AreExitStubsInstalled()) {
+    // Remove extra entry pushed onto second stack during method tracing.
+    Runtime::Current()->GetInstrumentation()->PopMethodForUnwind(self, false);
   }
 
   self->SetStackEndForStackOverflow();  // Allow space on the stack for constructor to execute.
   JNIEnvExt* env = self->GetJniEnv();
   std::string msg("stack size ");
   msg += PrettySize(self->GetStackSize());
-
-  // Avoid running Java code for exception initialization.
-  // TODO: Checks to make this a bit less brittle.
-
-  std::string error_msg;
-
-  // Allocate an uninitialized object.
-  ScopedLocalRef<jobject> exc(env,
-                              env->AllocObject(WellKnownClasses::java_lang_StackOverflowError));
-  if (exc.get() != nullptr) {
-    // "Initialize".
-    // StackOverflowError -> VirtualMachineError -> Error -> Throwable -> Object.
-    // Only Throwable has "custom" fields:
-    //   String detailMessage.
-    //   Throwable cause (= this).
-    //   List<Throwable> suppressedExceptions (= Collections.emptyList()).
-    //   Object stackState;
-    //   StackTraceElement[] stackTrace;
-    // Only Throwable has a non-empty constructor:
-    //   this.stackTrace = EmptyArray.STACK_TRACE_ELEMENT;
-    //   fillInStackTrace();
-
-    // detailMessage.
-    // TODO: Use String::FromModifiedUTF...?
-    ScopedLocalRef<jstring> s(env, env->NewStringUTF(msg.c_str()));
-    if (s.get() != nullptr) {
-      env->SetObjectField(exc.get(), WellKnownClasses::java_lang_Throwable_detailMessage, s.get());
-
-      // cause.
-      env->SetObjectField(exc.get(), WellKnownClasses::java_lang_Throwable_cause, exc.get());
-
-      // suppressedExceptions.
-      ScopedLocalRef<jobject> emptylist(env, env->GetStaticObjectField(
-          WellKnownClasses::java_util_Collections,
-          WellKnownClasses::java_util_Collections_EMPTY_LIST));
-      CHECK(emptylist.get() != nullptr);
-      env->SetObjectField(exc.get(),
-                          WellKnownClasses::java_lang_Throwable_suppressedExceptions,
-                          emptylist.get());
-
-      // stackState is set as result of fillInStackTrace. fillInStackTrace calls
-      // nativeFillInStackTrace.
-      ScopedLocalRef<jobject> stack_state_val(env, nullptr);
-      {
-        ScopedObjectAccessUnchecked soa(env);
-        stack_state_val.reset(soa.Self()->CreateInternalStackTrace<false>(soa));
-      }
-      if (stack_state_val.get() != nullptr) {
-        env->SetObjectField(exc.get(),
-                            WellKnownClasses::java_lang_Throwable_stackState,
-                            stack_state_val.get());
-
-        // stackTrace.
-        ScopedLocalRef<jobject> stack_trace_elem(env, env->GetStaticObjectField(
-            WellKnownClasses::libcore_util_EmptyArray,
-            WellKnownClasses::libcore_util_EmptyArray_STACK_TRACE_ELEMENT));
-        env->SetObjectField(exc.get(),
-                            WellKnownClasses::java_lang_Throwable_stackTrace,
-                            stack_trace_elem.get());
-
-        // Throw the exception.
-        ThrowLocation throw_location = self->GetCurrentLocationForThrow();
-        self->SetException(throw_location,
-            reinterpret_cast<mirror::Throwable*>(self->DecodeJObject(exc.get())));
-      } else {
-        error_msg = "Could not create stack trace.";
-      }
-    } else {
-      // Could not allocate a string object.
-      error_msg = "Couldn't throw new StackOverflowError because JNI NewStringUTF failed.";
-    }
-  } else {
-    error_msg = "Could not allocate StackOverflowError object.";
-  }
-
-  if (!error_msg.empty()) {
-    LOG(ERROR) << error_msg;
+  // Use low-level JNI routine and pre-baked error class to avoid class linking operations that
+  // would consume more stack.
+  int rc = ::art::ThrowNewException(env, WellKnownClasses::java_lang_StackOverflowError,
+                                    msg.c_str(), NULL);
+  if (rc != JNI_OK) {
+    // TODO: ThrowNewException failed presumably because of an OOME, we continue to throw the OOME
+    //       or die in the CHECK below. We may want to throw a pre-baked StackOverflowError
+    //       instead.
+    LOG(ERROR) << "Couldn't throw new StackOverflowError because JNI ThrowNew failed.";
     CHECK(self->IsExceptionPending());
   }
 
   bool explicit_overflow_check = Runtime::Current()->ExplicitStackOverflowChecks();
-  self->ResetDefaultStackEnd();  // Return to default stack size.
-
-  // And restore protection if implicit checks are on.
-  if (!explicit_overflow_check) {
-    self->ProtectStack();
-  }
+  self->ResetDefaultStackEnd(!explicit_overflow_check);  // Return to default stack size.
 }
 
-void CheckReferenceResult(mirror::Object* o, Thread* self) {
-  if (o == NULL) {
-    return;
-  }
-  mirror::ArtMethod* m = self->GetCurrentMethod(NULL);
-  if (o == kInvalidIndirectRefObject) {
-    JniAbortF(NULL, "invalid reference returned from %s", PrettyMethod(m).c_str());
-  }
-  // Make sure that the result is an instance of the type this method was expected to return.
-  StackHandleScope<1> hs(self);
-  Handle<mirror::ArtMethod> h_m(hs.NewHandle(m));
-  mirror::Class* return_type = MethodHelper(h_m).GetReturnType();
-
-  if (!o->InstanceOf(return_type)) {
-    JniAbortF(NULL, "attempt to return an instance of %s from %s", PrettyTypeOf(o).c_str(),
-              PrettyMethod(h_m.Get()).c_str());
-  }
-}
-
-JValue InvokeProxyInvocationHandler(ScopedObjectAccessAlreadyRunnable& soa, const char* shorty,
+JValue InvokeProxyInvocationHandler(ScopedObjectAccessUnchecked& soa, const char* shorty,
                                     jobject rcvr_jobj, jobject interface_method_jobj,
                                     std::vector<jvalue>& args) {
   DCHECK(soa.Env()->IsInstanceOf(rcvr_jobj, WellKnownClasses::java_lang_reflect_Proxy));
@@ -240,9 +148,7 @@ JValue InvokeProxyInvocationHandler(ScopedObjectAccessAlreadyRunnable& soa, cons
   soa.Self()->AssertThreadSuspensionIsAllowable();
   jobjectArray args_jobj = NULL;
   const JValue zero;
-  int32_t target_sdk_version = Runtime::Current()->GetTargetSdkVersion();
-  // Do not create empty arrays unless needed to maintain Dalvik bug compatibility.
-  if (args.size() > 0 || (target_sdk_version > 0 && target_sdk_version <= 21)) {
+  if (args.size() > 0) {
     args_jobj = soa.Env()->NewObjectArray(args.size(), WellKnownClasses::java_lang_Object, NULL);
     if (args_jobj == NULL) {
       CHECK(soa.Self()->IsExceptionPending());
@@ -281,21 +187,18 @@ JValue InvokeProxyInvocationHandler(ScopedObjectAccessAlreadyRunnable& soa, cons
       // Do nothing.
       return zero;
     } else {
-      StackHandleScope<1> hs(soa.Self());
-      MethodHelper mh_interface_method(
-          hs.NewHandle(soa.Decode<mirror::ArtMethod*>(interface_method_jobj)));
-      // This can cause thread suspension.
-      mirror::Class* result_type = mh_interface_method.GetReturnType();
       mirror::Object* result_ref = soa.Decode<mirror::Object*>(result);
       mirror::Object* rcvr = soa.Decode<mirror::Object*>(rcvr_jobj);
+      mirror::ArtMethod* interface_method =
+          soa.Decode<mirror::ArtMethod*>(interface_method_jobj);
+      mirror::Class* result_type = MethodHelper(interface_method).GetReturnType();
       mirror::ArtMethod* proxy_method;
-      if (mh_interface_method.GetMethod()->GetDeclaringClass()->IsInterface()) {
-        proxy_method = rcvr->GetClass()->FindVirtualMethodForInterface(
-            mh_interface_method.GetMethod());
+      if (interface_method->GetDeclaringClass()->IsInterface()) {
+        proxy_method = rcvr->GetClass()->FindVirtualMethodForInterface(interface_method);
       } else {
         // Proxy dispatch to a method defined in Object.
-        DCHECK(mh_interface_method.GetMethod()->GetDeclaringClass()->IsObjectClass());
-        proxy_method = mh_interface_method.GetMethod();
+        DCHECK(interface_method->GetDeclaringClass()->IsObjectClass());
+        proxy_method = interface_method;
       }
       ThrowLocation throw_location(rcvr, proxy_method, -1);
       JValue result_unboxed;
@@ -311,7 +214,8 @@ JValue InvokeProxyInvocationHandler(ScopedObjectAccessAlreadyRunnable& soa, cons
     mirror::Throwable* exception = soa.Self()->GetException(NULL);
     if (exception->IsCheckedException()) {
       mirror::Object* rcvr = soa.Decode<mirror::Object*>(rcvr_jobj);
-      mirror::Class* proxy_class = rcvr->GetClass();
+      mirror::SynthesizedProxyClass* proxy_class =
+          down_cast<mirror::SynthesizedProxyClass*>(rcvr->GetClass());
       mirror::ArtMethod* interface_method =
           soa.Decode<mirror::ArtMethod*>(interface_method_jobj);
       mirror::ArtMethod* proxy_method =
@@ -325,8 +229,7 @@ JValue InvokeProxyInvocationHandler(ScopedObjectAccessAlreadyRunnable& soa, cons
         }
       }
       CHECK_NE(throws_index, -1);
-      mirror::ObjectArray<mirror::Class>* declared_exceptions =
-          proxy_class->GetThrows()->Get(throws_index);
+      mirror::ObjectArray<mirror::Class>* declared_exceptions = proxy_class->GetThrows()->Get(throws_index);
       mirror::Class* exception_class = exception->GetClass();
       bool declares_exception = false;
       for (int i = 0; i < declared_exceptions->GetLength() && !declares_exception; i++) {

@@ -27,11 +27,6 @@
 namespace art {
 namespace mirror {
 
-inline uint32_t Array::ClassSize() {
-  uint32_t vtable_entries = Object::kVTableLength;
-  return Class::ComputeClassSize(true, vtable_entries, 0, 0, 0);
-}
-
 template<VerifyObjectFlags kVerifyFlags, ReadBarrierOption kReadBarrierOption>
 inline size_t Array::SizeOf() {
   // This is safe from overflow because the array was already allocated, so we know it's sane.
@@ -166,14 +161,15 @@ inline Array* Array::Alloc(Thread* self, Class* array_class, int32_t component_c
 
 template<class T>
 inline void PrimitiveArray<T>::VisitRoots(RootCallback* callback, void* arg) {
-  if (!array_class_.IsNull()) {
-    array_class_.VisitRoot(callback, arg, 0, kRootStickyClass);
+  if (array_class_ != nullptr) {
+    callback(reinterpret_cast<mirror::Object**>(&array_class_), arg, 0, kRootStickyClass);
   }
 }
 
 template<typename T>
 inline PrimitiveArray<T>* PrimitiveArray<T>::Alloc(Thread* self, size_t length) {
-  Array* raw_array = Array::Alloc<true>(self, GetArrayClass(), length, sizeof(T),
+  DCHECK(array_class_ != NULL);
+  Array* raw_array = Array::Alloc<true>(self, array_class_, length, sizeof(T),
                                         Runtime::Current()->GetHeap()->GetCurrentAllocator());
   return down_cast<PrimitiveArray<T>*>(raw_array);
 }

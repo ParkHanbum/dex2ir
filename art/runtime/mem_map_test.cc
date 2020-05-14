@@ -16,8 +16,7 @@
 
 #include "mem_map.h"
 
-#include <memory>
-
+#include "UniquePtr.h"
 #include "gtest/gtest.h"
 
 namespace art {
@@ -84,44 +83,11 @@ class MemMapTest : public testing::Test {
     }
     delete m1;
   }
-
-#if defined(__LP64__) && !defined(__x86_64__)
-  static uintptr_t GetLinearScanPos() {
-    return MemMap::next_mem_pos_;
-  }
-#endif
 };
-
-#if defined(__LP64__) && !defined(__x86_64__)
-
-#ifdef __BIONIC__
-extern uintptr_t CreateStartPos(uint64_t input);
-#endif
-
-TEST_F(MemMapTest, Start) {
-  uintptr_t start = GetLinearScanPos();
-  EXPECT_LE(64 * KB, start);
-  EXPECT_LT(start, static_cast<uintptr_t>(ART_BASE_ADDRESS));
-
-#ifdef __BIONIC__
-  // Test a couple of values. Make sure they are different.
-  uintptr_t last = 0;
-  for (size_t i = 0; i < 100; ++i) {
-    uintptr_t random_start = CreateStartPos(i * kPageSize);
-    EXPECT_NE(last, random_start);
-    last = random_start;
-  }
-
-  // Even on max, should be below ART_BASE_ADDRESS.
-  EXPECT_LT(CreateStartPos(~0), static_cast<uintptr_t>(ART_BASE_ADDRESS));
-#endif
-  // End of test.
-}
-#endif
 
 TEST_F(MemMapTest, MapAnonymousEmpty) {
   std::string error_msg;
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymousEmpty",
+  UniquePtr<MemMap> map(MemMap::MapAnonymous("MapAnonymousEmpty",
                                              nullptr,
                                              0,
                                              PROT_READ,
@@ -142,7 +108,7 @@ TEST_F(MemMapTest, MapAnonymousEmpty) {
 #ifdef __LP64__
 TEST_F(MemMapTest, MapAnonymousEmpty32bit) {
   std::string error_msg;
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymousEmpty",
+  UniquePtr<MemMap> map(MemMap::MapAnonymous("MapAnonymousEmpty",
                                              nullptr,
                                              kPageSize,
                                              PROT_READ | PROT_WRITE,
@@ -157,7 +123,7 @@ TEST_F(MemMapTest, MapAnonymousEmpty32bit) {
 TEST_F(MemMapTest, MapAnonymousExactAddr) {
   std::string error_msg;
   // Map at an address that should work, which should succeed.
-  std::unique_ptr<MemMap> map0(MemMap::MapAnonymous("MapAnonymous0",
+  UniquePtr<MemMap> map0(MemMap::MapAnonymous("MapAnonymous0",
                                               reinterpret_cast<byte*>(ART_BASE_ADDRESS),
                                               kPageSize,
                                               PROT_READ | PROT_WRITE,
@@ -167,7 +133,7 @@ TEST_F(MemMapTest, MapAnonymousExactAddr) {
   ASSERT_TRUE(error_msg.empty());
   ASSERT_TRUE(map0->BaseBegin() == reinterpret_cast<void*>(ART_BASE_ADDRESS));
   // Map at an unspecified address, which should succeed.
-  std::unique_ptr<MemMap> map1(MemMap::MapAnonymous("MapAnonymous1",
+  UniquePtr<MemMap> map1(MemMap::MapAnonymous("MapAnonymous1",
                                               nullptr,
                                               kPageSize,
                                               PROT_READ | PROT_WRITE,
@@ -177,7 +143,7 @@ TEST_F(MemMapTest, MapAnonymousExactAddr) {
   ASSERT_TRUE(error_msg.empty());
   ASSERT_TRUE(map1->BaseBegin() != nullptr);
   // Attempt to map at the same address, which should fail.
-  std::unique_ptr<MemMap> map2(MemMap::MapAnonymous("MapAnonymous2",
+  UniquePtr<MemMap> map2(MemMap::MapAnonymous("MapAnonymous2",
                                               reinterpret_cast<byte*>(map1->BaseBegin()),
                                               kPageSize,
                                               PROT_READ | PROT_WRITE,
@@ -198,24 +164,23 @@ TEST_F(MemMapTest, RemapAtEnd32bit) {
 #endif
 
 TEST_F(MemMapTest, MapAnonymousExactAddr32bitHighAddr) {
-  uintptr_t start_addr = ART_BASE_ADDRESS + 0x1000000;
   std::string error_msg;
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymousExactAddr32bitHighAddr",
-                                             reinterpret_cast<byte*>(start_addr),
+  UniquePtr<MemMap> map(MemMap::MapAnonymous("MapAnonymousExactAddr32bitHighAddr",
+                                             reinterpret_cast<byte*>(0x71000000),
                                              0x21000000,
                                              PROT_READ | PROT_WRITE,
                                              true,
                                              &error_msg));
   ASSERT_TRUE(map.get() != nullptr) << error_msg;
   ASSERT_TRUE(error_msg.empty());
-  ASSERT_EQ(reinterpret_cast<uintptr_t>(BaseBegin(map.get())), start_addr);
+  ASSERT_EQ(reinterpret_cast<uintptr_t>(BaseBegin(map.get())), 0x71000000U);
 }
 
 TEST_F(MemMapTest, MapAnonymousOverflow) {
   std::string error_msg;
   uintptr_t ptr = 0;
   ptr -= kPageSize;  // Now it's close to the top.
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymousOverflow",
+  UniquePtr<MemMap> map(MemMap::MapAnonymous("MapAnonymousOverflow",
                                              reinterpret_cast<byte*>(ptr),
                                              2 * kPageSize,  // brings it over the top.
                                              PROT_READ | PROT_WRITE,
@@ -228,7 +193,7 @@ TEST_F(MemMapTest, MapAnonymousOverflow) {
 #ifdef __LP64__
 TEST_F(MemMapTest, MapAnonymousLow4GBExpectedTooHigh) {
   std::string error_msg;
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymousLow4GBExpectedTooHigh",
+  UniquePtr<MemMap> map(MemMap::MapAnonymous("MapAnonymousLow4GBExpectedTooHigh",
                                              reinterpret_cast<byte*>(UINT64_C(0x100000000)),
                                              kPageSize,
                                              PROT_READ | PROT_WRITE,
@@ -240,7 +205,7 @@ TEST_F(MemMapTest, MapAnonymousLow4GBExpectedTooHigh) {
 
 TEST_F(MemMapTest, MapAnonymousLow4GBRangeTooHigh) {
   std::string error_msg;
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymousLow4GBRangeTooHigh",
+  UniquePtr<MemMap> map(MemMap::MapAnonymous("MapAnonymousLow4GBRangeTooHigh",
                                              reinterpret_cast<byte*>(0xF0000000),
                                              0x20000000,
                                              PROT_READ | PROT_WRITE,
@@ -250,66 +215,5 @@ TEST_F(MemMapTest, MapAnonymousLow4GBRangeTooHigh) {
   ASSERT_FALSE(error_msg.empty());
 }
 #endif
-
-TEST_F(MemMapTest, CheckNoGaps) {
-  std::string error_msg;
-  constexpr size_t kNumPages = 3;
-  // Map a 3-page mem map.
-  std::unique_ptr<MemMap> map(MemMap::MapAnonymous("MapAnonymous0",
-                                                   nullptr,
-                                                   kPageSize * kNumPages,
-                                                   PROT_READ | PROT_WRITE,
-                                                   false,
-                                                   &error_msg));
-  ASSERT_TRUE(map.get() != nullptr) << error_msg;
-  ASSERT_TRUE(error_msg.empty());
-  // Record the base address.
-  byte* map_base = reinterpret_cast<byte*>(map->BaseBegin());
-  // Unmap it.
-  map.reset();
-
-  // Map at the same address, but in page-sized separate mem maps,
-  // assuming the space at the address is still available.
-  std::unique_ptr<MemMap> map0(MemMap::MapAnonymous("MapAnonymous0",
-                                                    map_base,
-                                                    kPageSize,
-                                                    PROT_READ | PROT_WRITE,
-                                                    false,
-                                                    &error_msg));
-  ASSERT_TRUE(map0.get() != nullptr) << error_msg;
-  ASSERT_TRUE(error_msg.empty());
-  std::unique_ptr<MemMap> map1(MemMap::MapAnonymous("MapAnonymous1",
-                                                    map_base + kPageSize,
-                                                    kPageSize,
-                                                    PROT_READ | PROT_WRITE,
-                                                    false,
-                                                    &error_msg));
-  ASSERT_TRUE(map1.get() != nullptr) << error_msg;
-  ASSERT_TRUE(error_msg.empty());
-  std::unique_ptr<MemMap> map2(MemMap::MapAnonymous("MapAnonymous2",
-                                                    map_base + kPageSize * 2,
-                                                    kPageSize,
-                                                    PROT_READ | PROT_WRITE,
-                                                    false,
-                                                    &error_msg));
-  ASSERT_TRUE(map2.get() != nullptr) << error_msg;
-  ASSERT_TRUE(error_msg.empty());
-
-  // One-map cases.
-  ASSERT_TRUE(MemMap::CheckNoGaps(map0.get(), map0.get()));
-  ASSERT_TRUE(MemMap::CheckNoGaps(map1.get(), map1.get()));
-  ASSERT_TRUE(MemMap::CheckNoGaps(map2.get(), map2.get()));
-
-  // Two or three-map cases.
-  ASSERT_TRUE(MemMap::CheckNoGaps(map0.get(), map1.get()));
-  ASSERT_TRUE(MemMap::CheckNoGaps(map1.get(), map2.get()));
-  ASSERT_TRUE(MemMap::CheckNoGaps(map0.get(), map2.get()));
-
-  // Unmap the middle one.
-  map1.reset();
-
-  // Should return false now that there's a gap in the middle.
-  ASSERT_FALSE(MemMap::CheckNoGaps(map0.get(), map2.get()));
-}
 
 }  // namespace art

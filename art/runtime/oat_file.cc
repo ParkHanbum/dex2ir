@@ -17,40 +17,35 @@
 #include "oat_file.h"
 
 #include <dlfcn.h>
-#include <sstream>
-#include <string.h>
-#include <unistd.h>
 
 #include "base/bit_vector.h"
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"
 #include "elf_file.h"
-#include "elf_utils.h"
 #include "oat.h"
 #include "mirror/art_method.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class.h"
 #include "mirror/object-inl.h"
 #include "os.h"
-#include "runtime.h"
 #include "utils.h"
 #include "vmap_table.h"
 
 namespace art {
 
-void OatFile::CheckLocation(const std::string& location) {
-  CHECK(!location.empty());
+std::string OatFile::DexFilenameToOdexFilename(const std::string& location) {
+  CHECK_GE(location.size(), 4U) << location;  // must be at least .123
+  size_t dot_index = location.size() - 3 - 1;  // 3=dex or zip or apk
+  CHECK_EQ('.', location[dot_index]) << location;
+  std::string odex_location(location);
+  odex_location.resize(dot_index + 1);
+  CHECK_EQ('.', odex_location[odex_location.size()-1]) << location << " " << odex_location;
+  odex_location += "odex";
+  return odex_location;
 }
 
-OatFile* OatFile::OpenWithElfFile(ElfFile* elf_file,
-                                  const std::string& location,
-                                  std::string* error_msg) {
-  std::unique_ptr<OatFile> oat_file(new OatFile(location, false));
-  oat_file->elf_file_.reset(elf_file);
-  Elf32_Shdr* hdr = elf_file->FindSectionByName(".rodata");
-  oat_file->begin_ = elf_file->Begin() + hdr->sh_offset;
-  oat_file->end_ = elf_file->Begin() + hdr->sh_size + hdr->sh_offset;
-  return oat_file->Setup(error_msg) ? oat_file.release() : nullptr;
+void OatFile::CheckLocation(const std::string& location) {
+  CHECK(!location.empty());
 }
 
 OatFile* OatFile::OpenMemory(std::vector<uint8_t>& oat_contents,
@@ -58,7 +53,7 @@ OatFile* OatFile::OpenMemory(std::vector<uint8_t>& oat_contents,
                              std::string* error_msg) {
   CHECK(!oat_contents.empty()) << location;
   CheckLocation(location);
-  std::unique_ptr<OatFile> oat_file(new OatFile(location, false));
+  UniquePtr<OatFile> oat_file(new OatFile(location));
   oat_file->begin_ = &oat_contents[0];
   oat_file->end_ = &oat_contents[oat_contents.size()];
   return oat_file->Setup(error_msg) ? oat_file.release() : nullptr;
@@ -71,33 +66,28 @@ OatFile* OatFile::Open(const std::string& filename,
                        std::string* error_msg) {
   CHECK(!filename.empty()) << location;
   CheckLocation(filename);
-  std::unique_ptr<OatFile> ret;
-  if (kUsePortableCompiler && executable) {
+  if (kUsePortableCompiler) {
     // If we are using PORTABLE, use dlopen to deal with relocations.
     //
     // We use our own ELF loader for Quick to deal with legacy apps that
     // open a generated dex file by name, remove the file, then open
     // another generated dex file with the same name. http://b/10614658
-    ret.reset(OpenDlopen(filename, location, requested_base, error_msg));
-  } else {
-    // If we aren't trying to execute, we just use our own ElfFile loader for a couple reasons:
-    //
-    // On target, dlopen may fail when compiling due to selinux restrictions on installd.
-    //
-    // On host, dlopen is expected to fail when cross compiling, so fall back to OpenElfFile.
-    // This won't work for portable runtime execution because it doesn't process relocations.
-    std::unique_ptr<File> file(OS::OpenFileForReading(filename.c_str()));
-    if (file.get() == NULL) {
-      *error_msg = StringPrintf("Failed to open oat filename for reading: %s", strerror(errno));
-      return nullptr;
+    if (executable) {
+      return OpenDlopen(filename, location, requested_base, error_msg);
     }
-    ret.reset(OpenElfFile(file.get(), location, requested_base, false, executable, error_msg));
-
-    // It would be nice to unlink here. But we might have opened the file created by the
-    // ScopedLock, which we better not delete to avoid races. TODO: Investigate how to fix the API
-    // to allow removal when we know the ELF must be borked.
   }
-  return ret.release();
+  // If we aren't trying to execute, we just use our own ElfFile loader for a couple reasons:
+  //
+  // On target, dlopen may fail when compiling due to selinux restrictions on installd.
+  //
+  // On host, dlopen is expected to fail when cross compiling, so fall back to OpenElfFile.
+  // This won't work for portable runtime execution because it doesn't process relocations.
+  UniquePtr<File> file(OS::OpenFileForReading(filename.c_str()));
+  if (file.get() == NULL) {
+    *error_msg = StringPrintf("Failed to open oat filename for reading: %s", strerror(errno));
+    return NULL;
+  }
+  return OpenElfFile(file.get(), location, requested_base, false, executable, error_msg);
 }
 
 OatFile* OatFile::OpenWritable(File* file, const std::string& location, std::string* error_msg) {
@@ -105,16 +95,11 @@ OatFile* OatFile::OpenWritable(File* file, const std::string& location, std::str
   return OpenElfFile(file, location, NULL, true, false, error_msg);
 }
 
-OatFile* OatFile::OpenReadable(File* file, const std::string& location, std::string* error_msg) {
-  CheckLocation(location);
-  return OpenElfFile(file, location, NULL, false, false, error_msg);
-}
-
 OatFile* OatFile::OpenDlopen(const std::string& elf_filename,
                              const std::string& location,
                              byte* requested_base,
                              std::string* error_msg) {
-  std::unique_ptr<OatFile> oat_file(new OatFile(location, true));
+  UniquePtr<OatFile> oat_file(new OatFile(location));
   bool success = oat_file->Dlopen(elf_filename, requested_base, error_msg);
   if (!success) {
     return nullptr;
@@ -128,7 +113,7 @@ OatFile* OatFile::OpenElfFile(File* file,
                               bool writable,
                               bool executable,
                               std::string* error_msg) {
-  std::unique_ptr<OatFile> oat_file(new OatFile(location, executable));
+  UniquePtr<OatFile> oat_file(new OatFile(location));
   bool success = oat_file->ElfFileOpen(file, requested_base, writable, executable, error_msg);
   if (!success) {
     CHECK(!error_msg->empty());
@@ -137,15 +122,13 @@ OatFile* OatFile::OpenElfFile(File* file,
   return oat_file.release();
 }
 
-OatFile::OatFile(const std::string& location, bool is_executable)
-    : location_(location), begin_(NULL), end_(NULL), is_executable_(is_executable),
-      dlopen_handle_(NULL),
-      secondary_lookup_lock_("OatFile secondary lookup lock", kOatFileSecondaryLookupLock) {
+OatFile::OatFile(const std::string& location)
+    : location_(location), begin_(NULL), end_(NULL), dlopen_handle_(NULL) {
   CHECK(!location_.empty());
 }
 
 OatFile::~OatFile() {
-  STLDeleteElements(&oat_dex_files_storage_);
+  STLDeleteValues(&oat_dex_files_);
   if (dlopen_handle_ != NULL) {
     dlclose(dlopen_handle_);
   }
@@ -234,18 +217,16 @@ bool OatFile::Setup(std::string* error_msg) {
     return false;
   }
 
-  oat += GetOatHeader().GetKeyValueStoreSize();
+  oat += GetOatHeader().GetImageFileLocationSize();
   if (oat > End()) {
-    *error_msg = StringPrintf("In oat file '%s' found truncated variable-size data: "
+    *error_msg = StringPrintf("In oat file '%s' found truncated image file location: "
                               "%p + %zd + %ud <= %p", GetLocation().c_str(),
-                              Begin(), sizeof(OatHeader), GetOatHeader().GetKeyValueStoreSize(),
+                              Begin(), sizeof(OatHeader), GetOatHeader().GetImageFileLocationSize(),
                               End());
     return false;
   }
 
-  uint32_t dex_file_count = GetOatHeader().GetDexFileCount();
-  oat_dex_files_storage_.reserve(dex_file_count);
-  for (size_t i = 0; i < dex_file_count; i++) {
+  for (size_t i = 0; i < GetOatHeader().GetDexFileCount(); i++) {
     uint32_t dex_file_location_size = *reinterpret_cast<const uint32_t*>(oat);
     if (UNLIKELY(dex_file_location_size == 0U)) {
       *error_msg = StringPrintf("In oat file '%s' found OatDexFile #%zd with empty location name",
@@ -322,24 +303,11 @@ bool OatFile::Setup(std::string* error_msg) {
       return false;
     }
 
-    std::string canonical_location = DexFile::GetDexCanonicalLocation(dex_file_location.c_str());
-
-    // Create the OatDexFile and add it to the owning container.
-    OatDexFile* oat_dex_file = new OatDexFile(this,
-                                              dex_file_location,
-                                              canonical_location,
-                                              dex_file_checksum,
-                                              dex_file_pointer,
-                                              methods_offsets_pointer);
-    oat_dex_files_storage_.push_back(oat_dex_file);
-
-    // Add the location and canonical location (if different) to the oat_dex_files_ table.
-    StringPiece key(oat_dex_file->GetDexFileLocation());
-    oat_dex_files_.Put(key, oat_dex_file);
-    if (canonical_location != dex_file_location) {
-      StringPiece canonical_key(oat_dex_file->GetCanonicalDexFileLocation());
-      oat_dex_files_.Put(canonical_key, oat_dex_file);
-    }
+    oat_dex_files_.Put(dex_file_location, new OatDexFile(this,
+                                                         dex_file_location,
+                                                         dex_file_checksum,
+                                                         dex_file_pointer,
+                                                         methods_offsets_pointer));
   }
   return true;
 }
@@ -361,84 +329,48 @@ const byte* OatFile::End() const {
 const OatFile::OatDexFile* OatFile::GetOatDexFile(const char* dex_location,
                                                   const uint32_t* dex_location_checksum,
                                                   bool warn_if_not_found) const {
-  // NOTE: We assume here that the canonical location for a given dex_location never
-  // changes. If it does (i.e. some symlink used by the filename changes) we may return
-  // an incorrect OatDexFile. As long as we have a checksum to check, we shall return
-  // an identical file or fail; otherwise we may see some unpredictable failures.
-
-  // TODO: Additional analysis of usage patterns to see if this can be simplified
-  // without any performance loss, for example by not doing the first lock-free lookup.
-
-  const OatFile::OatDexFile* oat_dex_file = nullptr;
-  StringPiece key(dex_location);
-  // Try to find the key cheaply in the oat_dex_files_ map which holds dex locations
-  // directly mentioned in the oat file and doesn't require locking.
-  auto primary_it = oat_dex_files_.find(key);
-  if (primary_it != oat_dex_files_.end()) {
-    oat_dex_file = primary_it->second;
-    DCHECK(oat_dex_file != nullptr);
-  } else {
-    // This dex_location is not one of the dex locations directly mentioned in the
-    // oat file. The correct lookup is via the canonical location but first see in
-    // the secondary_oat_dex_files_ whether we've looked up this location before.
-    MutexLock mu(Thread::Current(), secondary_lookup_lock_);
-    auto secondary_lb = secondary_oat_dex_files_.lower_bound(key);
-    if (secondary_lb != secondary_oat_dex_files_.end() && key == secondary_lb->first) {
-      oat_dex_file = secondary_lb->second;  // May be nullptr.
-    } else {
-      // We haven't seen this dex_location before, we must check the canonical location.
-      std::string dex_canonical_location = DexFile::GetDexCanonicalLocation(dex_location);
-      if (dex_canonical_location != dex_location) {
-        StringPiece canonical_key(dex_canonical_location);
-        auto canonical_it = oat_dex_files_.find(canonical_key);
-        if (canonical_it != oat_dex_files_.end()) {
-          oat_dex_file = canonical_it->second;
-        }  // else keep nullptr.
-      }  // else keep nullptr.
-
-      // Copy the key to the string_cache_ and store the result in secondary map.
-      string_cache_.emplace_back(key.data(), key.length());
-      StringPiece key_copy(string_cache_.back());
-      secondary_oat_dex_files_.PutBefore(secondary_lb, key_copy, oat_dex_file);
+  Table::const_iterator it = oat_dex_files_.find(dex_location);
+  if (it != oat_dex_files_.end()) {
+    const OatFile::OatDexFile* oat_dex_file = it->second;
+    if (dex_location_checksum == NULL ||
+        oat_dex_file->GetDexFileLocationChecksum() == *dex_location_checksum) {
+      return oat_dex_file;
     }
-  }
-  if (oat_dex_file != nullptr &&
-      (dex_location_checksum == nullptr ||
-       oat_dex_file->GetDexFileLocationChecksum() == *dex_location_checksum)) {
-    return oat_dex_file;
   }
 
   if (warn_if_not_found) {
-    std::string dex_canonical_location = DexFile::GetDexCanonicalLocation(dex_location);
     std::string checksum("<unspecified>");
     if (dex_location_checksum != NULL) {
       checksum = StringPrintf("0x%08x", *dex_location_checksum);
     }
     LOG(WARNING) << "Failed to find OatDexFile for DexFile " << dex_location
-                 << " ( canonical path " << dex_canonical_location << ")"
                  << " with checksum " << checksum << " in OatFile " << GetLocation();
     if (kIsDebugBuild) {
-      for (const OatDexFile* odf : oat_dex_files_storage_) {
+      for (Table::const_iterator it = oat_dex_files_.begin(); it != oat_dex_files_.end(); ++it) {
         LOG(WARNING) << "OatFile " << GetLocation()
-                     << " contains OatDexFile " << odf->GetDexFileLocation()
-                     << " (canonical path " << odf->GetCanonicalDexFileLocation() << ")"
-                     << " with checksum 0x" << std::hex << odf->GetDexFileLocationChecksum();
+                     << " contains OatDexFile " << it->second->GetDexFileLocation()
+                     << " with checksum 0x" << std::hex << it->second->GetDexFileLocationChecksum();
       }
     }
   }
-
   return NULL;
+}
+
+std::vector<const OatFile::OatDexFile*> OatFile::GetOatDexFiles() const {
+  std::vector<const OatFile::OatDexFile*> result;
+  for (Table::const_iterator it = oat_dex_files_.begin(); it != oat_dex_files_.end(); ++it) {
+    result.push_back(it->second);
+  }
+  return result;
 }
 
 OatFile::OatDexFile::OatDexFile(const OatFile* oat_file,
                                 const std::string& dex_file_location,
-                                const std::string& canonical_dex_file_location,
                                 uint32_t dex_file_location_checksum,
                                 const byte* dex_file_pointer,
                                 const uint32_t* oat_class_offsets_pointer)
     : oat_file_(oat_file),
       dex_file_location_(dex_file_location),
-      canonical_dex_file_location_(canonical_dex_file_location),
       dex_file_location_checksum_(dex_file_location_checksum),
       dex_file_pointer_(dex_file_pointer),
       oat_class_offsets_pointer_(oat_class_offsets_pointer) {}
@@ -454,12 +386,8 @@ const DexFile* OatFile::OatDexFile::OpenDexFile(std::string* error_msg) const {
                        dex_file_location_checksum_, error_msg);
 }
 
-uint32_t OatFile::OatDexFile::GetOatClassOffset(uint16_t class_def_index) const {
-  return oat_class_offsets_pointer_[class_def_index];
-}
-
 OatFile::OatClass OatFile::OatDexFile::GetOatClass(uint16_t class_def_index) const {
-  uint32_t oat_class_offset = GetOatClassOffset(class_def_index);
+  uint32_t oat_class_offset = oat_class_offsets_pointer_[class_def_index];
 
   const byte* oat_class_pointer = oat_file_->Begin() + oat_class_offset;
   CHECK_LT(oat_class_pointer, oat_file_->End()) << oat_file_->GetLocation();
@@ -532,52 +460,29 @@ OatFile::OatClass::OatClass(const OatFile* oat_file,
     }
 }
 
-uint32_t OatFile::OatClass::GetOatMethodOffsetsOffset(uint32_t method_index) const {
-  const OatMethodOffsets* oat_method_offsets = GetOatMethodOffsets(method_index);
-  if (oat_method_offsets == nullptr) {
-    return 0u;
-  }
-  return reinterpret_cast<const uint8_t*>(oat_method_offsets) - oat_file_->Begin();
-}
-
-const OatMethodOffsets* OatFile::OatClass::GetOatMethodOffsets(uint32_t method_index) const {
+const OatFile::OatMethod OatFile::OatClass::GetOatMethod(uint32_t method_index) const {
   // NOTE: We don't keep the number of methods and cannot do a bounds check for method_index.
-  if (methods_pointer_ == nullptr) {
+  if (methods_pointer_ == NULL) {
     CHECK_EQ(kOatClassNoneCompiled, type_);
-    return nullptr;
+    return OatMethod(NULL, 0, 0);
   }
   size_t methods_pointer_index;
-  if (bitmap_ == nullptr) {
+  if (bitmap_ == NULL) {
     CHECK_EQ(kOatClassAllCompiled, type_);
     methods_pointer_index = method_index;
   } else {
     CHECK_EQ(kOatClassSomeCompiled, type_);
     if (!BitVector::IsBitSet(bitmap_, method_index)) {
-      return nullptr;
+      return OatMethod(NULL, 0, 0);
     }
     size_t num_set_bits = BitVector::NumSetBits(bitmap_, method_index);
     methods_pointer_index = num_set_bits;
   }
   const OatMethodOffsets& oat_method_offsets = methods_pointer_[methods_pointer_index];
-  return &oat_method_offsets;
-}
-
-const OatFile::OatMethod OatFile::OatClass::GetOatMethod(uint32_t method_index) const {
-  const OatMethodOffsets* oat_method_offsets = GetOatMethodOffsets(method_index);
-  if (oat_method_offsets == nullptr) {
-    return OatMethod(nullptr, 0, 0);
-  }
-  if (oat_file_->IsExecutable() ||
-      Runtime::Current() == nullptr ||        // This case applies for oatdump.
-      Runtime::Current()->IsCompiler()) {
-    return OatMethod(
-        oat_file_->Begin(),
-        oat_method_offsets->code_offset_,
-        oat_method_offsets->gc_map_offset_);
-  } else {
-    // We aren't allowed to use the compiled code. We just force it down the interpreted version.
-    return OatMethod(oat_file_->Begin(), 0, 0);
-  }
+  return OatMethod(
+      oat_file_->Begin(),
+      oat_method_offsets.code_offset_,
+      oat_method_offsets.gc_map_offset_);
 }
 
 OatFile::OatMethod::OatMethod(const byte* base,
@@ -590,13 +495,22 @@ OatFile::OatMethod::OatMethod(const byte* base,
 
 OatFile::OatMethod::~OatMethod() {}
 
+
+uint32_t OatFile::OatMethod::GetQuickCodeSize() const {
+  uintptr_t code = reinterpret_cast<uintptr_t>(GetQuickCode());
+  if (code == 0) {
+    return 0;
+  }
+  // TODO: make this Thumb2 specific
+  code &= ~0x1;
+  return reinterpret_cast<uint32_t*>(code)[-1];
+}
+
 void OatFile::OatMethod::LinkMethod(mirror::ArtMethod* method) const {
   CHECK(method != NULL);
-#if defined(ART_USE_PORTABLE_COMPILER)
   method->SetEntryPointFromPortableCompiledCode(GetPortableCode());
-#endif
   method->SetEntryPointFromQuickCompiledCode(GetQuickCode());
-  method->SetNativeGcMap(GetNativeGcMap());
+  method->SetNativeGcMap(GetNativeGcMap());  // Used by native methods in work around JNI mode.
 }
 
 }  // namespace art

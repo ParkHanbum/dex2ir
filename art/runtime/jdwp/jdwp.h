@@ -36,13 +36,8 @@ union JValue;
 class Thread;
 
 namespace mirror {
-  class ArtField;
   class ArtMethod;
-  class Class;
-  class Object;
-  class Throwable;
 }  // namespace mirror
-class Thread;
 
 namespace JDWP {
 
@@ -69,11 +64,6 @@ static inline void expandBufAddMethodId(ExpandBuf* pReply, MethodId id) { expand
 static inline void expandBufAddObjectId(ExpandBuf* pReply, ObjectId id) { expandBufAdd8BE(pReply, id); }
 static inline void expandBufAddRefTypeId(ExpandBuf* pReply, RefTypeId id) { expandBufAdd8BE(pReply, id); }
 static inline void expandBufAddFrameId(ExpandBuf* pReply, FrameId id) { expandBufAdd8BE(pReply, id); }
-
-struct EventLocation {
-  mirror::ArtMethod* method;
-  uint32_t dex_pc;
-};
 
 /*
  * Holds a JDWP "location".
@@ -188,7 +178,7 @@ struct JdwpState {
    * The VM has finished initializing.  Only called when the debugger is
    * connected at the time initialization completes.
    */
-  bool PostVMStart() LOCKS_EXCLUDED(event_list_lock_) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  bool PostVMStart() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   /*
    * A location of interest has been reached.  This is used for breakpoints,
@@ -202,9 +192,8 @@ struct JdwpState {
    *
    * "returnValue" is non-null for MethodExit events only.
    */
-  bool PostLocationEvent(const EventLocation* pLoc, mirror::Object* thisPtr, int eventFlags,
+  bool PostLocationEvent(const JdwpLocation* pLoc, ObjectId thisPtr, int eventFlags,
                          const JValue* returnValue)
-     LOCKS_EXCLUDED(event_list_lock_)
      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   /*
@@ -214,9 +203,8 @@ struct JdwpState {
    * "fieldValue" is non-null for field modification events only.
    * "is_modification" is true for field modification, false for field access.
    */
-  bool PostFieldEvent(const EventLocation* pLoc, mirror::ArtField* field, mirror::Object* thisPtr,
-                      const JValue* fieldValue, bool is_modification)
-      LOCKS_EXCLUDED(event_list_lock_)
+  bool PostFieldEvent(const JdwpLocation* pLoc, RefTypeId typeId, FieldId fieldId,
+                      ObjectId thisPtr, const JValue* fieldValue, bool is_modification)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   /*
@@ -224,23 +212,21 @@ struct JdwpState {
    *
    * Pass in a zeroed-out "*pCatchLoc" if the exception wasn't caught.
    */
-  bool PostException(const EventLocation* pThrowLoc, mirror::Throwable* exception_object,
-                     const EventLocation* pCatchLoc, mirror::Object* thisPtr)
-      LOCKS_EXCLUDED(event_list_lock_)
+  bool PostException(const JdwpLocation* pThrowLoc, ObjectId excepId, RefTypeId excepClassId,
+                     const JdwpLocation* pCatchLoc, ObjectId thisPtr)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   /*
    * A thread has started or stopped.
    */
-  bool PostThreadChange(Thread* thread, bool start)
-      LOCKS_EXCLUDED(event_list_lock_)
+  bool PostThreadChange(ObjectId threadId, bool start)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   /*
    * Class has been prepared.
    */
-  bool PostClassPrepare(mirror::Class* klass)
-      LOCKS_EXCLUDED(event_list_lock_)
+  bool PostClassPrepare(JdwpTypeTag tag, RefTypeId refTypeId, const std::string& signature,
+                        int status)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   /*
@@ -308,14 +294,14 @@ struct JdwpState {
                                      ObjectId threadId)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void CleanupMatchList(JdwpEvent** match_list,
-                        size_t match_count)
+                        int match_count)
       EXCLUSIVE_LOCKS_REQUIRED(event_list_lock_)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void EventFinish(ExpandBuf* pReq);
   void FindMatchingEvents(JdwpEventKind eventKind,
-                          const ModBasket& basket,
+                          ModBasket* basket,
                           JdwpEvent** match_list,
-                          size_t* pMatchCount)
+                          int* pMatchCount)
       EXCLUSIVE_LOCKS_REQUIRED(event_list_lock_)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void UnregisterEvent(JdwpEvent* pEvent)
@@ -353,7 +339,7 @@ struct JdwpState {
   ConditionVariable attach_cond_ GUARDED_BY(attach_lock_);
 
   // Time of last debugger activity, in milliseconds.
-  Atomic<int64_t> last_activity_time_ms_;
+  int64_t last_activity_time_ms_;
 
   // Global counters and a mutex to protect them.
   AtomicInteger request_serial_;

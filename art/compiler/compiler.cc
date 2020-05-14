@@ -15,7 +15,6 @@
  */
 
 #include "compiler.h"
-#include "compilers.h"
 #include "driver/compiler_driver.h"
 #include "mirror/art_method-inl.h"
 
@@ -130,7 +129,7 @@ class LLVMCompiler FINAL : public Compiler {
     return ArtLLVMJniCompileMethod(GetCompilerDriver(), access_flags, method_idx, dex_file);
   }
 
-  uintptr_t GetEntryPointOf(mirror::ArtMethod* method) const OVERRIDE {
+  uintptr_t GetEntryPointOf(mirror::ArtMethod* method) const {
     return reinterpret_cast<uintptr_t>(method->GetEntryPointFromPortableCompiledCode());
   }
 
@@ -138,19 +137,20 @@ class LLVMCompiler FINAL : public Compiler {
                 OatWriter* oat_writer,
                 const std::vector<const art::DexFile*>& dex_files,
                 const std::string& android_root,
-                bool is_host) const OVERRIDE
+                bool is_host) const
+      OVERRIDE
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     return art::ElfWriterMclinker::Create(
         file, oat_writer, dex_files, android_root, is_host, *GetCompilerDriver());
   }
 
-  Backend* GetCodeGenerator(CompilationUnit* cu, void* compilation_unit) const OVERRIDE {
+  Backend* GetCodeGenerator(CompilationUnit* cu, void* compilation_unit) const {
     return PortableCodeGenerator(
         cu, cu->mir_graph.get(), &cu->arena,
         reinterpret_cast<art::llvm::LlvmCompilationUnit*>(compilation_unit));
   }
 
-  void InitCompilationUnit(CompilationUnit& cu) const OVERRIDE {
+  void InitCompilationUnit(CompilationUnit& cu) const {
       // Fused long branches not currently useful in bitcode.
     cu.disable_opt |=
         (1 << kBranchFusing) |
@@ -170,18 +170,6 @@ class LLVMCompiler FINAL : public Compiler {
     set_bitcode_file_name(driver, filename);
   }
 
-  /*
-   * @brief Generate and return Dwarf CFI initialization, if supported by the
-   * backend.
-   * @param driver CompilerDriver for this compile.
-   * @returns nullptr if not supported by backend or a vector of bytes for CFI DWARF
-   * information.
-   * @note This is used for backtrace information in generated code.
-   */
-  std::vector<uint8_t>* GetCallFrameInformationInitialization(const CompilerDriver& driver) const OVERRIDE {
-	return nullptr;
-  }
-
  private:
   DISALLOW_COPY_AND_ASSIGN(LLVMCompiler);
 };
@@ -189,18 +177,7 @@ class LLVMCompiler FINAL : public Compiler {
 
 Compiler* Compiler::Create(CompilerDriver* driver, Compiler::Kind kind) {
   switch (kind) {
-    case kQuick:
-      LOG(FATAL) << "Portable compiler not compiled";
-      break;
-    case kOptimizing:
-      LOG(FATAL) << "Portable compiler not compiled";
-      break;
-    case kPortable:
-#ifdef ART_USE_PORTABLE_COMPILER
       return new LLVMCompiler(driver);
-#else
-      LOG(FATAL) << "Portable compiler not compiled";
-#endif
       break;
     default:
       LOG(FATAL) << "UNREACHABLE";

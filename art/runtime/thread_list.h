@@ -66,9 +66,8 @@ class ThreadList {
   // If the thread should be suspended then value of request_suspension should be true otherwise
   // the routine will wait for a previous suspend request. If the suspension times out then *timeout
   // is set to true.
-  Thread* SuspendThreadByPeer(jobject peer, bool request_suspension, bool debug_suspension,
-                              bool* timed_out)
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::thread_list_suspend_thread_lock_)
+  static Thread* SuspendThreadByPeer(jobject peer, bool request_suspension, bool debug_suspension,
+                                     bool* timed_out)
       LOCKS_EXCLUDED(Locks::mutator_lock_,
                      Locks::thread_list_lock_,
                      Locks::thread_suspend_count_lock_);
@@ -78,7 +77,6 @@ class ThreadList {
   // the thread terminating. Note that as thread ids are recycled this may not suspend the expected
   // thread, that may be terminating. If the suspension times out then *timeout is set to true.
   Thread* SuspendThreadByThreadId(uint32_t thread_id, bool debug_suspension, bool* timed_out)
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::thread_list_suspend_thread_lock_)
       LOCKS_EXCLUDED(Locks::mutator_lock_,
                      Locks::thread_list_lock_,
                      Locks::thread_suspend_count_lock_);
@@ -134,7 +132,7 @@ class ThreadList {
 
  private:
   uint32_t AllocThreadId(Thread* self);
-  void ReleaseThreadId(Thread* self, uint32_t id) LOCKS_EXCLUDED(Locks::allocated_thread_ids_lock_);
+  void ReleaseThreadId(Thread* self, uint32_t id) LOCKS_EXCLUDED(allocated_ids_lock_);
 
   bool Contains(Thread* thread) EXCLUSIVE_LOCKS_REQUIRED(Locks::thread_list_lock_);
   bool Contains(pid_t tid) EXCLUSIVE_LOCKS_REQUIRED(Locks::thread_list_lock_);
@@ -153,7 +151,8 @@ class ThreadList {
       LOCKS_EXCLUDED(Locks::thread_list_lock_,
                      Locks::thread_suspend_count_lock_);
 
-  std::bitset<kMaxThreadId> allocated_ids_ GUARDED_BY(Locks::allocated_thread_ids_lock_);
+  mutable Mutex allocated_ids_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
+  std::bitset<kMaxThreadId> allocated_ids_ GUARDED_BY(allocated_ids_lock_);
 
   // The actual list of all threads.
   std::list<Thread*> list_ GUARDED_BY(Locks::thread_list_lock_);

@@ -85,10 +85,9 @@ struct CompilationUnit {
   ArenaAllocator arena;
   ArenaStack arena_stack;  // Arenas for ScopedArenaAllocator.
 
-  std::unique_ptr<MIRGraph> mir_graph;   // MIR container.
-  std::unique_ptr<Backend> cg;           // Target-specific codegen.
+  UniquePtr<MIRGraph> mir_graph;   // MIR container.
+  UniquePtr<Backend> cg;           // Target-specific codegen.
   TimingLogger timings;
-  bool print_pass;                 // Do we want to print a pass or not?
 };
 
 }  // namespace art

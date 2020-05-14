@@ -16,14 +16,13 @@
 
 #include "intern_table.h"
 
-#include <memory>
-
 #include "gc/space/image_space.h"
 #include "mirror/dex_cache.h"
 #include "mirror/object_array-inl.h"
 #include "mirror/object-inl.h"
-#include "mirror/string-inl.h"
+#include "mirror/string.h"
 #include "thread.h"
+#include "UniquePtr.h"
 #include "utf.h"
 
 namespace art {
@@ -38,16 +37,6 @@ size_t InternTable::Size() const {
   return strong_interns_.size() + weak_interns_.size();
 }
 
-size_t InternTable::StrongSize() const {
-  MutexLock mu(Thread::Current(), *Locks::intern_table_lock_);
-  return strong_interns_.size();
-}
-
-size_t InternTable::WeakSize() const {
-  MutexLock mu(Thread::Current(), *Locks::intern_table_lock_);
-  return weak_interns_.size();
-}
-
 void InternTable::DumpForSigQuit(std::ostream& os) const {
   MutexLock mu(Thread::Current(), *Locks::intern_table_lock_);
   os << "Intern table: " << strong_interns_.size() << " strong; "
@@ -58,25 +47,27 @@ void InternTable::VisitRoots(RootCallback* callback, void* arg, VisitRootFlags f
   MutexLock mu(Thread::Current(), *Locks::intern_table_lock_);
   if ((flags & kVisitRootFlagAllRoots) != 0) {
     for (auto& strong_intern : strong_interns_) {
-      const_cast<GcRoot<mirror::String>&>(strong_intern).
-          VisitRoot(callback, arg, 0, kRootInternedString);
-      DCHECK(!strong_intern.IsNull());
+      callback(reinterpret_cast<mirror::Object**>(&strong_intern.second), arg, 0,
+               kRootInternedString);
+      DCHECK(strong_intern.second != nullptr);
     }
   } else if ((flags & kVisitRootFlagNewRoots) != 0) {
-    for (auto& root : new_strong_intern_roots_) {
-      mirror::String* old_ref = root.Read<kWithoutReadBarrier>();
-      root.VisitRoot(callback, arg, 0, kRootInternedString);
-      mirror::String* new_ref = root.Read<kWithoutReadBarrier>();
-      if (UNLIKELY(new_ref != old_ref)) {
-        // The GC moved a root in the log. Need to search the strong interns and update the
-        // corresponding object. This is slow, but luckily for us, this may only happen with a
-        // concurrent moving GC.
-        auto it = strong_interns_.find(GcRoot<mirror::String>(old_ref));
-        DCHECK(it != strong_interns_.end());
-        strong_interns_.erase(it);
-        strong_interns_.insert(GcRoot<mirror::String>(new_ref));
-      }
-    }
+    for (auto& pair : new_strong_intern_roots_) {
+       mirror::String* old_ref = pair.second;
+       callback(reinterpret_cast<mirror::Object**>(&pair.second), arg, 0, kRootInternedString);
+       if (UNLIKELY(pair.second != old_ref)) {
+         // Uh ohes, GC moved a root in the log. Need to search the strong interns and update the
+         // corresponding object. This is slow, but luckily for us, this may only happen with a
+         // concurrent moving GC.
+         for (auto it = strong_interns_.lower_bound(pair.first), end = strong_interns_.end();
+             it != end && it->first == pair.first; ++it) {
+           // If the class stored matches the old class, update it to the new value.
+           if (old_ref == it->second) {
+             it->second = pair.second;
+           }
+         }
+       }
+     }
   }
 
   if ((flags & kVisitRootFlagClearRootLog) != 0) {
@@ -90,79 +81,71 @@ void InternTable::VisitRoots(RootCallback* callback, void* arg, VisitRootFlags f
   // Note: we deliberately don't visit the weak_interns_ table and the immutable image roots.
 }
 
-mirror::String* InternTable::LookupStrong(mirror::String* s) {
-  return Lookup(&strong_interns_, s);
-}
-
-mirror::String* InternTable::LookupWeak(mirror::String* s) {
-  // Weak interns need a read barrier because they are weak roots.
-  return Lookup(&weak_interns_, s);
-}
-
-mirror::String* InternTable::Lookup(Table* table, mirror::String* s) {
+mirror::String* InternTable::Lookup(Table& table, mirror::String* s, int32_t hash_code) {
   Locks::intern_table_lock_->AssertHeld(Thread::Current());
-  auto it = table->find(GcRoot<mirror::String>(s));
-  if (LIKELY(it != table->end())) {
-    return const_cast<GcRoot<mirror::String>&>(*it).Read<kWithReadBarrier>();
+  for (auto it = table.find(hash_code), end = table.end(); it != end; ++it) {
+    mirror::String* existing_string = it->second;
+    if (existing_string->Equals(s)) {
+      return existing_string;
+    }
   }
-  return nullptr;
+  return NULL;
 }
 
-mirror::String* InternTable::InsertStrong(mirror::String* s) {
+mirror::String* InternTable::InsertStrong(mirror::String* s, int32_t hash_code) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
-    runtime->RecordStrongStringInsertion(s);
+    runtime->RecordStrongStringInsertion(s, hash_code);
   }
   if (log_new_roots_) {
-    new_strong_intern_roots_.push_back(GcRoot<mirror::String>(s));
+    new_strong_intern_roots_.push_back(std::make_pair(hash_code, s));
   }
-  strong_interns_.insert(GcRoot<mirror::String>(s));
+  strong_interns_.insert(std::make_pair(hash_code, s));
   return s;
 }
 
-mirror::String* InternTable::InsertWeak(mirror::String* s) {
+mirror::String* InternTable::InsertWeak(mirror::String* s, int32_t hash_code) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
-    runtime->RecordWeakStringInsertion(s);
+    runtime->RecordWeakStringInsertion(s, hash_code);
   }
-  weak_interns_.insert(GcRoot<mirror::String>(s));
+  weak_interns_.insert(std::make_pair(hash_code, s));
   return s;
 }
 
-void InternTable::RemoveStrong(mirror::String* s) {
-  Remove(&strong_interns_, s);
-}
-
-void InternTable::RemoveWeak(mirror::String* s) {
+void InternTable::RemoveWeak(mirror::String* s, int32_t hash_code) {
   Runtime* runtime = Runtime::Current();
   if (runtime->IsActiveTransaction()) {
-    runtime->RecordWeakStringRemoval(s);
+    runtime->RecordWeakStringRemoval(s, hash_code);
   }
-  Remove(&weak_interns_, s);
+  Remove(weak_interns_, s, hash_code);
 }
 
-void InternTable::Remove(Table* table, mirror::String* s) {
-  auto it = table->find(GcRoot<mirror::String>(s));
-  DCHECK(it != table->end());
-  table->erase(it);
+void InternTable::Remove(Table& table, mirror::String* s, int32_t hash_code) {
+  for (auto it = table.find(hash_code), end = table.end(); it != end; ++it) {
+    if (it->second == s) {
+      table.erase(it);
+      return;
+    }
+  }
 }
 
 // Insert/remove methods used to undo changes made during an aborted transaction.
-mirror::String* InternTable::InsertStrongFromTransaction(mirror::String* s) {
+mirror::String* InternTable::InsertStrongFromTransaction(mirror::String* s, int32_t hash_code) {
   DCHECK(!Runtime::Current()->IsActiveTransaction());
-  return InsertStrong(s);
+  return InsertStrong(s, hash_code);
 }
-mirror::String* InternTable::InsertWeakFromTransaction(mirror::String* s) {
+mirror::String* InternTable::InsertWeakFromTransaction(mirror::String* s, int32_t hash_code) {
   DCHECK(!Runtime::Current()->IsActiveTransaction());
-  return InsertWeak(s);
+  return InsertWeak(s, hash_code);
 }
-void InternTable::RemoveStrongFromTransaction(mirror::String* s) {
+void InternTable::RemoveStrongFromTransaction(mirror::String* s, int32_t hash_code) {
   DCHECK(!Runtime::Current()->IsActiveTransaction());
-  RemoveStrong(s);
+  Remove(strong_interns_, s, hash_code);
 }
-void InternTable::RemoveWeakFromTransaction(mirror::String* s) {
+void InternTable::RemoveWeakFromTransaction(mirror::String* s, int32_t hash_code) {
   DCHECK(!Runtime::Current()->IsActiveTransaction());
-  RemoveWeak(s);
+  Remove(weak_interns_, s, hash_code);
 }
 
 static mirror::String* LookupStringFromImage(mirror::String* s)
@@ -208,6 +191,7 @@ mirror::String* InternTable::Insert(mirror::String* s, bool is_strong) {
   MutexLock mu(self, *Locks::intern_table_lock_);
 
   DCHECK(s != NULL);
+  uint32_t hash_code = s->GetHashCode();
 
   while (UNLIKELY(!allow_new_interns_)) {
     new_intern_condition_.WaitHoldingLocks(self);
@@ -215,7 +199,7 @@ mirror::String* InternTable::Insert(mirror::String* s, bool is_strong) {
 
   if (is_strong) {
     // Check the strong table for a match.
-    mirror::String* strong = LookupStrong(s);
+    mirror::String* strong = Lookup(strong_interns_, s, hash_code);
     if (strong != NULL) {
       return strong;
     }
@@ -223,39 +207,39 @@ mirror::String* InternTable::Insert(mirror::String* s, bool is_strong) {
     // Check the image for a match.
     mirror::String* image = LookupStringFromImage(s);
     if (image != NULL) {
-      return InsertStrong(image);
+      return InsertStrong(image, hash_code);
     }
 
     // There is no match in the strong table, check the weak table.
-    mirror::String* weak = LookupWeak(s);
+    mirror::String* weak = Lookup(weak_interns_, s, hash_code);
     if (weak != NULL) {
       // A match was found in the weak table. Promote to the strong table.
-      RemoveWeak(weak);
-      return InsertStrong(weak);
+      RemoveWeak(weak, hash_code);
+      return InsertStrong(weak, hash_code);
     }
 
     // No match in the strong table or the weak table. Insert into the strong
     // table.
-    return InsertStrong(s);
+    return InsertStrong(s, hash_code);
   }
 
   // Check the strong table for a match.
-  mirror::String* strong = LookupStrong(s);
+  mirror::String* strong = Lookup(strong_interns_, s, hash_code);
   if (strong != NULL) {
     return strong;
   }
   // Check the image for a match.
   mirror::String* image = LookupStringFromImage(s);
   if (image != NULL) {
-    return InsertWeak(image);
+    return InsertWeak(image, hash_code);
   }
   // Check the weak table for a match.
-  mirror::String* weak = LookupWeak(s);
+  mirror::String* weak = Lookup(weak_interns_, s, hash_code);
   if (weak != NULL) {
     return weak;
   }
   // Insert into the weak table.
-  return InsertWeak(s);
+  return InsertWeak(s, hash_code);
 }
 
 mirror::String* InternTable::InternStrong(int32_t utf16_length, const char* utf8_data) {
@@ -285,41 +269,23 @@ mirror::String* InternTable::InternWeak(mirror::String* s) {
 
 bool InternTable::ContainsWeak(mirror::String* s) {
   MutexLock mu(Thread::Current(), *Locks::intern_table_lock_);
-  const mirror::String* found = LookupWeak(s);
+  const mirror::String* found = Lookup(weak_interns_, s, s->GetHashCode());
   return found == s;
 }
 
 void InternTable::SweepInternTableWeaks(IsMarkedCallback* callback, void* arg) {
   MutexLock mu(Thread::Current(), *Locks::intern_table_lock_);
   for (auto it = weak_interns_.begin(), end = weak_interns_.end(); it != end;) {
-    // This does not need a read barrier because this is called by GC.
-    GcRoot<mirror::String>& root = const_cast<GcRoot<mirror::String>&>(*it);
-    mirror::Object* object = root.Read<kWithoutReadBarrier>();
+    mirror::Object* object = it->second;
     mirror::Object* new_object = callback(object, arg);
     if (new_object == nullptr) {
-      it = weak_interns_.erase(it);
+      // TODO: use it = weak_interns_.erase(it) when we get a c++11 stl.
+      weak_interns_.erase(it++);
     } else {
-      root.Assign(down_cast<mirror::String*>(new_object));
+      it->second = down_cast<mirror::String*>(new_object);
       ++it;
     }
   }
-}
-
-std::size_t InternTable::StringHashEquals::operator()(const GcRoot<mirror::String>& root) const {
-  if (kIsDebugBuild) {
-    Locks::mutator_lock_->AssertSharedHeld(Thread::Current());
-  }
-  return static_cast<size_t>(
-      const_cast<GcRoot<mirror::String>&>(root).Read<kWithoutReadBarrier>()->GetHashCode());
-}
-
-bool InternTable::StringHashEquals::operator()(const GcRoot<mirror::String>& a,
-                                               const GcRoot<mirror::String>& b) const {
-  if (kIsDebugBuild) {
-    Locks::mutator_lock_->AssertSharedHeld(Thread::Current());
-  }
-  return const_cast<GcRoot<mirror::String>&>(a).Read<kWithoutReadBarrier>()->Equals(
-      const_cast<GcRoot<mirror::String>&>(b).Read<kWithoutReadBarrier>());
 }
 
 }  // namespace art

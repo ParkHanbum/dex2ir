@@ -15,12 +15,13 @@
  */
 
 #include "dex_file-inl.h"
-#include "entrypoints/entrypoint_utils-inl.h"
+#include "entrypoints/entrypoint_utils.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/object.h"
 #include "mirror/object-inl.h"
 #include "mirror/object_array-inl.h"
+#include "object_utils.h"
 #include "scoped_thread_state_change.h"
 #include "thread.h"
 #include "verify_object-inl.h"
@@ -33,7 +34,7 @@ extern uint32_t JniMethodStart(Thread* self) {
   DCHECK(env != nullptr);
   uint32_t saved_local_ref_cookie = env->local_ref_cookie;
   env->local_ref_cookie = env->locals.GetSegmentState();
-  mirror::ArtMethod* native_method = self->GetManagedStack()->GetTopQuickFrame()->AsMirrorPtr();
+  mirror::ArtMethod* native_method = *self->GetManagedStack()->GetTopQuickFrame();
   if (!native_method->IsFastNative()) {
     // When not fast JNI we transition out of runnable.
     self->TransitionFromRunnableToSuspended(kNative);
@@ -48,7 +49,7 @@ extern uint32_t JniMethodStartSynchronized(jobject to_lock, Thread* self) {
 
 // TODO: NO_THREAD_SAFETY_ANALYSIS due to different control paths depending on fast JNI.
 static void GoToRunnable(Thread* self) NO_THREAD_SAFETY_ANALYSIS {
-  mirror::ArtMethod* native_method = self->GetManagedStack()->GetTopQuickFrame()->AsMirrorPtr();
+  mirror::ArtMethod* native_method = *self->GetManagedStack()->GetTopQuickFrame();
   bool is_fast = native_method->IsFastNative();
   if (!is_fast) {
     self->TransitionFromSuspendedToRunnable();
@@ -60,8 +61,7 @@ static void GoToRunnable(Thread* self) NO_THREAD_SAFETY_ANALYSIS {
   }
 }
 
-static void PopLocalReferences(uint32_t saved_local_ref_cookie, Thread* self)
-    SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+static void PopLocalReferences(uint32_t saved_local_ref_cookie, Thread* self) {
   JNIEnvExt* env = self->GetJniEnv();
   env->locals.SetSegmentState(env->local_ref_cookie);
   env->local_ref_cookie = saved_local_ref_cookie;

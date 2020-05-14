@@ -19,10 +19,14 @@
 #include "arm64_lir.h"
 #include "codegen_arm64.h"
 #include "dex/quick/mir_to_lir-inl.h"
-#include "gc/accounting/card_table.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 
 namespace art {
+
+bool Arm64Mir2Lir::GenSpecialCase(BasicBlock* bb, MIR* mir,
+                                  const InlineMethod& special) {
+  return Mir2Lir::GenSpecialCase(bb, mir, special);
+}
 
 /*
  * The sparse table in the literal pool is an array of <key,displacement>
@@ -43,7 +47,8 @@ namespace art {
  *   br    r_base
  * quit:
  */
-void Arm64Mir2Lir::GenLargeSparseSwitch(MIR* mir, uint32_t table_offset, RegLocation rl_src) {
+void Arm64Mir2Lir::GenSparseSwitch(MIR* mir, uint32_t table_offset,
+                                   RegLocation rl_src) {
   const uint16_t* table = cu_->insns + current_dalvik_offset_ + table_offset;
   if (cu_->verbose) {
     DumpSparseSwitchTable(table);
@@ -59,7 +64,7 @@ void Arm64Mir2Lir::GenLargeSparseSwitch(MIR* mir, uint32_t table_offset, RegLoca
 
   // Get the switch value
   rl_src = LoadValue(rl_src, kCoreReg);
-  RegStorage r_base = AllocTempWide();
+  RegStorage r_base = AllocTemp();
   // Allocate key and disp temps.
   RegStorage r_key = AllocTemp();
   RegStorage r_disp = AllocTemp();
@@ -86,7 +91,8 @@ void Arm64Mir2Lir::GenLargeSparseSwitch(MIR* mir, uint32_t table_offset, RegLoca
   tab_rec->anchor = switch_label;
 
   // Add displacement to base branch address and go!
-  OpRegRegRegExtend(kOpAdd, r_base, r_base, As64BitReg(r_disp), kA64Sxtw, 0U);
+  OpRegRegRegShift(kOpAdd, r_base.GetReg(), r_base.GetReg(), r_disp.GetReg(),
+                   ENCODE_NO_SHIFT, true);
   NewLIR1(kA64Br1x, r_base.GetReg());
 
   // Loop exit label.
@@ -95,7 +101,8 @@ void Arm64Mir2Lir::GenLargeSparseSwitch(MIR* mir, uint32_t table_offset, RegLoca
 }
 
 
-void Arm64Mir2Lir::GenLargePackedSwitch(MIR* mir, uint32_t table_offset, RegLocation rl_src) {
+void Arm64Mir2Lir::GenPackedSwitch(MIR* mir, uint32_t table_offset,
+                                 RegLocation rl_src) {
   const uint16_t* table = cu_->insns + current_dalvik_offset_ + table_offset;
   if (cu_->verbose) {
     DumpPackedSwitchTable(table);
@@ -112,7 +119,7 @@ void Arm64Mir2Lir::GenLargePackedSwitch(MIR* mir, uint32_t table_offset, RegLoca
 
   // Get the switch value
   rl_src = LoadValue(rl_src, kCoreReg);
-  RegStorage table_base = AllocTempWide();
+  RegStorage table_base = AllocTemp();
   // Materialize a pointer to the switch table
   NewLIR3(kA64Adr2xd, table_base.GetReg(), 0, WrapPointer(tab_rec));
   int low_key = s4FromSwitchData(&table[2]);
@@ -130,15 +137,16 @@ void Arm64Mir2Lir::GenLargePackedSwitch(MIR* mir, uint32_t table_offset, RegLoca
 
   // Load the displacement from the switch table
   RegStorage disp_reg = AllocTemp();
-  LoadBaseIndexed(table_base, As64BitReg(key_reg), disp_reg, 2, k32);
+  LoadBaseIndexed(table_base, key_reg, disp_reg, 2, k32);
 
   // Get base branch address.
-  RegStorage branch_reg = AllocTempWide();
+  RegStorage branch_reg = AllocTemp();
   LIR* switch_label = NewLIR3(kA64Adr2xd, branch_reg.GetReg(), 0, -1);
   tab_rec->anchor = switch_label;
 
   // Add displacement to base branch address and go!
-  OpRegRegRegExtend(kOpAdd, branch_reg, branch_reg, As64BitReg(disp_reg), kA64Sxtw, 0U);
+  OpRegRegRegShift(kOpAdd, branch_reg.GetReg(), branch_reg.GetReg(), disp_reg.GetReg(),
+                   ENCODE_NO_SHIFT, true);
   NewLIR1(kA64Br1x, branch_reg.GetReg());
 
   // branch_over target here
@@ -172,12 +180,12 @@ void Arm64Mir2Lir::GenFillArrayData(uint32_t table_offset, RegLocation rl_src) {
   // Making a call - use explicit registers
   FlushAllRegs();   /* Everything to home location */
   LoadValueDirectFixed(rl_src, rs_x0);
-  LoadWordDisp(rs_xSELF, QUICK_ENTRYPOINT_OFFSET(8, pHandleFillArrayData).Int32Value(),
-               rs_xLR);
+  LoadWordDisp(rs_rA64_SELF, QUICK_ENTRYPOINT_OFFSET(8, pHandleFillArrayData).Int32Value(),
+               rs_rA64_LR);
   // Materialize a pointer to the fill data image
   NewLIR3(kA64Adr2xd, rx1, 0, WrapPointer(tab_rec));
   ClobberCallerSave();
-  LIR* call_inst = OpReg(kOpBlx, rs_xLR);
+  LIR* call_inst = OpReg(kOpBlx, rs_rA64_LR);
   MarkSafepointPC(call_inst);
 }
 
@@ -186,101 +194,137 @@ void Arm64Mir2Lir::GenFillArrayData(uint32_t table_offset, RegLocation rl_src) {
  * details see monitor.cc.
  */
 void Arm64Mir2Lir::GenMonitorEnter(int opt_flags, RegLocation rl_src) {
-  // x0/w0 = object
-  // w1    = thin lock thread id
-  // x2    = address of lock word
-  // w3    = lock word / store failure
-  // TUNING: How much performance we get when we inline this?
-  // Since we've already flush all register.
   FlushAllRegs();
-  LoadValueDirectFixed(rl_src, rs_x0);  // = TargetReg(kArg0, kRef)
+  // FIXME: need separate LoadValues for object references.
+  LoadValueDirectFixed(rl_src, rs_x0);  // Get obj
   LockCallTemps();  // Prepare for explicit register usage
-  LIR* null_check_branch = nullptr;
-  if ((opt_flags & MIR_IGNORE_NULL_CHECK) && !(cu_->disable_opt & (1 << kNullCheckElimination))) {
-    null_check_branch = nullptr;  // No null check.
-  } else {
-    // If the null-check fails its handled by the slow-path to reduce exception related meta-data.
-    if (!cu_->compiler_driver->GetCompilerOptions().GetImplicitNullChecks()) {
-      null_check_branch = OpCmpImmBranch(kCondEq, rs_x0, 0, NULL);
+  constexpr bool kArchVariantHasGoodBranchPredictor = false;  // TODO: true if cortex-A15.
+  if (kArchVariantHasGoodBranchPredictor) {
+    LIR* null_check_branch = nullptr;
+    if ((opt_flags & MIR_IGNORE_NULL_CHECK) && !(cu_->disable_opt & (1 << kNullCheckElimination))) {
+      null_check_branch = nullptr;  // No null check.
+    } else {
+      // If the null-check fails its handled by the slow-path to reduce exception related meta-data.
+      if (Runtime::Current()->ExplicitNullChecks()) {
+        null_check_branch = OpCmpImmBranch(kCondEq, rs_x0, 0, NULL);
+      }
     }
-  }
-  Load32Disp(rs_xSELF, Thread::ThinLockIdOffset<8>().Int32Value(), rs_w1);
-  OpRegRegImm(kOpAdd, rs_x2, rs_x0, mirror::Object::MonitorOffset().Int32Value());
-  NewLIR2(kA64Ldxr2rX, rw3, rx2);
-  MarkPossibleNullPointerException(opt_flags);
-  LIR* not_unlocked_branch = OpCmpImmBranch(kCondNe, rs_w3, 0, NULL);
-  NewLIR3(kA64Stxr3wrX, rw3, rw1, rx2);
-  LIR* lock_success_branch = OpCmpImmBranch(kCondEq, rs_w3, 0, NULL);
+    Load32Disp(rs_rA64_SELF, Thread::ThinLockIdOffset<8>().Int32Value(), rs_x2);
+    NewLIR3(kA64Ldxr2rX, rx1, rx0, mirror::Object::MonitorOffset().Int32Value() >> 2);
+    MarkPossibleNullPointerException(opt_flags);
+    LIR* not_unlocked_branch = OpCmpImmBranch(kCondNe, rs_x1, 0, NULL);
+    NewLIR4(kA64Stxr3wrX, rx1, rx2, rx0, mirror::Object::MonitorOffset().Int32Value() >> 2);
+    LIR* lock_success_branch = OpCmpImmBranch(kCondEq, rs_x1, 0, NULL);
 
-  LIR* slow_path_target = NewLIR0(kPseudoTargetLabel);
-  not_unlocked_branch->target = slow_path_target;
-  if (null_check_branch != nullptr) {
-    null_check_branch->target = slow_path_target;
-  }
-  // TODO: move to a slow path.
-  // Go expensive route - artLockObjectFromCode(obj);
-  LoadWordDisp(rs_xSELF, QUICK_ENTRYPOINT_OFFSET(8, pLockObject).Int32Value(), rs_xLR);
-  ClobberCallerSave();
-  LIR* call_inst = OpReg(kOpBlx, rs_xLR);
-  MarkSafepointPC(call_inst);
 
-  LIR* success_target = NewLIR0(kPseudoTargetLabel);
-  lock_success_branch->target = success_target;
-  GenMemBarrier(kLoadAny);
+    LIR* slow_path_target = NewLIR0(kPseudoTargetLabel);
+    not_unlocked_branch->target = slow_path_target;
+    if (null_check_branch != nullptr) {
+      null_check_branch->target = slow_path_target;
+    }
+    // TODO: move to a slow path.
+    // Go expensive route - artLockObjectFromCode(obj);
+    LoadWordDisp(rs_rA64_SELF, QUICK_ENTRYPOINT_OFFSET(8, pLockObject).Int32Value(), rs_rA64_LR);
+    ClobberCallerSave();
+    LIR* call_inst = OpReg(kOpBlx, rs_rA64_LR);
+    MarkSafepointPC(call_inst);
+
+    LIR* success_target = NewLIR0(kPseudoTargetLabel);
+    lock_success_branch->target = success_target;
+    GenMemBarrier(kLoadLoad);
+  } else {
+    // Explicit null-check as slow-path is entered using an IT.
+    GenNullCheck(rs_x0, opt_flags);
+    Load32Disp(rs_rA64_SELF, Thread::ThinLockIdOffset<8>().Int32Value(), rs_x2);
+    MarkPossibleNullPointerException(opt_flags);
+    NewLIR3(kA64Ldxr2rX, rx1, rx0, mirror::Object::MonitorOffset().Int32Value() >> 2);
+    OpRegImm(kOpCmp, rs_x1, 0);
+    OpIT(kCondEq, "");
+    NewLIR4(kA64Stxr3wrX/*eq*/, rx1, rx2, rx0, mirror::Object::MonitorOffset().Int32Value() >> 2);
+    OpRegImm(kOpCmp, rs_x1, 0);
+    OpIT(kCondNe, "T");
+    // Go expensive route - artLockObjectFromCode(self, obj);
+    LoadWordDisp/*ne*/(rs_rA64_SELF, QUICK_ENTRYPOINT_OFFSET(8, pLockObject).Int32Value(),
+                       rs_rA64_LR);
+    ClobberCallerSave();
+    LIR* call_inst = OpReg(kOpBlx/*ne*/, rs_rA64_LR);
+    MarkSafepointPC(call_inst);
+    GenMemBarrier(kLoadLoad);
+  }
 }
 
 /*
  * Handle thin locked -> unlocked transition inline or else call out to quick entrypoint. For more
- * details see monitor.cc. Note the code below doesn't use ldxr/stxr as the code holds the lock
+ * details see monitor.cc. Note the code below doesn't use ldrex/strex as the code holds the lock
  * and can only give away ownership if its suspended.
  */
 void Arm64Mir2Lir::GenMonitorExit(int opt_flags, RegLocation rl_src) {
-  // x0/w0 = object
-  // w1    = thin lock thread id
-  // w2    = lock word
-  // TUNING: How much performance we get when we inline this?
-  // Since we've already flush all register.
   FlushAllRegs();
   LoadValueDirectFixed(rl_src, rs_x0);  // Get obj
   LockCallTemps();  // Prepare for explicit register usage
   LIR* null_check_branch = nullptr;
-  if ((opt_flags & MIR_IGNORE_NULL_CHECK) && !(cu_->disable_opt & (1 << kNullCheckElimination))) {
-    null_check_branch = nullptr;  // No null check.
-  } else {
-    // If the null-check fails its handled by the slow-path to reduce exception related meta-data.
-    if (!cu_->compiler_driver->GetCompilerOptions().GetImplicitNullChecks()) {
-      null_check_branch = OpCmpImmBranch(kCondEq, rs_x0, 0, NULL);
+  Load32Disp(rs_rA64_SELF, Thread::ThinLockIdOffset<8>().Int32Value(), rs_x2);
+  constexpr bool kArchVariantHasGoodBranchPredictor = false;  // TODO: true if cortex-A15.
+  if (kArchVariantHasGoodBranchPredictor) {
+    if ((opt_flags & MIR_IGNORE_NULL_CHECK) && !(cu_->disable_opt & (1 << kNullCheckElimination))) {
+      null_check_branch = nullptr;  // No null check.
+    } else {
+      // If the null-check fails its handled by the slow-path to reduce exception related meta-data.
+      if (Runtime::Current()->ExplicitNullChecks()) {
+        null_check_branch = OpCmpImmBranch(kCondEq, rs_x0, 0, NULL);
+      }
     }
-  }
-  Load32Disp(rs_xSELF, Thread::ThinLockIdOffset<8>().Int32Value(), rs_w1);
-  Load32Disp(rs_x0, mirror::Object::MonitorOffset().Int32Value(), rs_w2);
-  MarkPossibleNullPointerException(opt_flags);
-  LIR* slow_unlock_branch = OpCmpBranch(kCondNe, rs_w1, rs_w2, NULL);
-  GenMemBarrier(kAnyStore);
-  Store32Disp(rs_x0, mirror::Object::MonitorOffset().Int32Value(), rs_wzr);
-  LIR* unlock_success_branch = OpUnconditionalBranch(NULL);
+    Load32Disp(rs_x0, mirror::Object::MonitorOffset().Int32Value(), rs_x1);
+    MarkPossibleNullPointerException(opt_flags);
+    LoadConstantNoClobber(rs_x3, 0);
+    LIR* slow_unlock_branch = OpCmpBranch(kCondNe, rs_x1, rs_x2, NULL);
+    Store32Disp(rs_x0, mirror::Object::MonitorOffset().Int32Value(), rs_x3);
+    LIR* unlock_success_branch = OpUnconditionalBranch(NULL);
 
-  LIR* slow_path_target = NewLIR0(kPseudoTargetLabel);
-  slow_unlock_branch->target = slow_path_target;
-  if (null_check_branch != nullptr) {
-    null_check_branch->target = slow_path_target;
-  }
-  // TODO: move to a slow path.
-  // Go expensive route - artUnlockObjectFromCode(obj);
-  LoadWordDisp(rs_xSELF, QUICK_ENTRYPOINT_OFFSET(8, pUnlockObject).Int32Value(), rs_xLR);
-  ClobberCallerSave();
-  LIR* call_inst = OpReg(kOpBlx, rs_xLR);
-  MarkSafepointPC(call_inst);
+    LIR* slow_path_target = NewLIR0(kPseudoTargetLabel);
+    slow_unlock_branch->target = slow_path_target;
+    if (null_check_branch != nullptr) {
+      null_check_branch->target = slow_path_target;
+    }
+    // TODO: move to a slow path.
+    // Go expensive route - artUnlockObjectFromCode(obj);
+    LoadWordDisp(rs_rA64_SELF, QUICK_ENTRYPOINT_OFFSET(8, pUnlockObject).Int32Value(), rs_rA64_LR);
+    ClobberCallerSave();
+    LIR* call_inst = OpReg(kOpBlx, rs_rA64_LR);
+    MarkSafepointPC(call_inst);
 
-  LIR* success_target = NewLIR0(kPseudoTargetLabel);
-  unlock_success_branch->target = success_target;
+    LIR* success_target = NewLIR0(kPseudoTargetLabel);
+    unlock_success_branch->target = success_target;
+    GenMemBarrier(kStoreLoad);
+  } else {
+    // Explicit null-check as slow-path is entered using an IT.
+    GenNullCheck(rs_x0, opt_flags);
+    Load32Disp(rs_x0, mirror::Object::MonitorOffset().Int32Value(), rs_x1);  // Get lock
+    MarkPossibleNullPointerException(opt_flags);
+    Load32Disp(rs_rA64_SELF, Thread::ThinLockIdOffset<8>().Int32Value(), rs_x2);
+    LoadConstantNoClobber(rs_x3, 0);
+    // Is lock unheld on lock or held by us (==thread_id) on unlock?
+    OpRegReg(kOpCmp, rs_x1, rs_x2);
+    OpIT(kCondEq, "EE");
+    Store32Disp/*eq*/(rs_x0, mirror::Object::MonitorOffset().Int32Value(), rs_x3);
+    // Go expensive route - UnlockObjectFromCode(obj);
+    LoadWordDisp/*ne*/(rs_rA64_SELF, QUICK_ENTRYPOINT_OFFSET(8, pUnlockObject).Int32Value(),
+                       rs_rA64_LR);
+    ClobberCallerSave();
+    LIR* call_inst = OpReg(kOpBlx/*ne*/, rs_rA64_LR);
+    MarkSafepointPC(call_inst);
+    GenMemBarrier(kStoreLoad);
+  }
 }
 
 void Arm64Mir2Lir::GenMoveException(RegLocation rl_dest) {
   int ex_offset = Thread::ExceptionOffset<8>().Int32Value();
-  RegLocation rl_result = EvalLoc(rl_dest, kRefReg, true);
-  LoadRefDisp(rs_xSELF, ex_offset, rl_result.reg, kNotVolatile);
-  StoreRefDisp(rs_xSELF, ex_offset, rs_xzr, kNotVolatile);
+  RegLocation rl_result = EvalLoc(rl_dest, kCoreReg, true);
+  RegStorage reset_reg = AllocTemp();
+  Load32Disp(rs_rA64_SELF, ex_offset, rl_result.reg);
+  LoadConstant(reset_reg, 0);
+  Store32Disp(rs_rA64_SELF, ex_offset, reset_reg);
+  FreeTemp(reset_reg);
   StoreValue(rl_dest, rl_result);
 }
 
@@ -288,14 +332,12 @@ void Arm64Mir2Lir::GenMoveException(RegLocation rl_dest) {
  * Mark garbage collection card. Skip if the value we're storing is null.
  */
 void Arm64Mir2Lir::MarkGCCard(RegStorage val_reg, RegStorage tgt_addr_reg) {
-  RegStorage reg_card_base = AllocTempWide();
-  RegStorage reg_card_no = AllocTempWide();  // Needs to be wide as addr is ref=64b
+  RegStorage reg_card_base = AllocTemp();
+  RegStorage reg_card_no = AllocTemp();
   LIR* branch_over = OpCmpImmBranch(kCondEq, val_reg, 0, NULL);
-  LoadWordDisp(rs_xSELF, Thread::CardTableOffset<8>().Int32Value(), reg_card_base);
+  LoadWordDisp(rs_rA64_SELF, Thread::CardTableOffset<8>().Int32Value(), reg_card_base);
   OpRegRegImm(kOpLsr, reg_card_no, tgt_addr_reg, gc::accounting::CardTable::kCardShift);
-  // TODO(Arm64): generate "strb wB, [xB, wC, uxtw]" rather than "strb wB, [xB, xC]"?
-  StoreBaseIndexed(reg_card_base, reg_card_no, As32BitReg(reg_card_base),
-                   0, kUnsignedByte);
+  StoreBaseIndexed(reg_card_base, reg_card_no, reg_card_base, 0, kUnsignedByte);
   LIR* target = NewLIR0(kPseudoTargetLabel);
   branch_over->target = target;
   FreeTemp(reg_card_base);
@@ -304,99 +346,56 @@ void Arm64Mir2Lir::MarkGCCard(RegStorage val_reg, RegStorage tgt_addr_reg) {
 
 void Arm64Mir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method) {
   /*
-   * On entry, x0 to x7 are live.  Let the register allocation
+   * On entry, x0, x1, x2 & x3 are live.  Let the register allocation
    * mechanism know so it doesn't try to use any of them when
-   * expanding the frame or flushing.
-   * Reserve x8 & x9 for temporaries.
+   * expanding the frame or flushing.  This leaves the utility
+   * code with a single temp: r12.  This should be enough.
    */
   LockTemp(rs_x0);
   LockTemp(rs_x1);
   LockTemp(rs_x2);
   LockTemp(rs_x3);
-  LockTemp(rs_x4);
-  LockTemp(rs_x5);
-  LockTemp(rs_x6);
-  LockTemp(rs_x7);
-  LockTemp(rs_xIP0);
-  LockTemp(rs_xIP1);
-
-  /* TUNING:
-   * Use AllocTemp() and reuse LR if possible to give us the freedom on adjusting the number
-   * of temp registers.
-   */
 
   /*
    * We can safely skip the stack overflow check if we're
    * a leaf *and* our frame size < fudge factor.
    */
-  bool skip_overflow_check = mir_graph_->MethodIsLeaf() && !FrameNeedsStackCheck(frame_size_, kArm64);
-
+  bool skip_overflow_check = (mir_graph_->MethodIsLeaf() &&
+                            (static_cast<size_t>(frame_size_) <
+                            Thread::kStackOverflowReservedBytes));
   NewLIR0(kPseudoMethodEntry);
 
-  const size_t kStackOverflowReservedUsableBytes = GetStackOverflowReservedBytes(kArm64);
-  const bool large_frame = static_cast<size_t>(frame_size_) > kStackOverflowReservedUsableBytes;
-  bool generate_explicit_stack_overflow_check = large_frame ||
-    !cu_->compiler_driver->GetCompilerOptions().GetImplicitStackOverflowChecks();
-  const int spill_count = num_core_spills_ + num_fp_spills_;
-  const int spill_size = (spill_count * kArm64PointerSize + 15) & ~0xf;  // SP 16 byte alignment.
-  const int frame_size_without_spills = frame_size_ - spill_size;
-
   if (!skip_overflow_check) {
-    if (generate_explicit_stack_overflow_check) {
-      // Load stack limit
-      LoadWordDisp(rs_xSELF, Thread::StackEndOffset<8>().Int32Value(), rs_xIP1);
+    LoadWordDisp(rs_rA64_SELF, Thread::StackEndOffset<8>().Int32Value(), rs_x12);
+    OpRegImm64(kOpSub, rs_rA64_SP, frame_size_, /*is_wide*/true);
+    if (Runtime::Current()->ExplicitStackOverflowChecks()) {
+      /* Load stack limit */
+      // TODO(Arm64): fix the line below:
+      // GenRegRegCheck(kCondUlt, rA64_SP, r12, kThrowStackOverflow);
     } else {
       // Implicit stack overflow check.
       // Generate a load from [sp, #-framesize].  If this is in the stack
       // redzone we will get a segmentation fault.
-
-      // TODO: If the frame size is small enough, is it possible to make this a pre-indexed load,
-      //       so that we can avoid the following "sub sp" when spilling?
-      OpRegRegImm(kOpSub, rs_x8, rs_sp, GetStackOverflowReservedBytes(kArm64));
-      LoadWordDisp(rs_x8, 0, rs_x8);
+      // TODO(Arm64): does the following really work or do we need a reg != rA64_ZR?
+      Load32Disp(rs_rA64_SP, 0, rs_wzr);
       MarkPossibleStackOverflowException();
     }
+  } else if (frame_size_ > 0) {
+    OpRegImm64(kOpSub, rs_rA64_SP, frame_size_, /*is_wide*/true);
   }
 
-  int spilled_already = 0;
-  if (spill_size > 0) {
-    spilled_already = SpillRegs(rs_sp, core_spill_mask_, fp_spill_mask_, frame_size_);
-    DCHECK(spill_size == spilled_already || frame_size_ == spilled_already);
+  /* Spill core callee saves */
+  if (core_spill_mask_) {
+    SpillCoreRegs(rs_rA64_SP, frame_size_, core_spill_mask_);
   }
-
-  if (spilled_already != frame_size_) {
-    OpRegImm(kOpSub, rs_sp, frame_size_without_spills);
-  }
-
-  if (!skip_overflow_check) {
-    if (generate_explicit_stack_overflow_check) {
-      class StackOverflowSlowPath: public LIRSlowPath {
-      public:
-        StackOverflowSlowPath(Mir2Lir* m2l, LIR* branch, size_t sp_displace) :
-              LIRSlowPath(m2l, m2l->GetCurrentDexPc(), branch, nullptr),
-              sp_displace_(sp_displace) {
-        }
-        void Compile() OVERRIDE {
-          m2l_->ResetRegPool();
-          m2l_->ResetDefTracking();
-          GenerateTargetLabel(kPseudoThrowTarget);
-          // Unwinds stack.
-          m2l_->OpRegImm(kOpAdd, rs_sp, sp_displace_);
-          m2l_->ClobberCallerSave();
-          ThreadOffset<8> func_offset = QUICK_ENTRYPOINT_OFFSET(8, pThrowStackOverflow);
-          m2l_->LockTemp(rs_xIP0);
-          m2l_->LoadWordDisp(rs_xSELF, func_offset.Int32Value(), rs_xIP0);
-          m2l_->NewLIR1(kA64Br1x, rs_xIP0.GetReg());
-          m2l_->FreeTemp(rs_xIP0);
-        }
-
-      private:
-        const size_t sp_displace_;
-      };
-
-      LIR* branch = OpCmpBranch(kCondUlt, rs_sp, rs_xIP1, nullptr);
-      AddSlowPath(new(arena_)StackOverflowSlowPath(this, branch, frame_size_));
-    }
+  /* Need to spill any FP regs? */
+  if (num_fp_spills_) {
+    /*
+     * NOTE: fp spills are a little different from core spills in that
+     * they are pushed as a contiguous block.  When promoting from
+     * the fp set, we must allocate all singles from s16..highest-promoted
+     */
+    // TODO(Arm64): SpillFPRegs(rA64_SP, frame_size_, core_spill_mask_);
   }
 
   FlushIns(ArgLocs, rl_method);
@@ -405,12 +404,6 @@ void Arm64Mir2Lir::GenEntrySequence(RegLocation* ArgLocs, RegLocation rl_method)
   FreeTemp(rs_x1);
   FreeTemp(rs_x2);
   FreeTemp(rs_x3);
-  FreeTemp(rs_x4);
-  FreeTemp(rs_x5);
-  FreeTemp(rs_x6);
-  FreeTemp(rs_x7);
-  FreeTemp(rs_xIP0);
-  FreeTemp(rs_xIP1);
 }
 
 void Arm64Mir2Lir::GenExitSequence() {
@@ -422,10 +415,15 @@ void Arm64Mir2Lir::GenExitSequence() {
   LockTemp(rs_x1);
 
   NewLIR0(kPseudoMethodExit);
+  /* Need to restore any FP callee saves? */
+  if (num_fp_spills_) {
+    // TODO(Arm64): UnspillFPRegs(num_fp_spills_);
+  }
+  if (core_spill_mask_) {
+    UnSpillCoreRegs(rs_rA64_SP, frame_size_, core_spill_mask_);
+  }
 
-  UnspillRegs(rs_sp, core_spill_mask_, fp_spill_mask_, frame_size_);
-
-  // Finally return.
+  OpRegImm64(kOpAdd, rs_rA64_SP, frame_size_, /*is_wide*/true);
   NewLIR0(kA64Ret);
 }
 

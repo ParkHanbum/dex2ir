@@ -18,23 +18,27 @@
 #define ART_COMPILER_OPTIMIZING_BUILDER_H_
 
 #include "dex_file.h"
-#include "driver/compiler_driver.h"
 #include "driver/dex_compilation_unit.h"
 #include "primitive.h"
 #include "utils/allocation.h"
 #include "utils/growable_array.h"
-#include "nodes.h"
 
 namespace art {
 
+class ArenaAllocator;
 class Instruction;
+class HBasicBlock;
+class HGraph;
+class HIntConstant;
+class HLongConstant;
+class HInstruction;
+class HLocal;
 
 class HGraphBuilder : public ValueObject {
  public:
   HGraphBuilder(ArenaAllocator* arena,
                 DexCompilationUnit* dex_compilation_unit = nullptr,
-                const DexFile* dex_file = nullptr,
-                CompilerDriver* driver = nullptr)
+                const DexFile* dex_file = nullptr)
       : arena_(arena),
         branch_targets_(arena, 0),
         locals_(arena, 0),
@@ -45,8 +49,7 @@ class HGraphBuilder : public ValueObject {
         constant0_(nullptr),
         constant1_(nullptr),
         dex_file_(dex_file),
-        dex_compilation_unit_(dex_compilation_unit),
-        compiler_driver_(driver) {}
+        dex_compilation_unit_(dex_compilation_unit) { }
 
   HGraph* BuildGraph(const DexFile::CodeItem& code);
 
@@ -76,7 +79,7 @@ class HGraphBuilder : public ValueObject {
   bool InitializeParameters(uint16_t number_of_parameters);
 
   template<typename T>
-  void Binop_23x(const Instruction& instruction, Primitive::Type type);
+  void Binop_32x(const Instruction& instruction, Primitive::Type type);
 
   template<typename T>
   void Binop_12x(const Instruction& instruction, Primitive::Type type);
@@ -87,16 +90,9 @@ class HGraphBuilder : public ValueObject {
   template<typename T>
   void Binop_22s(const Instruction& instruction, bool reverse);
 
-  template<typename T> void If_21t(const Instruction& instruction, uint32_t dex_offset);
-  template<typename T> void If_22t(const Instruction& instruction, uint32_t dex_offset);
+  template<typename T> void If_22t(const Instruction& instruction, int32_t dex_offset, bool is_not);
 
   void BuildReturn(const Instruction& instruction, Primitive::Type type);
-
-  bool BuildFieldAccess(const Instruction& instruction, uint32_t dex_offset, bool is_get);
-  void BuildArrayAccess(const Instruction& instruction,
-                        uint32_t dex_offset,
-                        bool is_get,
-                        Primitive::Type anticipated_type);
 
   // Builds an invocation node and returns whether the instruction is supported.
   bool BuildInvoke(const Instruction& instruction,
@@ -126,7 +122,6 @@ class HGraphBuilder : public ValueObject {
 
   const DexFile* const dex_file_;
   DexCompilationUnit* const dex_compilation_unit_;
-  CompilerDriver* const compiler_driver_;
 
   DISALLOW_COPY_AND_ASSIGN(HGraphBuilder);
 };

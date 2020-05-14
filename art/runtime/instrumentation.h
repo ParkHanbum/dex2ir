@@ -17,16 +17,14 @@
 #ifndef ART_RUNTIME_INSTRUMENTATION_H_
 #define ART_RUNTIME_INSTRUMENTATION_H_
 
-#include <stdint.h>
-#include <list>
-#include <map>
-
 #include "atomic.h"
-#include "instruction_set.h"
 #include "base/macros.h"
 #include "base/mutex.h"
-#include "gc_root.h"
 #include "object_callbacks.h"
+
+#include <stdint.h>
+#include <set>
+#include <list>
 
 namespace art {
 namespace mirror {
@@ -163,9 +161,7 @@ class Instrumentation {
       LOCKS_EXCLUDED(Locks::thread_list_lock_, deoptimized_methods_lock_)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  bool IsDeoptimized(mirror::ArtMethod* method)
-      LOCKS_EXCLUDED(deoptimized_methods_lock_)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  bool IsDeoptimized(mirror::ArtMethod* method) const LOCKS_EXCLUDED(deoptimized_methods_lock_);
 
   // Enable method tracing by installing instrumentation entry/exit stubs.
   void EnableMethodTracing()
@@ -177,20 +173,19 @@ class Instrumentation {
       EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_)
       LOCKS_EXCLUDED(Locks::thread_list_lock_, Locks::classlinker_classes_lock_);
 
-  InterpreterHandlerTable GetInterpreterHandlerTable() const
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  InterpreterHandlerTable GetInterpreterHandlerTable() const {
     return interpreter_handler_table_;
   }
 
-  void InstrumentQuickAllocEntryPoints(bool suspended)
-      LOCKS_EXCLUDED(Locks::thread_list_lock_, Locks::runtime_shutdown_lock_);
-  void UninstrumentQuickAllocEntryPoints(bool suspended)
-      LOCKS_EXCLUDED(Locks::thread_list_lock_, Locks::runtime_shutdown_lock_);
+  void InstrumentQuickAllocEntryPoints() LOCKS_EXCLUDED(Locks::thread_list_lock_,
+                                                        Locks::runtime_shutdown_lock_);
+  void UninstrumentQuickAllocEntryPoints() LOCKS_EXCLUDED(Locks::thread_list_lock_,
+                                                          Locks::runtime_shutdown_lock_);
   void ResetQuickAllocEntryPoints() EXCLUSIVE_LOCKS_REQUIRED(Locks::runtime_shutdown_lock_);
 
   // Update the code of a method respecting any installed stubs.
   void UpdateMethodsCode(mirror::ArtMethod* method, const void* quick_code,
-                         const void* portable_code, bool have_portable_code)
+                         const void* portable_code, bool have_portable_code) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Get the quick code for the given method. More efficient than asking the class linker as it
@@ -221,31 +216,27 @@ class Instrumentation {
     return instrumentation_stubs_installed_;
   }
 
-  bool HasMethodEntryListeners() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  bool HasMethodEntryListeners() const {
     return have_method_entry_listeners_;
   }
 
-  bool HasMethodExitListeners() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  bool HasMethodExitListeners() const {
     return have_method_exit_listeners_;
   }
 
-  bool HasDexPcListeners() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  bool HasDexPcListeners() const {
     return have_dex_pc_listeners_;
   }
 
-  bool HasFieldReadListeners() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  bool HasFieldReadListeners() const {
     return have_field_read_listeners_;
   }
 
-  bool HasFieldWriteListeners() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  bool HasFieldWriteListeners() const {
     return have_field_write_listeners_;
   }
 
-  bool HasExceptionCaughtListeners() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return have_exception_caught_listeners_;
-  }
-
-  bool IsActive() const SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  bool IsActive() const {
     return have_dex_pc_listeners_ || have_method_entry_listeners_ || have_method_exit_listeners_ ||
         have_field_read_listeners_ || have_field_write_listeners_ ||
         have_exception_caught_listeners_ || have_method_unwind_listeners_;
@@ -320,8 +311,8 @@ class Instrumentation {
 
   // Called when an instrumented method is exited. Removes the pushed instrumentation frame
   // returning the intended link register. Generates method exit events.
-  TwoWordReturn PopInstrumentationStackFrame(Thread* self, uintptr_t* return_pc,
-                                             uint64_t gpr_result, uint64_t fpr_result)
+  uint64_t PopInstrumentationStackFrame(Thread* self, uintptr_t* return_pc, uint64_t gpr_result,
+                                        uint64_t fpr_result)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Pops an instrumentation frame from the current thread and generate an unwind event.
@@ -344,13 +335,13 @@ class Instrumentation {
       LOCKS_EXCLUDED(Locks::thread_list_lock_, Locks::classlinker_classes_lock_,
                      deoptimized_methods_lock_);
 
-  void UpdateInterpreterHandlerTable() EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_) {
+  void UpdateInterpreterHandlerTable() {
     interpreter_handler_table_ = IsActive() ? kAlternativeHandlerTable : kMainHandlerTable;
   }
 
   // No thread safety analysis to get around SetQuickAllocEntryPointsInstrumented requiring
   // exclusive access to mutator lock which you can't get if the runtime isn't started.
-  void SetEntrypointsInstrumented(bool instrumented, bool suspended) NO_THREAD_SAFETY_ANALYSIS;
+  void SetEntrypointsInstrumented(bool instrumented) NO_THREAD_SAFETY_ANALYSIS;
 
   void MethodEnterEventImpl(Thread* thread, mirror::Object* this_object,
                             mirror::ArtMethod* method, uint32_t dex_pc) const
@@ -371,23 +362,6 @@ class Instrumentation {
                            mirror::ArtField* field, const JValue& field_value) const
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  // Read barrier-aware utility functions for accessing deoptimized_methods_
-  bool AddDeoptimizedMethod(mirror::ArtMethod* method)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      EXCLUSIVE_LOCKS_REQUIRED(deoptimized_methods_lock_);
-  bool FindDeoptimizedMethod(mirror::ArtMethod* method)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      SHARED_LOCKS_REQUIRED(deoptimized_methods_lock_);
-  bool RemoveDeoptimizedMethod(mirror::ArtMethod* method)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      EXCLUSIVE_LOCKS_REQUIRED(deoptimized_methods_lock_);
-  mirror::ArtMethod* BeginDeoptimizedMethod()
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      SHARED_LOCKS_REQUIRED(deoptimized_methods_lock_);
-  bool IsDeoptimizedMethodsEmpty() const
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      SHARED_LOCKS_REQUIRED(deoptimized_methods_lock_);
-
   // Have we hijacked ArtMethod::code_ so that it calls instrumentation/interpreter code?
   bool instrumentation_stubs_installed_;
 
@@ -405,54 +379,49 @@ class Instrumentation {
 
   // Do we have any listeners for method entry events? Short-cut to avoid taking the
   // instrumentation_lock_.
-  bool have_method_entry_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_method_entry_listeners_;
 
   // Do we have any listeners for method exit events? Short-cut to avoid taking the
   // instrumentation_lock_.
-  bool have_method_exit_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_method_exit_listeners_;
 
   // Do we have any listeners for method unwind events? Short-cut to avoid taking the
   // instrumentation_lock_.
-  bool have_method_unwind_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_method_unwind_listeners_;
 
   // Do we have any listeners for dex move events? Short-cut to avoid taking the
   // instrumentation_lock_.
-  bool have_dex_pc_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_dex_pc_listeners_;
 
   // Do we have any listeners for field read events? Short-cut to avoid taking the
   // instrumentation_lock_.
-  bool have_field_read_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_field_read_listeners_;
 
   // Do we have any listeners for field write events? Short-cut to avoid taking the
   // instrumentation_lock_.
-  bool have_field_write_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_field_write_listeners_;
 
   // Do we have any exception caught listeners? Short-cut to avoid taking the instrumentation_lock_.
-  bool have_exception_caught_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  bool have_exception_caught_listeners_;
 
   // The event listeners, written to with the mutator_lock_ exclusively held.
   std::list<InstrumentationListener*> method_entry_listeners_ GUARDED_BY(Locks::mutator_lock_);
   std::list<InstrumentationListener*> method_exit_listeners_ GUARDED_BY(Locks::mutator_lock_);
   std::list<InstrumentationListener*> method_unwind_listeners_ GUARDED_BY(Locks::mutator_lock_);
-  std::shared_ptr<std::list<InstrumentationListener*>> dex_pc_listeners_
-      GUARDED_BY(Locks::mutator_lock_);
-  std::shared_ptr<std::list<InstrumentationListener*>> field_read_listeners_
-      GUARDED_BY(Locks::mutator_lock_);
-  std::shared_ptr<std::list<InstrumentationListener*>> field_write_listeners_
-      GUARDED_BY(Locks::mutator_lock_);
-  std::shared_ptr<std::list<InstrumentationListener*>> exception_caught_listeners_
-      GUARDED_BY(Locks::mutator_lock_);
+  std::list<InstrumentationListener*> dex_pc_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  std::list<InstrumentationListener*> field_read_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  std::list<InstrumentationListener*> field_write_listeners_ GUARDED_BY(Locks::mutator_lock_);
+  std::list<InstrumentationListener*> exception_caught_listeners_ GUARDED_BY(Locks::mutator_lock_);
 
   // The set of methods being deoptimized (by the debugger) which must be executed with interpreter
   // only.
   mutable ReaderWriterMutex deoptimized_methods_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
-  std::multimap<int32_t, GcRoot<mirror::ArtMethod>> deoptimized_methods_
-      GUARDED_BY(deoptimized_methods_lock_);
+  std::set<mirror::ArtMethod*> deoptimized_methods_ GUARDED_BY(deoptimized_methods_lock_);
   bool deoptimization_enabled_;
 
   // Current interpreter handler table. This is updated each time the thread state flags are
   // modified.
-  InterpreterHandlerTable interpreter_handler_table_ GUARDED_BY(Locks::mutator_lock_);
+  InterpreterHandlerTable interpreter_handler_table_;
 
   // Greater than 0 if quick alloc entry points instrumented.
   // TODO: The access and changes to this is racy and should be guarded by a lock.

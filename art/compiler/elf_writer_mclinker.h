@@ -17,9 +17,9 @@
 #ifndef ART_COMPILER_ELF_WRITER_MCLINKER_H_
 #define ART_COMPILER_ELF_WRITER_MCLINKER_H_
 
-#include <memory>
-
 #include "elf_writer.h"
+
+#include "UniquePtr.h"
 #include "safe_map.h"
 
 namespace mcld {
@@ -73,11 +73,11 @@ class ElfWriterMclinker FINAL : public ElfWriter {
                                    const CompiledCode& compiled_code);
 
   // Setup by Init()
-  std::unique_ptr<mcld::LinkerConfig> linker_config_;
-  std::unique_ptr<mcld::LinkerScript> linker_script_;
-  std::unique_ptr<mcld::Module> module_;
-  std::unique_ptr<mcld::IRBuilder> ir_builder_;
-  std::unique_ptr<mcld::Linker> linker_;
+  UniquePtr<mcld::LinkerConfig> linker_config_;
+  UniquePtr<mcld::LinkerScript> linker_script_;
+  UniquePtr<mcld::Module> module_;
+  UniquePtr<mcld::IRBuilder> ir_builder_;
+  UniquePtr<mcld::Linker> linker_;
 
   // Setup by AddOatInput()
   // TODO: ownership of oat_input_?

@@ -17,9 +17,8 @@
 #ifndef ART_COMPILER_UTILS_ARM64_ASSEMBLER_ARM64_H_
 #define ART_COMPILER_UTILS_ARM64_ASSEMBLER_ARM64_H_
 
-#include <stdint.h>
-#include <memory>
 #include <vector>
+#include <stdint.h>
 
 #include "base/logging.h"
 #include "constants_arm64.h"
@@ -27,6 +26,7 @@
 #include "utils/assembler.h"
 #include "offsets.h"
 #include "utils.h"
+#include "UniquePtr.h"
 #include "a64/macro-assembler-a64.h"
 #include "a64/disasm-a64.h"
 

@@ -14,13 +14,6 @@
  * limitations under the License.
  */
 
-#if defined(__linux__)
-#include <linux/types.h>
-#include <asm/prctl.h>
-#include <sys/prctl.h>
-#include <sys/syscall.h>
-#endif
-
 #include "thread.h"
 
 #include "asm_support_x86_64.h"
@@ -28,22 +21,19 @@
 #include "thread-inl.h"
 #include "thread_list.h"
 
+#include <asm/prctl.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+
 namespace art {
 
-#if defined(__linux__)
 static void arch_prctl(int code, void* val) {
   syscall(__NR_arch_prctl, code, val);
 }
-#endif
-
 void Thread::InitCpu() {
-  MutexLock mu(nullptr, *Locks::modify_ldt_lock_);
-
-#if defined(__linux__)
+  static Mutex modify_ldt_lock("modify_ldt lock");
+  MutexLock mu(Thread::Current(), modify_ldt_lock);
   arch_prctl(ARCH_SET_GS, this);
-#else
-  UNIMPLEMENTED(FATAL) << "Need to set GS";
-#endif
 
   // Allow easy indirection back to Thread*.
   tlsPtr_.self = this;

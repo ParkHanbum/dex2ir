@@ -19,6 +19,7 @@
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
+#include "object_utils.h"
 #include "utils.h"
 
 namespace art {
@@ -26,7 +27,7 @@ namespace art {
 std::string ThrowLocation::Dump() const {
   if (method_ != nullptr) {
     return StringPrintf("%s:%d", PrettyMethod(method_).c_str(),
-                        method_->GetLineNumFromDexPC(dex_pc_));
+                        MethodHelper(method_).GetLineNumFromDexPC(dex_pc_));
   } else {
     return "unknown throw location";
   }

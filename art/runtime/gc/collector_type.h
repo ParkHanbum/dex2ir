@@ -34,15 +34,10 @@ enum CollectorType {
   kCollectorTypeSS,
   // A generational variant of kCollectorTypeSS.
   kCollectorTypeGSS,
-  // Mark compact colector.
-  kCollectorTypeMC,
   // Heap trimming collector, doesn't do any actual collecting.
   kCollectorTypeHeapTrim,
   // A (mostly) concurrent copying collector.
   kCollectorTypeCC,
-  // A homogeneous space compaction collector used in background transition
-  // when both foreground and background collector are CMS.
-  kCollectorTypeHomogeneousSpaceCompact,
 };
 std::ostream& operator<<(std::ostream& os, const CollectorType& collector_type);
 

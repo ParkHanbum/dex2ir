@@ -16,11 +16,10 @@
 
 LOCAL_PATH := $(call my-dir)
 
-include art/build/Android.common_build.mk
+include art/build/Android.common.mk
 
 LIBART_COMPILER_SRC_FILES := \
 	compiled_method.cc \
-	dex/global_value_numbering.cc \
 	dex/local_value_numbering.cc \
 	dex/quick/arm/assemble_arm.cc \
 	dex/quick/arm/call_arm.cc \
@@ -49,7 +48,6 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/quick/mips/utility_mips.cc \
 	dex/quick/mir_to_lir.cc \
 	dex/quick/ralloc_util.cc \
-	dex/quick/resource_mask.cc \
 	dex/quick/x86/assemble_x86.cc \
 	dex/quick/x86/call_x86.cc \
 	dex/quick/x86/fp_x86.cc \
@@ -61,10 +59,9 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/mir_field_info.cc \
 	dex/mir_method_info.cc \
 	dex/mir_optimization.cc \
+	dex/pass_driver.cc \
 	dex/bb_optimizations.cc \
-	dex/post_opt_passes.cc \
-	dex/pass_driver_me_opts.cc \
-	dex/pass_driver_me_post_opt.cc \
+	dex/bit_vector_block_iterator.cc \
 	dex/frontend.cc \
 	dex/mir_graph.cc \
 	dex/mir_analysis.cc \
@@ -72,7 +69,6 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/verification_results.cc \
 	dex/vreg_analysis.cc \
 	dex/ssa_transformation.cc \
-	dex/quick_compiler_callbacks.cc \
 	driver/compiler_driver.cc \
 	driver/dex_compilation_unit.cc \
 	jni/quick/arm/calling_convention_arm.cc \
@@ -86,23 +82,15 @@ LIBART_COMPILER_SRC_FILES := \
 	optimizing/code_generator.cc \
 	optimizing/code_generator_arm.cc \
 	optimizing/code_generator_x86.cc \
-	optimizing/code_generator_x86_64.cc \
 	optimizing/graph_visualizer.cc \
-	optimizing/locations.cc \
 	optimizing/nodes.cc \
 	optimizing/optimizing_compiler.cc \
-	optimizing/parallel_move_resolver.cc \
-	optimizing/register_allocator.cc \
 	optimizing/ssa_builder.cc \
 	optimizing/ssa_liveness_analysis.cc \
-	optimizing/ssa_phi_elimination.cc \
-	optimizing/ssa_type_propagation.cc \
 	trampolines/trampoline_compiler.cc \
 	utils/arena_allocator.cc \
 	utils/arena_bit_vector.cc \
 	utils/arm/assembler_arm.cc \
-	utils/arm/assembler_arm32.cc \
-	utils/arm/assembler_thumb2.cc \
 	utils/arm/managed_register_arm.cc \
 	utils/arm64/assembler_arm64.cc \
 	utils/arm64/managed_register_arm64.cc \
@@ -118,7 +106,6 @@ LIBART_COMPILER_SRC_FILES := \
 	compilers.cc \
 	compiler.cc \
 	elf_fixup.cc \
-	elf_patcher.cc \
 	elf_stripper.cc \
 	elf_writer.cc \
 	elf_writer_quick.cc \
@@ -183,14 +170,12 @@ define build-libart-compiler
   ifeq ($$(art_target_or_host),host)
     LOCAL_IS_HOST_MODULE := true
   endif
+  include art/build/Android.libcxx.mk
   LOCAL_CPP_EXTENSION := $(ART_CPP_EXTENSION)
   ifeq ($$(art_ndebug_or_debug),ndebug)
     LOCAL_MODULE := libart-compiler
-    LOCAL_SHARED_LIBRARIES += libart
-    LOCAL_FDO_SUPPORT := true
   else # debug
     LOCAL_MODULE := libartd-compiler
-    LOCAL_SHARED_LIBRARIES += libartd
   endif
 
   LOCAL_MODULE_TAGS := optional
@@ -210,23 +195,33 @@ $$(ENUM_OPERATOR_OUT_GEN): $$(GENERATED_SRC_DIR)/%_operator_out.cc : $(LOCAL_PAT
   LOCAL_GENERATED_SOURCES += $$(ENUM_OPERATOR_OUT_GEN)
 
   LOCAL_CFLAGS := $$(LIBART_COMPILER_CFLAGS)
-  include external/libcxx/libcxx.mk
   ifeq ($$(art_target_or_host),target)
-    $(call set-target-local-clang-vars)
-    $(call set-target-local-cflags-vars,$(2))
+    LOCAL_CLANG := $(ART_TARGET_CLANG)
+    LOCAL_CFLAGS += $(ART_TARGET_CFLAGS)
   else # host
     LOCAL_CLANG := $(ART_HOST_CLANG)
     LOCAL_CFLAGS += $(ART_HOST_CFLAGS)
-    ifeq ($$(art_ndebug_or_debug),debug)
-      LOCAL_CFLAGS += $(ART_HOST_DEBUG_CFLAGS)
-    else
-      LOCAL_CFLAGS += $(ART_HOST_NON_DEBUG_CFLAGS)
-    endif
   endif
 
   # TODO: clean up the compilers and remove this.
   LOCAL_CFLAGS += -Wno-unused-parameter
 
+  LOCAL_SHARED_LIBRARIES += liblog
+  ifeq ($$(art_ndebug_or_debug),debug)
+    ifeq ($$(art_target_or_host),target)
+      LOCAL_CFLAGS += $(ART_TARGET_DEBUG_CFLAGS)
+    else # host
+      LOCAL_CFLAGS += $(ART_HOST_DEBUG_CFLAGS)
+    endif
+    LOCAL_SHARED_LIBRARIES += libartd
+  else
+    ifeq ($$(art_target_or_host),target)
+      LOCAL_CFLAGS += $(ART_TARGET_NON_DEBUG_CFLAGS)
+    else # host
+      LOCAL_CFLAGS += $(ART_HOST_NON_DEBUG_CFLAGS)
+    endif
+    LOCAL_SHARED_LIBRARIES += libart
+  endif
   ifeq ($(ART_USE_PORTABLE_COMPILER),true)
     LOCAL_SHARED_LIBRARIES += libLLVM
     LOCAL_CFLAGS += -DART_USE_PORTABLE_COMPILER=1
@@ -252,16 +247,15 @@ $$(ENUM_OPERATOR_OUT_GEN): $$(GENERATED_SRC_DIR)/%_operator_out.cc : $(LOCAL_PAT
   LOCAL_C_INCLUDES += $(ART_C_INCLUDES) art/runtime
 
   ifeq ($$(art_target_or_host),host)
-    LOCAL_LDLIBS += -ldl -lpthread
+    LOCAL_LDLIBS := -ldl -lpthread
   endif
-  LOCAL_ADDITIONAL_DEPENDENCIES := art/build/Android.common_build.mk
+  LOCAL_ADDITIONAL_DEPENDENCIES := art/build/Android.common.mk
   LOCAL_ADDITIONAL_DEPENDENCIES += $(LOCAL_PATH)/Android.mk
   ifeq ($$(art_target_or_host),target)
     LOCAL_SHARED_LIBRARIES += libcutils libvixl
     include $(BUILD_SHARED_LIBRARY)
   else # host
     LOCAL_STATIC_LIBRARIES += libcutils libvixl
-    LOCAL_MULTILIB := both
     include $(BUILD_HOST_SHARED_LIBRARY)
   endif
 
@@ -281,12 +275,14 @@ $$(ENUM_OPERATOR_OUT_GEN): $$(GENERATED_SRC_DIR)/%_operator_out.cc : $(LOCAL_PAT
 
 endef
 
-# We always build dex2oat and dependencies, even if the host build is otherwise disabled, since they are used to cross compile for the target.
-ifeq ($(ART_BUILD_NDEBUG),true)
-  $(eval $(call build-libart-compiler,host,ndebug))
-endif
-ifeq ($(ART_BUILD_DEBUG),true)
-  $(eval $(call build-libart-compiler,host,debug))
+ifeq ($(WITH_HOST_DALVIK),true)
+  # We always build dex2oat and dependencies, even if the host build is otherwise disabled, since they are used to cross compile for the target.
+  ifeq ($(ART_BUILD_NDEBUG),true)
+    $(eval $(call build-libart-compiler,host,ndebug))
+  endif
+  ifeq ($(ART_BUILD_DEBUG),true)
+    $(eval $(call build-libart-compiler,host,debug))
+  endif
 endif
 ifeq ($(ART_BUILD_TARGET_NDEBUG),true)
   $(eval $(call build-libart-compiler,target,ndebug))

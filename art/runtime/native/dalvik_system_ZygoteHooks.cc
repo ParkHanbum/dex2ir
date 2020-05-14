@@ -17,35 +17,15 @@
 #include <stdlib.h>
 
 #include "debugger.h"
-#include "instruction_set.h"
 #include "jni_internal.h"
 #include "JNIHelp.h"
-#include "ScopedUtfChars.h"
 #include "thread-inl.h"
-
-#if defined(HAVE_PRCTL)
-#include <sys/prctl.h>
-#endif
 
 #include <sys/resource.h>
 
 namespace art {
 
 static void EnableDebugger() {
-  // To let a non-privileged gdbserver attach to this
-  // process, we must set our dumpable flag.
-#if defined(HAVE_PRCTL)
-  if (prctl(PR_SET_DUMPABLE, 1, 0, 0, 0) == -1) {
-    PLOG(ERROR) << "prctl(PR_SET_DUMPABLE) failed for pid " << getpid();
-  }
-#endif
-  // We don't want core dumps, though, so set the core dump size to 0.
-  rlimit rl;
-  rl.rlim_cur = 0;
-  rl.rlim_max = RLIM_INFINITY;
-  if (setrlimit(RLIMIT_CORE, &rl) == -1) {
-    PLOG(ERROR) << "setrlimit(RLIMIT_CORE) failed for pid " << getpid();
-  }
 }
 
 static void EnableDebugFeatures(uint32_t debug_flags) {
@@ -103,27 +83,17 @@ static jlong ZygoteHooks_nativePreFork(JNIEnv* env, jclass) {
   return reinterpret_cast<jlong>(self);
 }
 
-static void ZygoteHooks_nativePostForkChild(JNIEnv* env, jclass, jlong token, jint debug_flags,
-                                            jstring instruction_set) {
+static void ZygoteHooks_nativePostForkChild(JNIEnv* env, jclass, jlong token, jint debug_flags) {
   Thread* thread = reinterpret_cast<Thread*>(token);
   // Our system thread ID, etc, has changed so reset Thread state.
   thread->InitAfterFork();
   EnableDebugFeatures(debug_flags);
-
-  Runtime::NativeBridgeAction action = Runtime::NativeBridgeAction::kUnload;
-  if (instruction_set != nullptr) {
-    ScopedUtfChars isa_string(env, instruction_set);
-    InstructionSet isa = GetInstructionSetFromString(isa_string.c_str());
-    if (isa != kNone && isa != kRuntimeISA) {
-      action = Runtime::NativeBridgeAction::kInitialize;
-    }
-  }
-  Runtime::Current()->DidForkFromZygote(action);
+  Runtime::Current()->DidForkFromZygote();
 }
 
 static JNINativeMethod gMethods[] = {
   NATIVE_METHOD(ZygoteHooks, nativePreFork, "()J"),
-  NATIVE_METHOD(ZygoteHooks, nativePostForkChild, "(JILjava/lang/String;)V"),
+  NATIVE_METHOD(ZygoteHooks, nativePostForkChild, "(JI)V"),
 };
 
 void register_dalvik_system_ZygoteHooks(JNIEnv* env) {

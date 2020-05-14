@@ -16,14 +16,8 @@
 
 #include "dex_file.h"
 
-#include <memory>
-
-#include "base/stl_util.h"
-#include "base/unix_file/fd_file.h"
+#include "UniquePtr.h"
 #include "common_runtime_test.h"
-#include "os.h"
-#include "scoped_thread_state_change.h"
-#include "thread-inl.h"
 
 namespace art {
 
@@ -96,7 +90,7 @@ static inline byte* DecodeBase64(const char* src, size_t* dst_size) {
     *dst_size = 0;
     return nullptr;
   }
-  std::unique_ptr<byte[]> dst(new byte[tmp.size()]);
+  UniquePtr<byte[]> dst(new byte[tmp.size()]);
   if (dst_size != nullptr) {
     *dst_size = tmp.size();
   } else {
@@ -137,11 +131,11 @@ static const DexFile* OpenDexFileBase64(const char* base64,
   // decode base64
   CHECK(base64 != NULL);
   size_t length;
-  std::unique_ptr<byte[]> dex_bytes(DecodeBase64(base64, &length));
+  UniquePtr<byte[]> dex_bytes(DecodeBase64(base64, &length));
   CHECK(dex_bytes.get() != NULL);
 
   // write to provided file
-  std::unique_ptr<File> file(OS::CreateEmptyFile(location));
+  UniquePtr<File> file(OS::CreateEmptyFile(location));
   CHECK(file.get() != NULL);
   if (!file->WriteFully(dex_bytes.get(), length)) {
     PLOG(FATAL) << "Failed to write base64 as dex file";
@@ -151,11 +145,8 @@ static const DexFile* OpenDexFileBase64(const char* base64,
   // read dex file
   ScopedObjectAccess soa(Thread::Current());
   std::string error_msg;
-  std::vector<const DexFile*> tmp;
-  bool success = DexFile::Open(location, location, &error_msg, &tmp);
-  CHECK(success) << error_msg;
-  EXPECT_EQ(1U, tmp.size());
-  const DexFile* dex_file = tmp[0];
+  const DexFile* dex_file = DexFile::Open(location, location, &error_msg);
+  CHECK(dex_file != nullptr) << error_msg;
   EXPECT_EQ(PROT_READ, dex_file->GetPermissions());
   EXPECT_TRUE(dex_file->IsReadOnly());
   return dex_file;
@@ -163,7 +154,7 @@ static const DexFile* OpenDexFileBase64(const char* base64,
 
 TEST_F(DexFileTest, Header) {
   ScratchFile tmp;
-  std::unique_ptr<const DexFile> raw(OpenDexFileBase64(kRawDex, tmp.GetFilename().c_str()));
+  UniquePtr<const DexFile> raw(OpenDexFileBase64(kRawDex, tmp.GetFilename().c_str()));
   ASSERT_TRUE(raw.get() != NULL);
 
   const DexFile::Header& header = raw->GetHeader();
@@ -343,34 +334,6 @@ TEST_F(DexFileTest, FindFieldId) {
         << java_lang_dex_file_->GetStringData(name);
     EXPECT_EQ(java_lang_dex_file_->GetIndexForFieldId(*found), i);
   }
-}
-
-TEST_F(DexFileTest, GetMultiDexClassesDexName) {
-  std::string dex_location_str = "/system/app/framework.jar";
-  const char* dex_location = dex_location_str.c_str();
-  ASSERT_EQ("/system/app/framework.jar", DexFile::GetMultiDexClassesDexName(0, dex_location));
-  ASSERT_EQ("/system/app/framework.jar:classes2.dex", DexFile::GetMultiDexClassesDexName(1, dex_location));
-  ASSERT_EQ("/system/app/framework.jar:classes101.dex", DexFile::GetMultiDexClassesDexName(100, dex_location));
-}
-
-TEST_F(DexFileTest, GetDexCanonicalLocation) {
-  ScratchFile file;
-  UniqueCPtr<const char[]> dex_location_real(realpath(file.GetFilename().c_str(), nullptr));
-  std::string dex_location(dex_location_real.get());
-
-  ASSERT_EQ(dex_location, DexFile::GetDexCanonicalLocation(dex_location.c_str()));
-  std::string multidex_location = DexFile::GetMultiDexClassesDexName(1, dex_location.c_str());
-  ASSERT_EQ(multidex_location, DexFile::GetDexCanonicalLocation(multidex_location.c_str()));
-
-  std::string dex_location_sym = dex_location + "symlink";
-  ASSERT_EQ(0, symlink(dex_location.c_str(), dex_location_sym.c_str()));
-
-  ASSERT_EQ(dex_location, DexFile::GetDexCanonicalLocation(dex_location_sym.c_str()));
-
-  std::string multidex_location_sym = DexFile::GetMultiDexClassesDexName(1, dex_location_sym.c_str());
-  ASSERT_EQ(multidex_location, DexFile::GetDexCanonicalLocation(multidex_location_sym.c_str()));
-
-  ASSERT_EQ(0, unlink(dex_location_sym.c_str()));
 }
 
 }  // namespace art

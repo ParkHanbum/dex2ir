@@ -52,6 +52,7 @@
 #include "mirror/class.h"
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
+#include "object_utils.h"
 #include "os.h"
 #include "safe_map.h"
 #include "scoped_thread_state_change.h"
@@ -151,8 +152,7 @@ enum HprofHeapTag {
 enum HprofHeapId {
   HPROF_HEAP_DEFAULT = 0,
   HPROF_HEAP_ZYGOTE = 'Z',
-  HPROF_HEAP_APP = 'A',
-  HPROF_HEAP_IMAGE = 'I',
+  HPROF_HEAP_APP = 'A'
 };
 
 enum HprofBasicType {
@@ -475,7 +475,7 @@ class Hprof {
         }
       }
 
-      std::unique_ptr<File> file(new File(out_fd, filename_));
+      UniquePtr<File> file(new File(out_fd, filename_));
       okay = file->WriteFully(header_data_ptr_, header_data_size_) &&
           file->WriteFully(body_data_ptr_, body_data_size_);
       if (!okay) {
@@ -634,12 +634,8 @@ class Hprof {
     // U1: NUL-terminated magic string.
     fwrite(magic, 1, sizeof(magic), header_fp_);
 
-    // U4: size of identifiers.  We're using addresses as IDs and our heap references are stored
-    // as uint32_t.
-    // Note of warning: hprof-conv hard-codes the size of identifiers to 4.
-    COMPILE_ASSERT(sizeof(mirror::HeapReference<mirror::Object>) == sizeof(uint32_t),
-      UnexpectedHeapReferenceSize);
-    U4_TO_BUF_BE(buf, 0, sizeof(uint32_t));
+    // U4: size of identifiers.  We're using addresses as IDs, so make sure a pointer fits.
+    U4_TO_BUF_BE(buf, 0, sizeof(void*));
     fwrite(buf, 1, sizeof(uint32_t), header_fp_);
 
     // The current time, in milliseconds since 0:00 GMT, 1/1/70.
@@ -847,36 +843,25 @@ static int StackTraceSerialNumber(const mirror::Object* /*obj*/) {
 
 int Hprof::DumpHeapObject(mirror::Object* obj) {
   HprofRecord* rec = &current_record_;
-  gc::space::ContinuousSpace* space =
-      Runtime::Current()->GetHeap()->FindContinuousSpaceFromObject(obj, true);
-  HprofHeapId heap_type = HPROF_HEAP_APP;
-  if (space != nullptr) {
-    if (space->IsZygoteSpace()) {
-      heap_type = HPROF_HEAP_ZYGOTE;
-    } else if (space->IsImageSpace()) {
-      heap_type = HPROF_HEAP_IMAGE;
-    }
-  }
+  HprofHeapId desiredHeap = false ? HPROF_HEAP_ZYGOTE : HPROF_HEAP_APP;  // TODO: zygote objects?
+
   if (objects_in_segment_ >= OBJECTS_PER_SEGMENT || rec->Size() >= BYTES_PER_SEGMENT) {
     StartNewHeapDumpSegment();
   }
 
-  if (heap_type != current_heap_) {
+  if (desiredHeap != current_heap_) {
     HprofStringId nameId;
 
     // This object is in a different heap than the current one.
     // Emit a HEAP_DUMP_INFO tag to change heaps.
     rec->AddU1(HPROF_HEAP_DUMP_INFO);
-    rec->AddU4(static_cast<uint32_t>(heap_type));   // uint32_t: heap type
-    switch (heap_type) {
+    rec->AddU4((uint32_t)desiredHeap);   // uint32_t: heap id
+    switch (desiredHeap) {
     case HPROF_HEAP_APP:
       nameId = LookupStringId("app");
       break;
     case HPROF_HEAP_ZYGOTE:
       nameId = LookupStringId("zygote");
-      break;
-    case HPROF_HEAP_IMAGE:
-      nameId = LookupStringId("image");
       break;
     default:
       // Internal error
@@ -885,7 +870,7 @@ int Hprof::DumpHeapObject(mirror::Object* obj) {
       break;
     }
     rec->AddStringId(nameId);
-    current_heap_ = heap_type;
+    current_heap_ = desiredHeap;
   }
 
   mirror::Class* c = obj->GetClass();
@@ -934,6 +919,8 @@ int Hprof::DumpHeapObject(mirror::Object* obj) {
 
       rec->AddU2(0);  // empty const pool
 
+      FieldHelper fh;
+
       // Static fields
       if (sFieldCount == 0) {
         rec->AddU2((uint16_t)0);
@@ -945,10 +932,11 @@ int Hprof::DumpHeapObject(mirror::Object* obj) {
 
         for (size_t i = 0; i < sFieldCount; ++i) {
           mirror::ArtField* f = thisClass->GetStaticField(i);
+          fh.ChangeField(f);
 
           size_t size;
-          HprofBasicType t = SignatureToBasicTypeAndSize(f->GetTypeDescriptor(), &size);
-          rec->AddStringId(LookupStringId(f->GetName()));
+          HprofBasicType t = SignatureToBasicTypeAndSize(fh.GetTypeDescriptor(), &size);
+          rec->AddStringId(LookupStringId(fh.GetName()));
           rec->AddU1(t);
           if (size == 1) {
             rec->AddU1(static_cast<uint8_t>(f->Get32(thisClass)));
@@ -969,8 +957,9 @@ int Hprof::DumpHeapObject(mirror::Object* obj) {
       rec->AddU2((uint16_t)iFieldCount);
       for (int i = 0; i < iFieldCount; ++i) {
         mirror::ArtField* f = thisClass->GetInstanceField(i);
-        HprofBasicType t = SignatureToBasicTypeAndSize(f->GetTypeDescriptor(), NULL);
-        rec->AddStringId(LookupStringId(f->GetName()));
+        fh.ChangeField(f);
+        HprofBasicType t = SignatureToBasicTypeAndSize(fh.GetTypeDescriptor(), NULL);
+        rec->AddStringId(LookupStringId(fh.GetName()));
         rec->AddU1(t);
       }
     } else if (c->IsArrayClass()) {
@@ -1026,12 +1015,14 @@ int Hprof::DumpHeapObject(mirror::Object* obj) {
       // Write the instance data;  fields for this class, followed by super class fields,
       // and so on. Don't write the klass or monitor fields of Object.class.
       mirror::Class* sclass = c;
+      FieldHelper fh;
       while (!sclass->IsObjectClass()) {
         int ifieldCount = sclass->NumInstanceFields();
         for (int i = 0; i < ifieldCount; ++i) {
           mirror::ArtField* f = sclass->GetInstanceField(i);
+          fh.ChangeField(f);
           size_t size;
-          SignatureToBasicTypeAndSize(f->GetTypeDescriptor(), &size);
+          SignatureToBasicTypeAndSize(fh.GetTypeDescriptor(), &size);
           if (size == 1) {
             rec->AddU1(f->Get32(obj));
           } else if (size == 2) {

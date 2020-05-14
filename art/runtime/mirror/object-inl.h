@@ -26,7 +26,6 @@
 #include "class.h"
 #include "lock_word-inl.h"
 #include "monitor.h"
-#include "object_array-inl.h"
 #include "read_barrier-inl.h"
 #include "runtime.h"
 #include "reference.h"
@@ -34,11 +33,6 @@
 
 namespace art {
 namespace mirror {
-
-inline uint32_t Object::ClassSize() {
-  uint32_t vtable_entries = kVTableLength;
-  return Class::ComputeClassSize(true, vtable_entries, 0, 0, 0);
-}
 
 template<VerifyObjectFlags kVerifyFlags, ReadBarrierOption kReadBarrierOption>
 inline Class* Object::GetClass() {
@@ -74,16 +68,10 @@ inline void Object::SetLockWord(LockWord new_val, bool as_volatile) {
   }
 }
 
-inline bool Object::CasLockWordWeakSequentiallyConsistent(LockWord old_val, LockWord new_val) {
+inline bool Object::CasLockWord(LockWord old_val, LockWord new_val) {
   // Force use of non-transactional mode and do not check.
-  return CasFieldWeakSequentiallyConsistent32<false, false>(
-      OFFSET_OF_OBJECT_MEMBER(Object, monitor_), old_val.GetValue(), new_val.GetValue());
-}
-
-inline bool Object::CasLockWordWeakRelaxed(LockWord old_val, LockWord new_val) {
-  // Force use of non-transactional mode and do not check.
-  return CasFieldWeakRelaxed32<false, false>(
-      OFFSET_OF_OBJECT_MEMBER(Object, monitor_), old_val.GetValue(), new_val.GetValue());
+  return CasField32<false, false>(OFFSET_OF_OBJECT_MEMBER(Object, monitor_), old_val.GetValue(),
+                                  new_val.GetValue());
 }
 
 inline uint32_t Object::GetLockOwnerThreadId() {
@@ -142,17 +130,21 @@ inline bool Object::AtomicSetReadBarrierPointer(Object* expected_rb_ptr, Object*
   DCHECK(kUseBakerOrBrooksReadBarrier);
   MemberOffset offset = OFFSET_OF_OBJECT_MEMBER(Object, x_rb_ptr_);
   byte* raw_addr = reinterpret_cast<byte*>(this) + offset.SizeValue();
-  Atomic<uint32_t>* atomic_rb_ptr = reinterpret_cast<Atomic<uint32_t>*>(raw_addr);
+  HeapReference<Object>* ref = reinterpret_cast<HeapReference<Object>*>(raw_addr);
   HeapReference<Object> expected_ref(HeapReference<Object>::FromMirrorPtr(expected_rb_ptr));
   HeapReference<Object> new_ref(HeapReference<Object>::FromMirrorPtr(rb_ptr));
+  uint32_t expected_val = expected_ref.reference_;
+  uint32_t new_val;
   do {
-    if (UNLIKELY(atomic_rb_ptr->LoadRelaxed() != expected_ref.reference_)) {
+    uint32_t old_val = ref->reference_;
+    if (old_val != expected_val) {
       // Lost the race.
       return false;
     }
-  } while (!atomic_rb_ptr->CompareExchangeWeakSequentiallyConsistent(expected_ref.reference_,
-                                                                     new_ref.reference_));
-  DCHECK_EQ(new_ref.reference_, atomic_rb_ptr->LoadRelaxed());
+    new_val = new_ref.reference_;
+  } while (!__sync_bool_compare_and_swap(
+      reinterpret_cast<uint32_t*>(raw_addr), expected_val, new_val));
+  DCHECK_EQ(new_val, ref->reference_);
   return true;
 #else
   LOG(FATAL) << "Unreachable";
@@ -249,7 +241,7 @@ inline ArtMethod* Object::AsArtMethod() {
 
 template<VerifyObjectFlags kVerifyFlags>
 inline bool Object::IsReferenceInstance() {
-  return GetClass<kVerifyFlags>()->IsTypeOfReferenceClass();
+  return GetClass<kVerifyFlags>()->IsReferenceClass();
 }
 
 template<VerifyObjectFlags kVerifyFlags>
@@ -415,9 +407,11 @@ inline int32_t Object::GetField32(MemberOffset field_offset) {
   const byte* raw_addr = reinterpret_cast<const byte*>(this) + field_offset.Int32Value();
   const int32_t* word_addr = reinterpret_cast<const int32_t*>(raw_addr);
   if (UNLIKELY(kIsVolatile)) {
-    return reinterpret_cast<const Atomic<int32_t>*>(word_addr)->LoadSequentiallyConsistent();
+    int32_t result = *(reinterpret_cast<volatile int32_t*>(const_cast<int32_t*>(word_addr)));
+    QuasiAtomic::MembarLoadLoad();  // Ensure volatile loads don't re-order.
+    return result;
   } else {
-    return reinterpret_cast<const Atomic<int32_t>*>(word_addr)->LoadJavaData();
+    return *word_addr;
   }
 }
 
@@ -443,9 +437,11 @@ inline void Object::SetField32(MemberOffset field_offset, int32_t new_value) {
   byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
   int32_t* word_addr = reinterpret_cast<int32_t*>(raw_addr);
   if (kIsVolatile) {
-    reinterpret_cast<Atomic<int32_t>*>(word_addr)->StoreSequentiallyConsistent(new_value);
+    QuasiAtomic::MembarStoreStore();  // Ensure this store occurs after others in the queue.
+    *word_addr = new_value;
+    QuasiAtomic::MembarStoreLoad();  // Ensure this store occurs before any volatile loads.
   } else {
-    reinterpret_cast<Atomic<int32_t>*>(word_addr)->StoreJavaData(new_value);
+    *word_addr = new_value;
   }
 }
 
@@ -454,11 +450,8 @@ inline void Object::SetField32Volatile(MemberOffset field_offset, int32_t new_va
   SetField32<kTransactionActive, kCheckTransaction, kVerifyFlags, true>(field_offset, new_value);
 }
 
-// TODO: Pass memory_order_ and strong/weak as arguments to avoid code duplication?
-
 template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldWeakSequentiallyConsistent32(MemberOffset field_offset,
-                                                         int32_t old_value, int32_t new_value) {
+inline bool Object::CasField32(MemberOffset field_offset, int32_t old_value, int32_t new_value) {
   if (kCheckTransaction) {
     DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
   }
@@ -469,45 +462,8 @@ inline bool Object::CasFieldWeakSequentiallyConsistent32(MemberOffset field_offs
     VerifyObject(this);
   }
   byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  AtomicInteger* atomic_addr = reinterpret_cast<AtomicInteger*>(raw_addr);
-
-  return atomic_addr->CompareExchangeWeakSequentiallyConsistent(old_value, new_value);
-}
-
-template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldWeakRelaxed32(MemberOffset field_offset,
-                                          int32_t old_value, int32_t new_value) {
-  if (kCheckTransaction) {
-    DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
-  }
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField32(this, field_offset, old_value, true);
-  }
-  if (kVerifyFlags & kVerifyThis) {
-    VerifyObject(this);
-  }
-  byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  AtomicInteger* atomic_addr = reinterpret_cast<AtomicInteger*>(raw_addr);
-
-  return atomic_addr->CompareExchangeWeakRelaxed(old_value, new_value);
-}
-
-template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldStrongSequentiallyConsistent32(MemberOffset field_offset,
-                                                           int32_t old_value, int32_t new_value) {
-  if (kCheckTransaction) {
-    DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
-  }
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField32(this, field_offset, old_value, true);
-  }
-  if (kVerifyFlags & kVerifyThis) {
-    VerifyObject(this);
-  }
-  byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  AtomicInteger* atomic_addr = reinterpret_cast<AtomicInteger*>(raw_addr);
-
-  return atomic_addr->CompareExchangeStrongSequentiallyConsistent(old_value, new_value);
+  volatile int32_t* addr = reinterpret_cast<volatile int32_t*>(raw_addr);
+  return __sync_bool_compare_and_swap(addr, old_value, new_value);
 }
 
 template<VerifyObjectFlags kVerifyFlags, bool kIsVolatile>
@@ -518,9 +474,11 @@ inline int64_t Object::GetField64(MemberOffset field_offset) {
   const byte* raw_addr = reinterpret_cast<const byte*>(this) + field_offset.Int32Value();
   const int64_t* addr = reinterpret_cast<const int64_t*>(raw_addr);
   if (kIsVolatile) {
-    return reinterpret_cast<const Atomic<int64_t>*>(addr)->LoadSequentiallyConsistent();
+    int64_t result = QuasiAtomic::Read64(addr);
+    QuasiAtomic::MembarLoadLoad();  // Ensure volatile loads don't re-order.
+    return result;
   } else {
-    return reinterpret_cast<const Atomic<int64_t>*>(addr)->LoadJavaData();
+    return *addr;
   }
 }
 
@@ -546,9 +504,15 @@ inline void Object::SetField64(MemberOffset field_offset, int64_t new_value) {
   byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
   int64_t* addr = reinterpret_cast<int64_t*>(raw_addr);
   if (kIsVolatile) {
-    reinterpret_cast<Atomic<int64_t>*>(addr)->StoreSequentiallyConsistent(new_value);
+    QuasiAtomic::MembarStoreStore();  // Ensure this store occurs after others in the queue.
+    QuasiAtomic::Write64(addr, new_value);
+    if (!QuasiAtomic::LongAtomicsUseMutexes()) {
+      QuasiAtomic::MembarStoreLoad();  // Ensure this store occurs before any volatile loads.
+    } else {
+      // Fence from from mutex is enough.
+    }
   } else {
-    reinterpret_cast<Atomic<int64_t>*>(addr)->StoreJavaData(new_value);
+    *addr = new_value;
   }
 }
 
@@ -559,8 +523,7 @@ inline void Object::SetField64Volatile(MemberOffset field_offset, int64_t new_va
 }
 
 template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldWeakSequentiallyConsistent64(MemberOffset field_offset,
-                                                         int64_t old_value, int64_t new_value) {
+inline bool Object::CasField64(MemberOffset field_offset, int64_t old_value, int64_t new_value) {
   if (kCheckTransaction) {
     DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
   }
@@ -571,25 +534,8 @@ inline bool Object::CasFieldWeakSequentiallyConsistent64(MemberOffset field_offs
     VerifyObject(this);
   }
   byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
-  return atomic_addr->CompareExchangeWeakSequentiallyConsistent(old_value, new_value);
-}
-
-template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldStrongSequentiallyConsistent64(MemberOffset field_offset,
-                                                           int64_t old_value, int64_t new_value) {
-  if (kCheckTransaction) {
-    DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
-  }
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteField64(this, field_offset, old_value, true);
-  }
-  if (kVerifyFlags & kVerifyThis) {
-    VerifyObject(this);
-  }
-  byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  Atomic<int64_t>* atomic_addr = reinterpret_cast<Atomic<int64_t>*>(raw_addr);
-  return atomic_addr->CompareExchangeStrongSequentiallyConsistent(old_value, new_value);
+  volatile int64_t* addr = reinterpret_cast<volatile int64_t*>(raw_addr);
+  return QuasiAtomic::Cas64(old_value, new_value, addr);
 }
 
 template<class T, VerifyObjectFlags kVerifyFlags, ReadBarrierOption kReadBarrierOption,
@@ -602,8 +548,7 @@ inline T* Object::GetFieldObject(MemberOffset field_offset) {
   HeapReference<T>* objref_addr = reinterpret_cast<HeapReference<T>*>(raw_addr);
   T* result = ReadBarrier::Barrier<T, kReadBarrierOption>(this, field_offset, objref_addr);
   if (kIsVolatile) {
-    // TODO: Refactor to use a SequentiallyConsistent load instead.
-    QuasiAtomic::ThreadFenceAcquire();  // Ensure visibility of operations preceding store.
+    QuasiAtomic::MembarLoadLoad();  // Ensure loads don't re-order.
   }
   if (kVerifyFlags & kVerifyReads) {
     VerifyObject(result);
@@ -641,11 +586,9 @@ inline void Object::SetFieldObjectWithoutWriteBarrier(MemberOffset field_offset,
   byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
   HeapReference<Object>* objref_addr = reinterpret_cast<HeapReference<Object>*>(raw_addr);
   if (kIsVolatile) {
-    // TODO: Refactor to use a SequentiallyConsistent store instead.
-    QuasiAtomic::ThreadFenceRelease();  // Ensure that prior accesses are visible before store.
+    QuasiAtomic::MembarStoreStore();  // Ensure this store occurs after others in the queue.
     objref_addr->Assign(new_value);
-    QuasiAtomic::ThreadFenceSequentiallyConsistent();
-                                // Ensure this store occurs before any volatile loads.
+    QuasiAtomic::MembarStoreLoad();  // Ensure this store occurs before any loads.
   } else {
     objref_addr->Assign(new_value);
   }
@@ -657,9 +600,8 @@ inline void Object::SetFieldObject(MemberOffset field_offset, Object* new_value)
   SetFieldObjectWithoutWriteBarrier<kTransactionActive, kCheckTransaction, kVerifyFlags,
       kIsVolatile>(field_offset, new_value);
   if (new_value != nullptr) {
-    Runtime::Current()->GetHeap()->WriteBarrierField(this, field_offset, new_value);
-    // TODO: Check field assignment could theoretically cause thread suspension, TODO: fix this.
     CheckFieldAssignment(field_offset, new_value);
+    Runtime::Current()->GetHeap()->WriteBarrierField(this, field_offset, new_value);
   }
 }
 
@@ -679,8 +621,8 @@ inline HeapReference<Object>* Object::GetFieldObjectReferenceAddr(MemberOffset f
 }
 
 template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldWeakSequentiallyConsistentObject(MemberOffset field_offset,
-                                                             Object* old_value, Object* new_value) {
+inline bool Object::CasFieldObject(MemberOffset field_offset, Object* old_value,
+                                   Object* new_value) {
   if (kCheckTransaction) {
     DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
   }
@@ -696,46 +638,11 @@ inline bool Object::CasFieldWeakSequentiallyConsistentObject(MemberOffset field_
   if (kTransactionActive) {
     Runtime::Current()->RecordWriteFieldReference(this, field_offset, old_value, true);
   }
+  byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
+  volatile int32_t* addr = reinterpret_cast<volatile int32_t*>(raw_addr);
   HeapReference<Object> old_ref(HeapReference<Object>::FromMirrorPtr(old_value));
   HeapReference<Object> new_ref(HeapReference<Object>::FromMirrorPtr(new_value));
-  byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  Atomic<uint32_t>* atomic_addr = reinterpret_cast<Atomic<uint32_t>*>(raw_addr);
-
-  bool success = atomic_addr->CompareExchangeWeakSequentiallyConsistent(old_ref.reference_,
-                                                                        new_ref.reference_);
-
-  if (success) {
-    Runtime::Current()->GetHeap()->WriteBarrierField(this, field_offset, new_value);
-  }
-  return success;
-}
-
-template<bool kTransactionActive, bool kCheckTransaction, VerifyObjectFlags kVerifyFlags>
-inline bool Object::CasFieldStrongSequentiallyConsistentObject(MemberOffset field_offset,
-                                                             Object* old_value, Object* new_value) {
-  if (kCheckTransaction) {
-    DCHECK_EQ(kTransactionActive, Runtime::Current()->IsActiveTransaction());
-  }
-  if (kVerifyFlags & kVerifyThis) {
-    VerifyObject(this);
-  }
-  if (kVerifyFlags & kVerifyWrites) {
-    VerifyObject(new_value);
-  }
-  if (kVerifyFlags & kVerifyReads) {
-    VerifyObject(old_value);
-  }
-  if (kTransactionActive) {
-    Runtime::Current()->RecordWriteFieldReference(this, field_offset, old_value, true);
-  }
-  HeapReference<Object> old_ref(HeapReference<Object>::FromMirrorPtr(old_value));
-  HeapReference<Object> new_ref(HeapReference<Object>::FromMirrorPtr(new_value));
-  byte* raw_addr = reinterpret_cast<byte*>(this) + field_offset.Int32Value();
-  Atomic<uint32_t>* atomic_addr = reinterpret_cast<Atomic<uint32_t>*>(raw_addr);
-
-  bool success = atomic_addr->CompareExchangeStrongSequentiallyConsistent(old_ref.reference_,
-                                                                          new_ref.reference_);
-
+  bool success =  __sync_bool_compare_and_swap(addr, old_ref.reference_, new_ref.reference_);
   if (success) {
     Runtime::Current()->GetHeap()->WriteBarrierField(this, field_offset, new_value);
   }
@@ -769,9 +676,10 @@ inline void Object::VisitFieldsReferences(uint32_t ref_offsets, const Visitor& v
         mirror::ArtField* field = kIsStatic ? klass->GetStaticField(i) : klass->GetInstanceField(i);
         MemberOffset field_offset = field->GetOffset();
         // TODO: Do a simpler check?
-        if (kVisitClass || field_offset.Uint32Value() != ClassOffset().Uint32Value()) {
-          visitor(this, field_offset, kIsStatic);
+        if (!kVisitClass && UNLIKELY(field_offset.Uint32Value() == ClassOffset().Uint32Value())) {
+          continue;
         }
+        visitor(this, field_offset, kIsStatic);
       }
     }
   }
@@ -785,7 +693,6 @@ inline void Object::VisitInstanceFieldsReferences(mirror::Class* klass, const Vi
 
 template<bool kVisitClass, typename Visitor>
 inline void Object::VisitStaticFieldsReferences(mirror::Class* klass, const Visitor& visitor) {
-  DCHECK(!klass->IsTemp());
   klass->VisitFieldsReferences<kVisitClass, true>(
       klass->GetReferenceStaticOffsets<kVerifyNone>(), visitor);
 }
@@ -795,18 +702,20 @@ template <const bool kVisitClass, VerifyObjectFlags kVerifyFlags, typename Visit
 inline void Object::VisitReferences(const Visitor& visitor,
                                     const JavaLangRefVisitor& ref_visitor) {
   mirror::Class* klass = GetClass<kVerifyFlags>();
-  if (klass == Class::GetJavaLangClass()) {
-    AsClass<kVerifyNone>()->VisitReferences<kVisitClass>(klass, visitor);
-  } else if (klass->IsArrayClass()) {
-    if (klass->IsObjectArrayClass<kVerifyNone>()) {
-      AsObjectArray<mirror::Object, kVerifyNone>()->VisitReferences<kVisitClass>(visitor);
-    } else if (kVisitClass) {
-      visitor(this, ClassOffset(), false);
+  if (klass->IsVariableSize()) {
+    if (klass->IsClassClass()) {
+      AsClass<kVerifyNone>()->VisitReferences<kVisitClass>(klass, visitor);
+    } else {
+      DCHECK(klass->IsArrayClass<kVerifyFlags>());
+      if (klass->IsObjectArrayClass<kVerifyNone>()) {
+        AsObjectArray<mirror::Object, kVerifyNone>()->VisitReferences<kVisitClass>(visitor);
+      } else if (kVisitClass) {
+        visitor(this, ClassOffset(), false);
+      }
     }
   } else {
-    DCHECK(!klass->IsVariableSize());
     VisitInstanceFieldsReferences<kVisitClass>(klass, visitor);
-    if (UNLIKELY(klass->IsTypeOfReferenceClass<kVerifyNone>())) {
+    if (UNLIKELY(klass->IsReferenceClass<kVerifyNone>())) {
       ref_visitor(klass, AsReference());
     }
   }

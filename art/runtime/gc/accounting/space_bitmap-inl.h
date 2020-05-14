@@ -19,10 +19,16 @@
 
 #include "space_bitmap.h"
 
-#include <memory>
-
-#include "atomic.h"
 #include "base/logging.h"
+#include "dex_file-inl.h"
+#include "heap_bitmap.h"
+#include "mirror/art_field-inl.h"
+#include "mirror/class-inl.h"
+#include "mirror/object-inl.h"
+#include "mirror/object_array-inl.h"
+#include "object_utils.h"
+#include "space_bitmap-inl.h"
+#include "UniquePtr.h"
 #include "utils.h"
 
 namespace art {
@@ -36,17 +42,17 @@ inline bool SpaceBitmap<kAlignment>::AtomicTestAndSet(const mirror::Object* obj)
   const uintptr_t offset = addr - heap_begin_;
   const size_t index = OffsetToIndex(offset);
   const uword mask = OffsetToMask(offset);
-  Atomic<uword>* atomic_entry = reinterpret_cast<Atomic<uword>*>(&bitmap_begin_[index]);
+  uword* const address = &bitmap_begin_[index];
   DCHECK_LT(index, bitmap_size_ / kWordSize) << " bitmap_size_ = " << bitmap_size_;
   uword old_word;
   do {
-    old_word = atomic_entry->LoadRelaxed();
+    old_word = *address;
     // Fast path: The bit is already set.
     if ((old_word & mask) != 0) {
       DCHECK(Test(obj));
       return true;
     }
-  } while (!atomic_entry->CompareExchangeWeakSequentiallyConsistent(old_word, old_word | mask));
+  } while (!__sync_bool_compare_and_swap(address, old_word, old_word | mask));
   DCHECK(Test(obj));
   return false;
 }

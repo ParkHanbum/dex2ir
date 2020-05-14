@@ -18,9 +18,8 @@
 #define ART_RUNTIME_ZIP_ARCHIVE_H_
 
 #include <stdint.h>
-#include <ziparchive/zip_archive.h>
-#include <memory>
 #include <string>
+#include <ziparchive/zip_archive.h>
 
 #include "base/logging.h"
 #include "base/unix_file/random_access_file.h"
@@ -28,6 +27,7 @@
 #include "mem_map.h"
 #include "os.h"
 #include "safe_map.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -37,8 +37,7 @@ class MemMap;
 class ZipEntry {
  public:
   bool ExtractToFile(File& file, std::string* error_msg);
-  MemMap* ExtractToMemMap(const char* zip_filename, const char* entry_filename,
-                          std::string* error_msg);
+  MemMap* ExtractToMemMap(const char* entry_filename, std::string* error_msg);
   virtual ~ZipEntry();
 
   uint32_t GetUncompressedLength();

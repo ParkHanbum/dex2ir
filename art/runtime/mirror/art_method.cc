@@ -16,7 +16,6 @@
 
 #include "art_method.h"
 
-#include "arch/context.h"
 #include "art_field-inl.h"
 #include "art_method-inl.h"
 #include "base/stringpiece.h"
@@ -27,12 +26,12 @@
 #include "interpreter/interpreter.h"
 #include "jni_internal.h"
 #include "mapping_table.h"
-#include "method_helper-inl.h"
-#include "object_array-inl.h"
-#include "object_array.h"
 #include "object-inl.h"
+#include "object_array.h"
+#include "object_array-inl.h"
 #include "scoped_thread_state_change.h"
 #include "string.h"
+#include "object_utils.h"
 #include "well_known_classes.h"
 
 namespace art {
@@ -47,10 +46,9 @@ extern "C" void art_quick_invoke_static_stub(ArtMethod*, uint32_t*, uint32_t, Th
 #endif
 
 // TODO: get global references for these
-GcRoot<Class> ArtMethod::java_lang_reflect_ArtMethod_;
+Class* ArtMethod::java_lang_reflect_ArtMethod_ = NULL;
 
-ArtMethod* ArtMethod::FromReflectedMethod(const ScopedObjectAccessAlreadyRunnable& soa,
-                                          jobject jlr_method) {
+ArtMethod* ArtMethod::FromReflectedMethod(const ScopedObjectAccess& soa, jobject jlr_method) {
   mirror::ArtField* f =
       soa.DecodeField(WellKnownClasses::java_lang_reflect_AbstractMethod_artMethod);
   mirror::ArtMethod* method = f->GetObject(soa.Decode<mirror::Object*>(jlr_method))->AsArtMethod();
@@ -60,8 +58,9 @@ ArtMethod* ArtMethod::FromReflectedMethod(const ScopedObjectAccessAlreadyRunnabl
 
 
 void ArtMethod::VisitRoots(RootCallback* callback, void* arg) {
-  if (!java_lang_reflect_ArtMethod_.IsNull()) {
-    java_lang_reflect_ArtMethod_.VisitRoot(callback, arg, 0, kRootStickyClass);
+  if (java_lang_reflect_ArtMethod_ != nullptr) {
+    callback(reinterpret_cast<mirror::Object**>(&java_lang_reflect_ArtMethod_), arg, 0,
+             kRootStickyClass);
   }
 }
 
@@ -79,14 +78,14 @@ InvokeType ArtMethod::GetInvokeType() {
 }
 
 void ArtMethod::SetClass(Class* java_lang_reflect_ArtMethod) {
-  CHECK(java_lang_reflect_ArtMethod_.IsNull());
+  CHECK(java_lang_reflect_ArtMethod_ == NULL);
   CHECK(java_lang_reflect_ArtMethod != NULL);
-  java_lang_reflect_ArtMethod_ = GcRoot<Class>(java_lang_reflect_ArtMethod);
+  java_lang_reflect_ArtMethod_ = java_lang_reflect_ArtMethod;
 }
 
 void ArtMethod::ResetClass() {
-  CHECK(!java_lang_reflect_ArtMethod_.IsNull());
-  java_lang_reflect_ArtMethod_ = GcRoot<Class>(nullptr);
+  CHECK(java_lang_reflect_ArtMethod_ != NULL);
+  java_lang_reflect_ArtMethod_ = NULL;
 }
 
 void ArtMethod::SetDexCacheStrings(ObjectArray<String>* new_dex_cache_strings) {
@@ -129,11 +128,12 @@ ArtMethod* ArtMethod::FindOverriddenMethod() {
   Class* declaring_class = GetDeclaringClass();
   Class* super_class = declaring_class->GetSuperClass();
   uint16_t method_index = GetMethodIndex();
+  ObjectArray<ArtMethod>* super_class_vtable = super_class->GetVTable();
   ArtMethod* result = NULL;
   // Did this method override a super class method? If so load the result from the super class'
   // vtable
-  if (super_class->HasVTable() && method_index < super_class->GetVTableLength()) {
-    result = super_class->GetVTableEntry(method_index);
+  if (super_class_vtable != NULL && method_index < super_class_vtable->GetLength()) {
+    result = super_class_vtable->Get(method_index);
   } else {
     // Method didn't override superclass method so search interfaces
     if (IsProxyMethod()) {
@@ -141,29 +141,32 @@ ArtMethod* ArtMethod::FindOverriddenMethod() {
       CHECK_EQ(result,
                Runtime::Current()->GetClassLinker()->FindMethodForProxy(GetDeclaringClass(), this));
     } else {
-      StackHandleScope<2> hs(Thread::Current());
-      MethodHelper mh(hs.NewHandle(this));
-      MethodHelper interface_mh(hs.NewHandle<mirror::ArtMethod>(nullptr));
+      MethodHelper mh(this);
+      MethodHelper interface_mh;
       IfTable* iftable = GetDeclaringClass()->GetIfTable();
       for (size_t i = 0; i < iftable->Count() && result == NULL; i++) {
         Class* interface = iftable->GetInterface(i);
         for (size_t j = 0; j < interface->NumVirtualMethods(); ++j) {
-          interface_mh.ChangeMethod(interface->GetVirtualMethod(j));
+          ArtMethod* interface_method = interface->GetVirtualMethod(j);
+          interface_mh.ChangeMethod(interface_method);
           if (mh.HasSameNameAndSignature(&interface_mh)) {
-            result = interface_mh.GetMethod();
+            result = interface_method;
             break;
           }
         }
       }
     }
   }
-  if (kIsDebugBuild) {
-    StackHandleScope<2> hs(Thread::Current());
-    MethodHelper result_mh(hs.NewHandle(result));
-    MethodHelper this_mh(hs.NewHandle(this));
-    DCHECK(result == nullptr || this_mh.HasSameNameAndSignature(&result_mh));
-  }
+#ifndef NDEBUG
+  MethodHelper result_mh(result);
+  DCHECK(result == NULL || MethodHelper(this).HasSameNameAndSignature(&result_mh));
+#endif
   return result;
+}
+
+uintptr_t ArtMethod::NativePcOffset(const uintptr_t pc) {
+  const void* code = Runtime::Current()->GetInstrumentation()->GetQuickCodeFor(this);
+  return pc - reinterpret_cast<uintptr_t>(code);
 }
 
 uint32_t ArtMethod::ToDexPc(const uintptr_t pc, bool abort_on_failure) {
@@ -171,16 +174,13 @@ uint32_t ArtMethod::ToDexPc(const uintptr_t pc, bool abort_on_failure) {
     // Portable doesn't use the machine pc, we just use dex pc instead.
     return static_cast<uint32_t>(pc);
   }
-  const void* entry_point = GetQuickOatEntryPoint();
-  MappingTable table(
-      entry_point != nullptr ? GetMappingTable(EntryPointToCodePointer(entry_point)) : nullptr);
+  MappingTable table(GetMappingTable());
   if (table.TotalSize() == 0) {
-    // NOTE: Special methods (see Mir2Lir::GenSpecialCase()) have an empty mapping
-    // but they have no suspend checks and, consequently, we never call ToDexPc() for them.
     DCHECK(IsNative() || IsCalleeSaveMethod() || IsProxyMethod()) << PrettyMethod(this);
     return DexFile::kDexNoIndex;   // Special no mapping case
   }
-  uint32_t sought_offset = pc - reinterpret_cast<uintptr_t>(entry_point);
+  const void* code = Runtime::Current()->GetInstrumentation()->GetQuickCodeFor(this);
+  uint32_t sought_offset = pc - reinterpret_cast<uintptr_t>(code);
   // Assume the caller wants a pc-to-dex mapping so check here first.
   typedef MappingTable::PcToDexIterator It;
   for (It cur = table.PcToDexBegin(), end = table.PcToDexEnd(); cur != end; ++cur) {
@@ -197,16 +197,14 @@ uint32_t ArtMethod::ToDexPc(const uintptr_t pc, bool abort_on_failure) {
   }
   if (abort_on_failure) {
       LOG(FATAL) << "Failed to find Dex offset for PC offset " << reinterpret_cast<void*>(sought_offset)
-             << "(PC " << reinterpret_cast<void*>(pc) << ", entry_point=" << entry_point
+             << "(PC " << reinterpret_cast<void*>(pc) << ", code=" << code
              << ") in " << PrettyMethod(this);
   }
   return DexFile::kDexNoIndex;
 }
 
 uintptr_t ArtMethod::ToNativePc(const uint32_t dex_pc) {
-  const void* entry_point = GetQuickOatEntryPoint();
-  MappingTable table(
-      entry_point != nullptr ? GetMappingTable(EntryPointToCodePointer(entry_point)) : nullptr);
+  MappingTable table(GetMappingTable());
   if (table.TotalSize() == 0) {
     DCHECK_EQ(dex_pc, 0U);
     return 0;   // Special no mapping/pc == 0 case
@@ -215,14 +213,16 @@ uintptr_t ArtMethod::ToNativePc(const uint32_t dex_pc) {
   typedef MappingTable::DexToPcIterator It;
   for (It cur = table.DexToPcBegin(), end = table.DexToPcEnd(); cur != end; ++cur) {
     if (cur.DexPc() == dex_pc) {
-      return reinterpret_cast<uintptr_t>(entry_point) + cur.NativePcOffset();
+      const void* code = Runtime::Current()->GetInstrumentation()->GetQuickCodeFor(this);
+      return reinterpret_cast<uintptr_t>(code) + cur.NativePcOffset();
     }
   }
   // Now check pc-to-dex mappings.
   typedef MappingTable::PcToDexIterator It2;
   for (It2 cur = table.PcToDexBegin(), end = table.PcToDexEnd(); cur != end; ++cur) {
     if (cur.DexPc() == dex_pc) {
-      return reinterpret_cast<uintptr_t>(entry_point) + cur.NativePcOffset();
+      const void* code = Runtime::Current()->GetInstrumentation()->GetQuickCodeFor(this);
+      return reinterpret_cast<uintptr_t>(code) + cur.NativePcOffset();
     }
   }
   LOG(FATAL) << "Failed to find native offset for dex pc 0x" << std::hex << dex_pc
@@ -230,16 +230,15 @@ uintptr_t ArtMethod::ToNativePc(const uint32_t dex_pc) {
   return 0;
 }
 
-uint32_t ArtMethod::FindCatchBlock(Handle<ArtMethod> h_this, Handle<Class> exception_type,
-                                   uint32_t dex_pc, bool* has_no_move_exception) {
-  MethodHelper mh(h_this);
-  const DexFile::CodeItem* code_item = h_this->GetCodeItem();
+uint32_t ArtMethod::FindCatchBlock(Handle<Class>& exception_type, uint32_t dex_pc,
+                                   bool* has_no_move_exception, bool* exc_changed) {
+  MethodHelper mh(this);
+  const DexFile::CodeItem* code_item = mh.GetCodeItem();
   // Set aside the exception while we resolve its type.
   Thread* self = Thread::Current();
   ThrowLocation throw_location;
   StackHandleScope<1> hs(self);
   Handle<mirror::Throwable> exception(hs.NewHandle(self->GetException(&throw_location)));
-  bool is_exception_reported = self->IsExceptionReportedToInstrumentation();
   self->ClearException();
   // Default to handler not found.
   uint32_t found_dex_pc = DexFile::kDexNoIndex;
@@ -253,16 +252,17 @@ uint32_t ArtMethod::FindCatchBlock(Handle<ArtMethod> h_this, Handle<Class> excep
     }
     // Does this catch exception type apply?
     Class* iter_exception_type = mh.GetClassFromTypeIdx(iter_type_idx);
-    if (UNLIKELY(iter_exception_type == nullptr)) {
-      // Now have a NoClassDefFoundError as exception. Ignore in case the exception class was
-      // removed by a pro-guard like tool.
+    if (iter_exception_type == nullptr) {
+      // Now have a NoClassDefFoundError as exception.
       // Note: this is not RI behavior. RI would have failed when loading the class.
-      self->ClearException();
-      // Delete any long jump context as this routine is called during a stack walk which will
-      // release its in use context at the end.
-      delete self->GetLongJumpContext();
+      *exc_changed = true;
+
+      // TODO: Add old exception as suppressed.
       LOG(WARNING) << "Unresolved exception class when finding catch block: "
-        << DescriptorToDot(h_this->GetTypeDescriptorFromTypeIdx(iter_type_idx));
+        << mh.GetTypeDescriptorFromTypeIdx(iter_type_idx);
+
+      // Return immediately.
+      return DexFile::kDexNoIndex;
     } else if (iter_exception_type->IsAssignableFrom(exception_type.Get())) {
       found_dex_pc = it.GetHandlerAddress();
       break;
@@ -276,22 +276,16 @@ uint32_t ArtMethod::FindCatchBlock(Handle<ArtMethod> h_this, Handle<Class> excep
   // Put the exception back.
   if (exception.Get() != nullptr) {
     self->SetException(throw_location, exception.Get());
-    self->SetExceptionReportedToInstrumentation(is_exception_reported);
   }
   return found_dex_pc;
 }
 
 void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue* result,
                        const char* shorty) {
-  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd())) {
-    ThrowStackOverflowError(self);
-    return;
-  }
-
   if (kIsDebugBuild) {
     self->AssertThreadSuspensionIsAllowable();
     CHECK_EQ(kRunnable, self->GetState());
-    CHECK_STREQ(GetShorty(), shorty);
+    CHECK_STREQ(MethodHelper(this).GetShorty(), shorty);
   }
 
   // Push a transition back into managed code onto the linked list in thread.
@@ -310,21 +304,13 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   } else {
     const bool kLogInvocationStartAndReturn = false;
     bool have_quick_code = GetEntryPointFromQuickCompiledCode() != nullptr;
-#if defined(ART_USE_PORTABLE_COMPILER)
     bool have_portable_code = GetEntryPointFromPortableCompiledCode() != nullptr;
-#else
-    bool have_portable_code = false;
-#endif
     if (LIKELY(have_quick_code || have_portable_code)) {
       if (kLogInvocationStartAndReturn) {
         LOG(INFO) << StringPrintf("Invoking '%s' %s code=%p", PrettyMethod(this).c_str(),
                                   have_quick_code ? "quick" : "portable",
                                   have_quick_code ? GetEntryPointFromQuickCompiledCode()
-#if defined(ART_USE_PORTABLE_COMPILER)
                                                   : GetEntryPointFromPortableCompiledCode());
-#else
-                                                  : nullptr);
-#endif
       }
       if (!IsPortableCompiled()) {
 #ifdef __LP64__
@@ -353,11 +339,7 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
         LOG(INFO) << StringPrintf("Returned '%s' %s code=%p", PrettyMethod(this).c_str(),
                                   have_quick_code ? "quick" : "portable",
                                   have_quick_code ? GetEntryPointFromQuickCompiledCode()
-#if defined(ART_USE_PORTABLE_COMPILER)
                                                   : GetEntryPointFromPortableCompiledCode());
-#else
-                                                  : nullptr);
-#endif
       }
     } else {
       LOG(INFO) << "Not invoking '" << PrettyMethod(this) << "' code=null";
@@ -369,6 +351,14 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
 
   // Pop transition.
   self->PopManagedStackFragment(fragment);
+}
+
+bool ArtMethod::IsRegistered() {
+  void* native_method =
+      GetFieldPtr<void*>(OFFSET_OF_OBJECT_MEMBER(ArtMethod, entry_point_from_jni_));
+  CHECK(native_method != nullptr);
+  void* jni_stub = GetJniDlsymLookupStub();
+  return native_method != jni_stub;
 }
 
 void ArtMethod::RegisterNative(Thread* self, const void* native_method, bool is_fast) {
@@ -386,6 +376,44 @@ void ArtMethod::UnregisterNative(Thread* self) {
   CHECK(IsNative() && !IsFastNative()) << PrettyMethod(this);
   // restore stub to lookup native pointer via dlsym
   RegisterNative(self, GetJniDlsymLookupStub(), false);
+}
+
+const void* ArtMethod::GetOatCodePointer() {
+  if (IsPortableCompiled() || IsNative() || IsAbstract() || IsRuntimeMethod() || IsProxyMethod()) {
+    return nullptr;
+  }
+  Runtime* runtime = Runtime::Current();
+  const void* entry_point = runtime->GetInstrumentation()->GetQuickCodeFor(this);
+  // On failure, instead of nullptr we get the quick-to-interpreter-bridge (but not the trampoline).
+  DCHECK(entry_point != GetQuickToInterpreterBridgeTrampoline(runtime->GetClassLinker()));
+  if (entry_point == GetQuickToInterpreterBridge()) {
+    return nullptr;
+  }
+  return EntryPointToCodePointer(entry_point);
+}
+
+const uint8_t* ArtMethod::GetMappingTable() {
+  const void* code = GetOatCodePointer();
+  if (code == nullptr) {
+    return nullptr;
+  }
+  uint32_t offset = reinterpret_cast<const OatQuickMethodHeader*>(code)[-1].mapping_table_offset_;
+  if (UNLIKELY(offset == 0u)) {
+    return nullptr;
+  }
+  return reinterpret_cast<const uint8_t*>(code) - offset;
+}
+
+const uint8_t* ArtMethod::GetVmapTable() {
+  const void* code = GetOatCodePointer();
+  if (code == nullptr) {
+    return nullptr;
+  }
+  uint32_t offset = reinterpret_cast<const OatQuickMethodHeader*>(code)[-1].vmap_table_offset_;
+  if (UNLIKELY(offset == 0u)) {
+    return nullptr;
+  }
+  return reinterpret_cast<const uint8_t*>(code) - offset;
 }
 
 }  // namespace mirror

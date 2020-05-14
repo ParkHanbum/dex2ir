@@ -171,15 +171,14 @@ TEST_F(UtilsTest, PrettyDuration) {
   EXPECT_EQ("10s", PrettyDuration(10 * one_sec));
   EXPECT_EQ("100s", PrettyDuration(100 * one_sec));
   EXPECT_EQ("1.001s", PrettyDuration(1 * one_sec + one_ms));
-  EXPECT_EQ("1.000001s", PrettyDuration(1 * one_sec + one_us, 6));
-  EXPECT_EQ("1.000000001s", PrettyDuration(1 * one_sec + 1, 9));
-  EXPECT_EQ("1.000s", PrettyDuration(1 * one_sec + one_us, 3));
+  EXPECT_EQ("1.000001s", PrettyDuration(1 * one_sec + one_us));
+  EXPECT_EQ("1.000000001s", PrettyDuration(1 * one_sec + 1));
 
   EXPECT_EQ("1ms", PrettyDuration(1 * one_ms));
   EXPECT_EQ("10ms", PrettyDuration(10 * one_ms));
   EXPECT_EQ("100ms", PrettyDuration(100 * one_ms));
   EXPECT_EQ("1.001ms", PrettyDuration(1 * one_ms + one_us));
-  EXPECT_EQ("1.000001ms", PrettyDuration(1 * one_ms + 1, 6));
+  EXPECT_EQ("1.000001ms", PrettyDuration(1 * one_ms + 1));
 
   EXPECT_EQ("1us", PrettyDuration(1 * one_us));
   EXPECT_EQ("10us", PrettyDuration(10 * one_us));
@@ -350,18 +349,6 @@ TEST_F(UtilsTest, GetDalvikCacheFilenameOrDie) {
                GetDalvikCacheFilenameOrDie("/system/framework/core.jar", "/foo").c_str());
   EXPECT_STREQ("/foo/system@framework@boot.art",
                GetDalvikCacheFilenameOrDie("/system/framework/boot.art", "/foo").c_str());
-  EXPECT_STREQ("/foo/system@framework@boot.oat",
-               GetDalvikCacheFilenameOrDie("/system/framework/boot.oat", "/foo").c_str());
-}
-
-TEST_F(UtilsTest, GetSystemImageFilename) {
-  EXPECT_STREQ("/system/framework/arm/boot.art",
-               GetSystemImageFilename("/system/framework/boot.art", kArm).c_str());
-}
-
-TEST_F(UtilsTest, DexFilenameToOdexFilename) {
-  EXPECT_STREQ("/foo/bar/arm/baz.odex",
-               DexFilenameToOdexFilename("/foo/bar/baz.jar", kArm).c_str());
 }
 
 TEST_F(UtilsTest, ExecSuccess) {

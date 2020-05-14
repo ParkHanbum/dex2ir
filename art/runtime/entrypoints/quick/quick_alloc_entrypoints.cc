@@ -17,7 +17,7 @@
 #include "entrypoints/quick/quick_alloc_entrypoints.h"
 
 #include "callee_save_frame.h"
-#include "entrypoints/entrypoint_utils-inl.h"
+#include "entrypoints/entrypoint_utils.h"
 #include "mirror/art_method-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/object_array-inl.h"
@@ -27,36 +27,32 @@ namespace art {
 
 #define GENERATE_ENTRYPOINTS_FOR_ALLOCATOR_INST(suffix, suffix2, instrumented_bool, allocator_type) \
 extern "C" mirror::Object* artAllocObjectFromCode ##suffix##suffix2( \
-    uint32_t type_idx, mirror::ArtMethod* method, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    uint32_t type_idx, mirror::ArtMethod* method, Thread* self, mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocObjectFromCode<false, instrumented_bool>(type_idx, method, self, allocator_type); \
 } \
 extern "C" mirror::Object* artAllocObjectFromCodeResolved##suffix##suffix2( \
-    mirror::Class* klass, mirror::ArtMethod* method, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::Class* klass, mirror::ArtMethod* method, Thread* self, mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocObjectFromCodeResolved<instrumented_bool>(klass, method, self, allocator_type); \
 } \
 extern "C" mirror::Object* artAllocObjectFromCodeInitialized##suffix##suffix2( \
-    mirror::Class* klass, mirror::ArtMethod* method, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::Class* klass, mirror::ArtMethod* method, Thread* self, mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocObjectFromCodeInitialized<instrumented_bool>(klass, method, self, allocator_type); \
 } \
 extern "C" mirror::Object* artAllocObjectFromCodeWithAccessCheck##suffix##suffix2( \
-    uint32_t type_idx, mirror::ArtMethod* method, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    uint32_t type_idx, mirror::ArtMethod* method, Thread* self, mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocObjectFromCode<true, instrumented_bool>(type_idx, method, self, allocator_type); \
 } \
 extern "C" mirror::Array* artAllocArrayFromCode##suffix##suffix2( \
     uint32_t type_idx, mirror::ArtMethod* method, int32_t component_count, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocArrayFromCode<false, instrumented_bool>(type_idx, method, component_count, self, \
@@ -64,7 +60,7 @@ extern "C" mirror::Array* artAllocArrayFromCode##suffix##suffix2( \
 } \
 extern "C" mirror::Array* artAllocArrayFromCodeResolved##suffix##suffix2( \
     mirror::Class* klass, mirror::ArtMethod* method, int32_t component_count, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocArrayFromCodeResolved<false, instrumented_bool>(klass, method, component_count, self, \
@@ -72,7 +68,7 @@ extern "C" mirror::Array* artAllocArrayFromCodeResolved##suffix##suffix2( \
 } \
 extern "C" mirror::Array* artAllocArrayFromCodeWithAccessCheck##suffix##suffix2( \
     uint32_t type_idx, mirror::ArtMethod* method, int32_t component_count, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   return AllocArrayFromCode<true, instrumented_bool>(type_idx, method, component_count, self, \
@@ -80,7 +76,7 @@ extern "C" mirror::Array* artAllocArrayFromCodeWithAccessCheck##suffix##suffix2(
 } \
 extern "C" mirror::Array* artCheckAndAllocArrayFromCode##suffix##suffix2( \
     uint32_t type_idx, mirror::ArtMethod* method, int32_t component_count, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   if (!instrumented_bool) { \
@@ -91,7 +87,7 @@ extern "C" mirror::Array* artCheckAndAllocArrayFromCode##suffix##suffix2( \
 } \
 extern "C" mirror::Array* artCheckAndAllocArrayFromCodeWithAccessCheck##suffix##suffix2( \
     uint32_t type_idx, mirror::ArtMethod* method, int32_t component_count, Thread* self, \
-    StackReference<mirror::ArtMethod>* sp) \
+    mirror::ArtMethod** sp) \
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) { \
   FinishCalleeSaveFrameSetup(self, sp, Runtime::kRefsOnly); \
   if (!instrumented_bool) { \
@@ -154,12 +150,10 @@ void SetQuickAllocEntryPoints##suffix(QuickEntryPoints* qpoints, bool instrument
 }
 
 // Generate the entrypoint functions.
-#if !defined(__APPLE__) || !defined(__LP64__)
 GENERATE_ENTRYPOINTS(_dlmalloc);
 GENERATE_ENTRYPOINTS(_rosalloc);
 GENERATE_ENTRYPOINTS(_bump_pointer);
 GENERATE_ENTRYPOINTS(_tlab);
-#endif
 
 static bool entry_points_instrumented = false;
 static gc::AllocatorType entry_points_allocator = gc::kAllocatorTypeDlMalloc;
@@ -174,7 +168,6 @@ void SetQuickAllocEntryPointsInstrumented(bool instrumented) {
 
 void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints) {
   switch (entry_points_allocator) {
-#if !defined(__APPLE__) || !defined(__LP64__)
     case gc::kAllocatorTypeDlMalloc: {
       SetQuickAllocEntryPoints_dlmalloc(qpoints, entry_points_instrumented);
       break;
@@ -193,7 +186,6 @@ void ResetQuickAllocEntryPoints(QuickEntryPoints* qpoints) {
       SetQuickAllocEntryPoints_tlab(qpoints, entry_points_instrumented);
       break;
     }
-#endif
     default: {
       LOG(FATAL) << "Unimplemented";
     }

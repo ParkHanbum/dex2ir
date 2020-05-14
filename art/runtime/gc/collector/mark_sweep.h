@@ -17,8 +17,6 @@
 #ifndef ART_RUNTIME_GC_COLLECTOR_MARK_SWEEP_H_
 #define ART_RUNTIME_GC_COLLECTOR_MARK_SWEEP_H_
 
-#include <memory>
-
 #include "atomic.h"
 #include "barrier.h"
 #include "base/macros.h"
@@ -28,6 +26,7 @@
 #include "immune_region.h"
 #include "object_callbacks.h"
 #include "offsets.h"
+#include "UniquePtr.h"
 
 namespace art {
 
@@ -178,10 +177,6 @@ class MarkSweep : public GarbageCollector {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
       EXCLUSIVE_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
 
-  static bool HeapReferenceMarkedCallback(mirror::HeapReference<mirror::Object>* ref, void* arg)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
-      EXCLUSIVE_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
-
   static void MarkRootCallback(mirror::Object** root, void* arg, uint32_t thread_id,
                                RootType root_type)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_)
@@ -215,8 +210,7 @@ class MarkSweep : public GarbageCollector {
 
  protected:
   // Returns true if the object has its bit set in the mark bitmap.
-  bool IsMarked(const mirror::Object* object) const
-      SHARED_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
+  bool IsMarked(const mirror::Object* object) const;
 
   static mirror::Object* IsMarkedCallback(mirror::Object* object, void* arg)
       SHARED_LOCKS_REQUIRED(Locks::heap_bitmap_lock_);
@@ -310,15 +304,13 @@ class MarkSweep : public GarbageCollector {
   AtomicInteger mark_fastpath_count_;
   AtomicInteger mark_slowpath_count_;
 
-  std::unique_ptr<Barrier> gc_barrier_;
-  Mutex mark_stack_lock_ ACQUIRED_AFTER(Locks::classlinker_classes_lock_);
-
-  const bool is_concurrent_;
-
   // Verification.
   size_t live_stack_freeze_size_;
 
-  std::unique_ptr<MemMap> sweep_array_free_buffer_mem_map_;
+  UniquePtr<Barrier> gc_barrier_;
+  Mutex mark_stack_lock_ ACQUIRED_AFTER(Locks::classlinker_classes_lock_);
+
+  const bool is_concurrent_;
 
  private:
   friend class AddIfReachesAllocSpaceVisitor;  // Used by mod-union table.

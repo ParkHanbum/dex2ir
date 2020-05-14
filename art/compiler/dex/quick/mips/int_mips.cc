@@ -18,7 +18,6 @@
 
 #include "codegen_mips.h"
 #include "dex/quick/mir_to_lir-inl.h"
-#include "dex/reg_storage_eq.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "mips_lir.h"
 #include "mirror/array.h"
@@ -215,18 +214,6 @@ void MipsMir2Lir::OpRegCopyWide(RegStorage r_dest, RegStorage r_src) {
   }
 }
 
-void MipsMir2Lir::GenSelectConst32(RegStorage left_op, RegStorage right_op, ConditionCode code,
-                                   int32_t true_val, int32_t false_val, RegStorage rs_dest,
-                                   int dest_reg_class) {
-  // Implement as a branch-over.
-  // TODO: Conditional move?
-  LoadConstant(rs_dest, false_val);  // Favors false.
-  LIR* ne_branchover = OpCmpBranch(code, left_op, right_op, NULL);
-  LoadConstant(rs_dest, true_val);
-  LIR* target_label = NewLIR0(kPseudoTargetLabel);
-  ne_branchover->target = target_label;
-}
-
 void MipsMir2Lir::GenSelect(BasicBlock* bb, MIR* mir) {
   UNIMPLEMENTED(FATAL) << "Need codegen for select";
 }
@@ -273,18 +260,21 @@ RegLocation MipsMir2Lir::GenDivRemLit(RegLocation rl_dest, RegLocation rl_src1, 
   return rl_dest;
 }
 
+void MipsMir2Lir::OpLea(RegStorage r_base, RegStorage reg1, RegStorage reg2, int scale,
+                        int offset) {
+  LOG(FATAL) << "Unexpected use of OpLea for Arm";
+}
+
+void MipsMir2Lir::OpTlsCmp(ThreadOffset<4> offset, int val) {
+  LOG(FATAL) << "Unexpected use of OpTlsCmp for Arm";
+}
+
+void MipsMir2Lir::OpTlsCmp(ThreadOffset<8> offset, int val) {
+  UNIMPLEMENTED(FATAL) << "Should not be called.";
+}
+
 bool MipsMir2Lir::GenInlinedCas(CallInfo* info, bool is_long, bool is_object) {
   DCHECK_NE(cu_->instruction_set, kThumb2);
-  return false;
-}
-
-bool MipsMir2Lir::GenInlinedAbsFloat(CallInfo* info) {
-  // TODO - add Mips implementation
-  return false;
-}
-
-bool MipsMir2Lir::GenInlinedAbsDouble(CallInfo* info) {
-  // TODO - add Mips implementation
   return false;
 }
 
@@ -304,7 +294,7 @@ bool MipsMir2Lir::GenInlinedPeek(CallInfo* info, OpSize size) {
   RegLocation rl_address = LoadValue(rl_src_address, kCoreReg);
   RegLocation rl_result = EvalLoc(rl_dest, kCoreReg, true);
   DCHECK(size == kSignedByte);
-  LoadBaseDisp(rl_address.reg, 0, rl_result.reg, size, kNotVolatile);
+  LoadBaseDisp(rl_address.reg, 0, rl_result.reg, size);
   StoreValue(rl_dest, rl_result);
   return true;
 }
@@ -320,7 +310,7 @@ bool MipsMir2Lir::GenInlinedPoke(CallInfo* info, OpSize size) {
   RegLocation rl_address = LoadValue(rl_src_address, kCoreReg);
   DCHECK(size == kSignedByte);
   RegLocation rl_value = LoadValue(rl_src_value, kCoreReg);
-  StoreBaseDisp(rl_address.reg, 0, rl_value.reg, size, kNotVolatile);
+  StoreBaseDisp(rl_address.reg, 0, rl_value.reg, size);
   return true;
 }
 
@@ -392,6 +382,11 @@ void MipsMir2Lir::OpEndIT(LIR* it) {
 }
 
 
+void MipsMir2Lir::GenMulLong(Instruction::Code opcode, RegLocation rl_dest,
+                             RegLocation rl_src1, RegLocation rl_src2) {
+  LOG(FATAL) << "Unexpected use of GenMulLong for Mips";
+}
+
 void MipsMir2Lir::GenAddLong(Instruction::Code opcode, RegLocation rl_dest,
                              RegLocation rl_src1, RegLocation rl_src2) {
   rl_src1 = LoadValueWide(rl_src1, kCoreReg);
@@ -436,29 +431,6 @@ void MipsMir2Lir::GenSubLong(Instruction::Code opcode, RegLocation rl_dest,
   StoreValueWide(rl_dest, rl_result);
 }
 
-void MipsMir2Lir::GenArithOpLong(Instruction::Code opcode, RegLocation rl_dest, RegLocation rl_src1,
-                                 RegLocation rl_src2) {
-  switch (opcode) {
-    case Instruction::ADD_LONG:
-    case Instruction::ADD_LONG_2ADDR:
-      GenAddLong(opcode, rl_dest, rl_src1, rl_src2);
-      return;
-    case Instruction::SUB_LONG:
-    case Instruction::SUB_LONG_2ADDR:
-      GenSubLong(opcode, rl_dest, rl_src1, rl_src2);
-      return;
-    case Instruction::NEG_LONG:
-      GenNegLong(rl_dest, rl_src2);
-      return;
-
-    default:
-      break;
-  }
-
-  // Fallback for all other ops.
-  Mir2Lir::GenArithOpLong(opcode, rl_dest, rl_src1, rl_src2);
-}
-
 void MipsMir2Lir::GenNegLong(RegLocation rl_dest, RegLocation rl_src) {
   rl_src = LoadValueWide(rl_src, kCoreReg);
   RegLocation rl_result = EvalLoc(rl_dest, kCoreReg, true);
@@ -479,6 +451,22 @@ void MipsMir2Lir::GenNegLong(RegLocation rl_dest, RegLocation rl_src) {
   StoreValueWide(rl_dest, rl_result);
 }
 
+void MipsMir2Lir::GenAndLong(Instruction::Code opcode, RegLocation rl_dest,
+                             RegLocation rl_src1,
+                             RegLocation rl_src2) {
+  LOG(FATAL) << "Unexpected use of GenAndLong for Mips";
+}
+
+void MipsMir2Lir::GenOrLong(Instruction::Code opcode, RegLocation rl_dest,
+                            RegLocation rl_src1, RegLocation rl_src2) {
+  LOG(FATAL) << "Unexpected use of GenOrLong for Mips";
+}
+
+void MipsMir2Lir::GenXorLong(Instruction::Code opcode, RegLocation rl_dest,
+                             RegLocation rl_src1, RegLocation rl_src2) {
+  LOG(FATAL) << "Unexpected use of GenXorLong for Mips";
+}
+
 /*
  * Generate array load
  */
@@ -488,10 +476,8 @@ void MipsMir2Lir::GenArrayGet(int opt_flags, OpSize size, RegLocation rl_array,
   int len_offset = mirror::Array::LengthOffset().Int32Value();
   int data_offset;
   RegLocation rl_result;
-  rl_array = LoadValue(rl_array, kRefReg);
+  rl_array = LoadValue(rl_array, kCoreReg);
   rl_index = LoadValue(rl_index, kCoreReg);
-
-  // FIXME: need to add support for rl_index.is_const.
 
   if (size == k64 || size == kDouble) {
     data_offset = mirror::Array::DataOffset(sizeof(int64_t)).Int32Value();
@@ -529,7 +515,7 @@ void MipsMir2Lir::GenArrayGet(int opt_flags, OpSize size, RegLocation rl_array,
       GenArrayBoundsCheck(rl_index.reg, reg_len);
       FreeTemp(reg_len);
     }
-    LoadBaseDisp(reg_ptr, 0, rl_result.reg, size, kNotVolatile);
+    LoadBaseDisp(reg_ptr, 0, rl_result.reg, size);
 
     FreeTemp(reg_ptr);
     StoreValueWide(rl_dest, rl_result);
@@ -563,11 +549,8 @@ void MipsMir2Lir::GenArrayPut(int opt_flags, OpSize size, RegLocation rl_array,
     data_offset = mirror::Array::DataOffset(sizeof(int32_t)).Int32Value();
   }
 
-  rl_array = LoadValue(rl_array, kRefReg);
+  rl_array = LoadValue(rl_array, kCoreReg);
   rl_index = LoadValue(rl_index, kCoreReg);
-
-  // FIXME: need to add support for rl_index.is_const.
-
   RegStorage reg_ptr;
   bool allocated_reg_ptr_temp = false;
   if (IsTemp(rl_array.reg) && !card_mark) {
@@ -610,7 +593,7 @@ void MipsMir2Lir::GenArrayPut(int opt_flags, OpSize size, RegLocation rl_array,
       FreeTemp(reg_len);
     }
 
-    StoreBaseDisp(reg_ptr, 0, rl_src.reg, size, kNotVolatile);
+    StoreBaseDisp(reg_ptr, 0, rl_src.reg, size);
   } else {
     rl_src = LoadValue(rl_src, reg_class);
     if (needs_range_check) {

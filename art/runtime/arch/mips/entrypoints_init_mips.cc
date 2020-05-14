@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-#include "entrypoints/interpreter/interpreter_entrypoints.h"
-#include "entrypoints/jni/jni_entrypoints.h"
 #include "entrypoints/portable/portable_entrypoints.h"
 #include "entrypoints/quick/quick_alloc_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/entrypoint_utils.h"
 #include "entrypoints/math_entrypoints.h"
-#include "atomic.h"
 
 namespace art {
 
@@ -47,6 +44,9 @@ extern "C" void* art_quick_initialize_static_storage(uint32_t, void*);
 extern "C" void* art_quick_initialize_type(uint32_t, void*);
 extern "C" void* art_quick_initialize_type_and_verify_access(uint32_t, void*);
 extern "C" void* art_quick_resolve_string(void*, uint32_t);
+
+// Exception entrypoints.
+extern "C" void* GetAndClearException(Thread*);
 
 // Field entrypoints.
 extern "C" int art_quick_set32_instance(uint32_t, void*, int32_t);
@@ -103,6 +103,7 @@ extern "C" uint64_t art_quick_shr_long(uint64_t, uint32_t);
 extern "C" uint64_t art_quick_ushr_long(uint64_t, uint32_t);
 
 // Intrinsic entrypoints.
+extern "C" int32_t __memcmp16(void*, void*, int32_t);
 extern "C" int32_t art_quick_indexof(void*, uint32_t, uint32_t, uint32_t);
 extern "C" int32_t art_quick_string_compareto(void*, void*);
 
@@ -117,6 +118,7 @@ extern "C" void art_quick_invoke_super_trampoline_with_access_check(uint32_t, vo
 extern "C" void art_quick_invoke_virtual_trampoline_with_access_check(uint32_t, void*);
 
 // Thread entrypoints.
+extern void CheckSuspendFromCode(Thread* thread);
 extern "C" void art_quick_test_suspend();
 
 // Throw entrypoints.
@@ -197,11 +199,11 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   qpoints->pCmplDouble = CmplDouble;
   qpoints->pCmplFloat = CmplFloat;
   qpoints->pFmod = fmod;
-  qpoints->pL2d = art_l2d;
+  qpoints->pL2d = __floatdidf;
   qpoints->pFmodf = fmodf;
-  qpoints->pL2f = art_l2f;
-  qpoints->pD2iz = art_d2i;
-  qpoints->pF2iz = art_f2i;
+  qpoints->pL2f = __floatdisf;
+  qpoints->pD2iz = __fixdfsi;
+  qpoints->pF2iz = __fixsfsi;
   qpoints->pIdivmod = NULL;
   qpoints->pD2l = art_d2l;
   qpoints->pF2l = art_f2l;
@@ -214,6 +216,7 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
 
   // Intrinsics
   qpoints->pIndexOf = art_quick_indexof;
+  qpoints->pMemcmp16 = __memcmp16;
   qpoints->pStringCompareTo = art_quick_string_compareto;
   qpoints->pMemcpy = memcpy;
 
@@ -228,6 +231,7 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   qpoints->pInvokeVirtualTrampolineWithAccessCheck = art_quick_invoke_virtual_trampoline_with_access_check;
 
   // Thread
+  qpoints->pCheckSuspend = CheckSuspendFromCode;
   qpoints->pTestSuspend = art_quick_test_suspend;
 
   // Throws
@@ -237,10 +241,6 @@ void InitEntryPoints(InterpreterEntryPoints* ipoints, JniEntryPoints* jpoints,
   qpoints->pThrowNoSuchMethod = art_quick_throw_no_such_method;
   qpoints->pThrowNullPointer = art_quick_throw_null_pointer_exception;
   qpoints->pThrowStackOverflow = art_quick_throw_stack_overflow;
-
-  // Atomic 64-bit load/store
-  qpoints->pA64Load = QuasiAtomic::Read64;
-  qpoints->pA64Store = QuasiAtomic::Write64;
 };
 
 }  // namespace art

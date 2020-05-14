@@ -35,7 +35,7 @@ void HGraph::RemoveDeadBlocks(const ArenaBitVector& visited) const {
     if (!visited.IsBitSet(i)) {
       HBasicBlock* block = blocks_.Get(i);
       for (size_t j = 0; j < block->GetSuccessors().Size(); ++j) {
-        block->GetSuccessors().Get(j)->RemovePredecessor(block);
+        block->GetSuccessors().Get(j)->RemovePredecessor(block, false);
       }
       for (HInstructionIterator it(block->GetPhis()); !it.Done(); it.Advance()) {
         block->RemovePhi(it.Current()->AsPhi());
@@ -143,7 +143,8 @@ void HGraph::SplitCriticalEdge(HBasicBlock* block, HBasicBlock* successor) {
   HBasicBlock* new_block = new (arena_) HBasicBlock(this);
   AddBlock(new_block);
   new_block->AddInstruction(new (arena_) HGoto());
-  block->ReplaceSuccessor(successor, new_block);
+  block->RemoveSuccessor(successor);
+  block->AddSuccessor(new_block);
   new_block->AddSuccessor(successor);
   if (successor->IsLoopHeader()) {
     // If we split at a back edge boundary, make the new block the back edge.
@@ -167,7 +168,8 @@ void HGraph::SimplifyLoop(HBasicBlock* header) {
     new_back_edge->AddInstruction(new (arena_) HGoto());
     for (size_t pred = 0, e = info->GetBackEdges().Size(); pred < e; ++pred) {
       HBasicBlock* back_edge = info->GetBackEdges().Get(pred);
-      back_edge->ReplaceSuccessor(header, new_back_edge);
+      header->RemovePredecessor(back_edge);
+      back_edge->AddSuccessor(new_back_edge);
     }
     info->ClearBackEdges();
     info->AddBackEdge(new_back_edge);
@@ -188,8 +190,9 @@ void HGraph::SimplifyLoop(HBasicBlock* header) {
     for (size_t pred = 0; pred < header->GetPredecessors().Size(); ++pred) {
       HBasicBlock* predecessor = header->GetPredecessors().Get(pred);
       if (predecessor != back_edge) {
-        predecessor->ReplaceSuccessor(header, pre_header);
+        header->RemovePredecessor(predecessor);
         pred--;
+        predecessor->AddSuccessor(pre_header);
       }
     }
     pre_header->AddSuccessor(header);
@@ -288,25 +291,6 @@ bool HBasicBlock::Dominates(HBasicBlock* other) const {
   return false;
 }
 
-void HBasicBlock::InsertInstructionBefore(HInstruction* instruction, HInstruction* cursor) {
-  DCHECK(cursor->AsPhi() == nullptr);
-  DCHECK(instruction->AsPhi() == nullptr);
-  DCHECK_EQ(instruction->GetId(), -1);
-  DCHECK_NE(cursor->GetId(), -1);
-  DCHECK_EQ(cursor->GetBlock(), this);
-  DCHECK(!instruction->IsControlFlow());
-  instruction->next_ = cursor;
-  instruction->previous_ = cursor->previous_;
-  cursor->previous_ = instruction;
-  if (GetFirstInstruction() == cursor) {
-    instructions_.first_instruction_ = instruction;
-  } else {
-    instruction->previous_->next_ = instruction;
-  }
-  instruction->SetBlock(this);
-  instruction->SetId(GetGraph()->GetNextInstructionId());
-}
-
 static void Add(HInstructionList* instruction_list,
                 HBasicBlock* block,
                 HInstruction* instruction) {
@@ -393,7 +377,6 @@ void HInstructionList::RemoveInstruction(HInstruction* instruction) {
 }
 
 void HInstruction::ReplaceWith(HInstruction* other) {
-  DCHECK(other != nullptr);
   for (HUseIterator<HInstruction> it(GetUses()); !it.Done(); it.Advance()) {
     HUseListNode<HInstruction>* current = it.Current();
     HInstruction* user = current->GetUser();
@@ -443,25 +426,6 @@ void HGraphVisitor::VisitBasicBlock(HBasicBlock* block) {
   for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
     it.Current()->Accept(this);
   }
-}
-
-
-bool HCondition::NeedsMaterialization() const {
-  if (!HasOnlyOneUse()) {
-    return true;
-  }
-  HUseListNode<HInstruction>* uses = GetUses();
-  HInstruction* user = uses->GetUser();
-  if (!user->IsIf()) {
-    return true;
-  }
-
-  // TODO: should we allow intervening instructions with no side-effect between this condition
-  // and the If instruction?
-  if (GetNext() != user) {
-    return true;
-  }
-  return false;
 }
 
 }  // namespace art

@@ -17,23 +17,43 @@
 #ifndef ART_RUNTIME_GC_ALLOCATOR_ROSALLOC_H_
 #define ART_RUNTIME_GC_ALLOCATOR_ROSALLOC_H_
 
+#include <set>
 #include <stdint.h>
 #include <stdlib.h>
-#include <sys/mman.h>
-#include <memory>
-#include <set>
 #include <string>
-#include <unordered_set>
+#include <sys/mman.h>
 #include <vector>
 
 #include "base/mutex.h"
 #include "base/logging.h"
 #include "globals.h"
 #include "mem_map.h"
-#include "thread.h"
+#include "UniquePtr.h"
 #include "utils.h"
 
+// A boilerplate to use hash_map/hash_set both on host and device.
+#ifdef HAVE_ANDROID_OS
+#include <hash_map>
+#include <hash_set>
+using std::hash_map;
+using std::hash_set;
+#else  // HAVE_ANDROID_OS
+#ifdef __DEPRECATED
+#define ROSALLOC_OLD__DEPRECATED __DEPRECATED
+#undef __DEPRECATED
+#endif
+#include <ext/hash_map>
+#include <ext/hash_set>
+#ifdef ROSALLOC_OLD__DEPRECATED
+#define __DEPRECATED ROSALLOC_OLD__DEPRECATED
+#undef ROSALLOC_OLD__DEPRECATED
+#endif
+using __gnu_cxx::hash_map;
+using __gnu_cxx::hash_set;
+#endif  // HAVE_ANDROID_OS
+
 namespace art {
+
 namespace gc {
 namespace allocator {
 
@@ -46,7 +66,10 @@ class RosAlloc {
     byte magic_num_;  // The magic number used for debugging only.
 
     bool IsFree() const {
-      return !kIsDebugBuild || magic_num_ == kMagicNumFree;
+      if (kIsDebugBuild) {
+        return magic_num_ == kMagicNumFree;
+      }
+      return true;
     }
     size_t ByteSize(RosAlloc* rosalloc) const EXCLUSIVE_LOCKS_REQUIRED(rosalloc->lock_) {
       const byte* fpr_base = reinterpret_cast<const byte*>(this);
@@ -100,8 +123,21 @@ class RosAlloc {
       byte* start = reinterpret_cast<byte*>(this);
       size_t byte_size = ByteSize(rosalloc);
       DCHECK_EQ(byte_size % kPageSize, static_cast<size_t>(0));
-      if (ShouldReleasePages(rosalloc)) {
-        rosalloc->ReleasePageRange(start, start + byte_size);
+      bool release_pages = ShouldReleasePages(rosalloc);
+      if (kIsDebugBuild) {
+        // Exclude the first page that stores the magic number.
+        DCHECK_GE(byte_size, static_cast<size_t>(kPageSize));
+        start += kPageSize;
+        byte_size -= kPageSize;
+        if (byte_size > 0) {
+          if (release_pages) {
+            madvise(start, byte_size, MADV_DONTNEED);
+          }
+        }
+      } else {
+        if (release_pages) {
+          madvise(start, byte_size, MADV_DONTNEED);
+        }
       }
     }
   };
@@ -262,7 +298,7 @@ class RosAlloc {
   // The magic number for free pages.
   static const byte kMagicNumFree = 43;
   // The number of size brackets. Sync this with the length of Thread::rosalloc_runs_.
-  static const size_t kNumOfSizeBrackets = kNumRosAllocThreadLocalSizeBrackets;
+  static const size_t kNumOfSizeBrackets = 34;
   // The number of smaller size brackets that are 16 bytes apart.
   static const size_t kNumOfQuantumSizeBrackets = 32;
   // The sizes (the slot sizes, in bytes) of the size brackets.
@@ -426,7 +462,7 @@ class RosAlloc {
   std::set<Run*> non_full_runs_[kNumOfSizeBrackets];
   // The run sets that hold the runs whose slots are all full. This is
   // debug only. full_runs_[i] is guarded by size_bracket_locks_[i].
-  std::unordered_set<Run*, hash_run, eq_run> full_runs_[kNumOfSizeBrackets];
+  hash_set<Run*, hash_run, eq_run> full_runs_[kNumOfSizeBrackets];
   // The set of free pages.
   std::set<FreePageRun*> free_page_runs_ GUARDED_BY(lock_);
   // The dedicated full run, it is always full and shared by all threads when revoking happens.
@@ -441,21 +477,20 @@ class RosAlloc {
   // The mutexes, one per size bracket.
   Mutex* size_bracket_locks_[kNumOfSizeBrackets];
   // Bracket lock names (since locks only have char* names).
-  std::string size_bracket_lock_names_[kNumOfSizeBrackets];
+  std::string size_bracket_lock_names[kNumOfSizeBrackets];
   // The types of page map entries.
   enum {
-    kPageMapReleased = 0,     // Zero and released back to the OS.
-    kPageMapEmpty,            // Zero but probably dirty.
-    kPageMapRun,              // The beginning of a run.
-    kPageMapRunPart,          // The non-beginning part of a run.
-    kPageMapLargeObject,      // The beginning of a large object.
-    kPageMapLargeObjectPart,  // The non-beginning part of a large object.
+    kPageMapEmpty           = 0,  // Not allocated.
+    kPageMapRun             = 1,  // The beginning of a run.
+    kPageMapRunPart         = 2,  // The non-beginning part of a run.
+    kPageMapLargeObject     = 3,  // The beginning of a large object.
+    kPageMapLargeObjectPart = 4,  // The non-beginning part of a large object.
   };
   // The table that indicates what pages are currently used for.
-  volatile byte* page_map_;  // No GUARDED_BY(lock_) for kReadPageMapEntryWithoutLockInBulkFree.
+  byte* page_map_;  // No GUARDED_BY(lock_) for kReadPageMapEntryWithoutLockInBulkFree.
   size_t page_map_size_;
   size_t max_page_map_size_;
-  std::unique_ptr<MemMap> page_map_mem_map_;
+  UniquePtr<MemMap> page_map_mem_map_;
 
   // The table that indicates the size of free page runs. These sizes
   // are stored here to avoid storing in the free page header and
@@ -519,9 +554,6 @@ class RosAlloc {
   // Revoke the current runs which share an index with the thread local runs.
   void RevokeThreadUnsafeCurrentRuns();
 
-  // Release a range of pages.
-  size_t ReleasePageRange(byte* start, byte* end) EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
  public:
   RosAlloc(void* base, size_t capacity, size_t max_capacity,
            PageReleaseMode page_release_mode,
@@ -574,11 +606,6 @@ class RosAlloc {
   static Run* GetDedicatedFullRun() {
     return dedicated_full_run_;
   }
-  bool IsFreePage(size_t idx) const {
-    DCHECK_LT(idx, capacity_ / kPageSize);
-    byte pm_type = page_map_[idx];
-    return pm_type == kPageMapReleased || pm_type == kPageMapEmpty;
-  }
 
   // Callbacks for InspectAll that will count the number of bytes
   // allocated and objects allocated, respectively.
@@ -591,8 +618,6 @@ class RosAlloc {
 
   // Verify for debugging.
   void Verify() EXCLUSIVE_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  void LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes);
 };
 
 }  // namespace allocator

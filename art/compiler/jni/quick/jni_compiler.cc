@@ -15,9 +15,7 @@
  */
 
 #include <algorithm>
-#include <memory>
 #include <vector>
-#include <fstream>
 
 #include "base/logging.h"
 #include "base/macros.h"
@@ -28,7 +26,6 @@
 #include "driver/compiler_driver.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "jni_internal.h"
-#include "mirror/art_method.h"
 #include "utils/assembler.h"
 #include "utils/managed_register.h"
 #include "utils/arm/managed_register_arm.h"
@@ -36,6 +33,7 @@
 #include "utils/mips/managed_register_mips.h"
 #include "utils/x86/managed_register_x86.h"
 #include "thread.h"
+#include "UniquePtr.h"
 
 #define __ jni_asm->
 
@@ -63,13 +61,16 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
   const bool is_synchronized = (access_flags & kAccSynchronized) != 0;
   const char* shorty = dex_file.GetMethodShorty(dex_file.GetMethodId(method_idx));
   InstructionSet instruction_set = driver->GetInstructionSet();
+  if (instruction_set == kThumb2) {
+    instruction_set = kArm;
+  }
   const bool is_64_bit_target = Is64BitInstructionSet(instruction_set);
   // Calling conventions used to iterate over parameters to method
-  std::unique_ptr<JniCallingConvention> main_jni_conv(
+  UniquePtr<JniCallingConvention> main_jni_conv(
       JniCallingConvention::Create(is_static, is_synchronized, shorty, instruction_set));
   bool reference_return = main_jni_conv->IsReturnAReference();
 
-  std::unique_ptr<ManagedRuntimeCallingConvention> mr_conv(
+  UniquePtr<ManagedRuntimeCallingConvention> mr_conv(
       ManagedRuntimeCallingConvention::Create(is_static, is_synchronized, shorty, instruction_set));
 
   // Calling conventions to call into JNI method "end" possibly passing a returned reference, the
@@ -85,11 +86,11 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
     jni_end_shorty = "V";
   }
 
-  std::unique_ptr<JniCallingConvention> end_jni_conv(
+  UniquePtr<JniCallingConvention> end_jni_conv(
       JniCallingConvention::Create(is_static, is_synchronized, jni_end_shorty, instruction_set));
 
   // Assembler that holds generated instructions
-  std::unique_ptr<Assembler> jni_asm(Assembler::Create(instruction_set));
+  UniquePtr<Assembler> jni_asm(Assembler::Create(instruction_set));
 
   // Offsets into data structures
   // TODO: if cross compiling these offsets are for the host not the target
@@ -183,8 +184,9 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
 
   // 5. Move frame down to allow space for out going args.
   const size_t main_out_arg_size = main_jni_conv->OutArgSize();
-  size_t current_out_arg_size = main_out_arg_size;
-  __ IncreaseFrameSize(main_out_arg_size);
+  const size_t end_out_arg_size = end_jni_conv->OutArgSize();
+  const size_t max_out_arg_size = std::max(main_out_arg_size, end_out_arg_size);
+  __ IncreaseFrameSize(max_out_arg_size);
 
   // 6. Call into appropriate JniMethodStart passing Thread* so that transition out of Runnable
   //    can occur. The result is the saved JNI local state that is restored by the exit call. We
@@ -243,7 +245,7 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
   //    NULL (which must be encoded as NULL).
   //    Note: we do this prior to materializing the JNIEnv* and static's jclass to
   //    give as many free registers for the shuffle as possible
-  mr_conv->ResetIterator(FrameOffset(frame_size + main_out_arg_size));
+  mr_conv->ResetIterator(FrameOffset(frame_size+main_out_arg_size));
   uint32_t args_count = 0;
   while (mr_conv->HasNext()) {
     args_count++;
@@ -269,7 +271,7 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
   }
   if (is_static) {
     // Create argument for Class
-    mr_conv->ResetIterator(FrameOffset(frame_size + main_out_arg_size));
+    mr_conv->ResetIterator(FrameOffset(frame_size+main_out_arg_size));
     main_jni_conv->ResetIterator(FrameOffset(main_out_arg_size));
     main_jni_conv->Next();  // Skip JNIEnv*
     FrameOffset handle_scope_offset = main_jni_conv->CurrentParamHandleScopeEntryOffset();
@@ -332,21 +334,10 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
       // Ensure doubles are 8-byte aligned for MIPS
       return_save_location = FrameOffset(return_save_location.Uint32Value() + kMipsPointerSize);
     }
-    CHECK_LT(return_save_location.Uint32Value(), frame_size + main_out_arg_size);
+    CHECK_LT(return_save_location.Uint32Value(), frame_size+main_out_arg_size);
     __ Store(return_save_location, main_jni_conv->ReturnRegister(), main_jni_conv->SizeOfReturnValue());
   }
 
-  // Increase frame size for out args if needed by the end_jni_conv.
-  const size_t end_out_arg_size = end_jni_conv->OutArgSize();
-  if (end_out_arg_size > current_out_arg_size) {
-    size_t out_arg_size_diff = end_out_arg_size - current_out_arg_size;
-    current_out_arg_size = end_out_arg_size;
-    __ IncreaseFrameSize(out_arg_size_diff);
-    saved_cookie_offset = FrameOffset(saved_cookie_offset.SizeValue() + out_arg_size_diff);
-    locked_object_handle_scope_offset =
-        FrameOffset(locked_object_handle_scope_offset.SizeValue() + out_arg_size_diff);
-    return_save_location = FrameOffset(return_save_location.SizeValue() + out_arg_size_diff);
-  }
   //     thread.
   end_jni_conv->ResetIterator(FrameOffset(end_out_arg_size));
   ThreadOffset<4> jni_end32(-1);
@@ -413,7 +404,7 @@ CompiledMethod* ArtJniCompileMethodInternal(CompilerDriver* driver,
   }
 
   // 14. Move frame up now we're done with the out arg space.
-  __ DecreaseFrameSize(current_out_arg_size);
+  __ DecreaseFrameSize(max_out_arg_size);
 
   // 15. Process pending exceptions from JNI call or monitor exit.
   __ ExceptionPoll(main_jni_conv->InterproceduralScratchRegister(), 0);

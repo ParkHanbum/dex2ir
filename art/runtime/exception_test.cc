@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include <memory>
-
 #include "class_linker.h"
 #include "common_runtime_test.h"
 #include "dex_file.h"
@@ -29,6 +27,7 @@
 #include "scoped_thread_state_change.h"
 #include "handle_scope-inl.h"
 #include "thread.h"
+#include "UniquePtr.h"
 #include "vmap_table.h"
 
 namespace art {
@@ -192,9 +191,7 @@ TEST_F(ExceptionTest, StackTraceElement) {
     fake_stack.push_back(0);
 
     // Set up thread to appear as if we called out of method_g_ at pc dex 3
-    thread->SetTopOfStack(
-        reinterpret_cast<StackReference<mirror::ArtMethod>*>(&fake_stack[0]),
-        method_g_->ToNativePc(dex_pc));  // return pc
+    thread->SetTopOfStack(reinterpret_cast<mirror::ArtMethod**>(&fake_stack[0]), method_g_->ToNativePc(dex_pc));  // return pc
   } else {
     // Create/push fake 20-byte shadow frame for method g
     fake_stack.push_back(0);

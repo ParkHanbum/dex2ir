@@ -16,8 +16,6 @@
 
 #include "mod_union_table.h"
 
-#include <memory>
-
 #include "base/stl_util.h"
 #include "card_table-inl.h"
 #include "heap_bitmap.h"
@@ -32,6 +30,7 @@
 #include "mirror/object_array-inl.h"
 #include "space_bitmap-inl.h"
 #include "thread.h"
+#include "UniquePtr.h"
 
 using ::art::mirror::Object;
 
@@ -185,7 +184,7 @@ class CheckReferenceVisitor {
           << from_space->GetGcRetentionPolicy();
       LOG(INFO) << "ToSpace " << to_space->GetName() << " type "
           << to_space->GetGcRetentionPolicy();
-      heap->DumpSpaces(LOG(INFO));
+      heap->DumpSpaces();
       LOG(FATAL) << "FATAL ERROR";
     }
   }

@@ -17,10 +17,6 @@
 #include "reference_table.h"
 
 #include "common_runtime_test.h"
-#include "mirror/array-inl.h"
-#include "mirror/string.h"
-#include "scoped_thread_state_change.h"
-#include "thread-inl.h"
 
 namespace art {
 

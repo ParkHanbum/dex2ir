@@ -18,8 +18,6 @@
 
 #include "common_compiler_test.h"
 #include "mirror/art_method-inl.h"
-#include "mirror/string-inl.h"
-#include "scoped_thread_state_change.h"
 #include "ScopedLocalRef.h"
 
 namespace art {
@@ -269,35 +267,29 @@ TEST_F(JniInternalTest, GetMethodID) {
   jclass jlobject = env_->FindClass("java/lang/Object");
   jclass jlstring = env_->FindClass("java/lang/String");
   jclass jlnsme = env_->FindClass("java/lang/NoSuchMethodError");
-  jclass jncrbc = env_->FindClass("java/nio/channels/ReadableByteChannel");
 
-  // Sanity check that no exceptions are pending.
+  // Sanity check that no exceptions are pending
   ASSERT_FALSE(env_->ExceptionCheck());
 
   // Check that java.lang.Object.foo() doesn't exist and NoSuchMethodError is
-  // a pending exception.
+  // a pending exception
   jmethodID method = env_->GetMethodID(jlobject, "foo", "()V");
   EXPECT_EQ(nullptr, method);
   ExpectException(jlnsme);
 
-  // Check that java.lang.Object.equals() does exist.
+  // Check that java.lang.Object.equals() does exist
   method = env_->GetMethodID(jlobject, "equals", "(Ljava/lang/Object;)Z");
   EXPECT_NE(nullptr, method);
   EXPECT_FALSE(env_->ExceptionCheck());
 
   // Check that GetMethodID for java.lang.String.valueOf(int) fails as the
-  // method is static.
+  // method is static
   method = env_->GetMethodID(jlstring, "valueOf", "(I)Ljava/lang/String;");
   EXPECT_EQ(nullptr, method);
   ExpectException(jlnsme);
 
-  // Check that GetMethodID for java.lang.NoSuchMethodError.<init>(String) finds the constructor.
+  // Check that GetMethodID for java.lang.NoSuchMethodError.<init>(String) finds the constructor
   method = env_->GetMethodID(jlnsme, "<init>", "(Ljava/lang/String;)V");
-  EXPECT_NE(nullptr, method);
-  EXPECT_FALSE(env_->ExceptionCheck());
-
-  // Check that GetMethodID can find a interface method inherited from another interface.
-  method = env_->GetMethodID(jncrbc, "close", "()V");
   EXPECT_NE(nullptr, method);
   EXPECT_FALSE(env_->ExceptionCheck());
 
@@ -312,22 +304,6 @@ TEST_F(JniInternalTest, GetMethodID) {
   method = env_->GetMethodID(jlnsme, "<init>", nullptr);
   EXPECT_EQ(nullptr, method);
   check_jni_abort_catcher.Check("sig == null");
-}
-
-TEST_F(JniInternalTest, CallVoidMethodNullReceiver) {
-  jclass jlobject = env_->FindClass("java/lang/Object");
-  jmethodID method;
-
-  // Check that GetMethodID for java.lang.NoSuchMethodError.<init>(String) finds the constructor.
-  method = env_->GetMethodID(jlobject, "<init>", "()V");
-  EXPECT_NE(nullptr, method);
-  EXPECT_FALSE(env_->ExceptionCheck());
-
-  // Null object to CallVoidMethod.
-  CheckJniAbortCatcher check_jni_abort_catcher;
-  method = env_->GetMethodID(nullptr, "<init>", "(Ljava/lang/String;)V");
-  env_->CallVoidMethod(nullptr, method);
-  check_jni_abort_catcher.Check("null");
 }
 
 TEST_F(JniInternalTest, GetStaticMethodID) {
@@ -397,39 +373,19 @@ TEST_F(JniInternalTest, FromReflectedField_ToReflectedField) {
 
 TEST_F(JniInternalTest, FromReflectedMethod_ToReflectedMethod) {
   jclass jlrMethod = env_->FindClass("java/lang/reflect/Method");
-  ASSERT_NE(jlrMethod, nullptr);
-  jclass jlrConstructor = env_->FindClass("java/lang/reflect/Constructor");
-  ASSERT_NE(jlrConstructor, nullptr);
   jclass c = env_->FindClass("java/lang/String");
   ASSERT_NE(c, nullptr);
-
-  jmethodID mid = env_->GetMethodID(c, "<init>", "()V");
+  jmethodID mid = env_->GetMethodID(c, "length", "()I");
   ASSERT_NE(mid, nullptr);
-  // Turn the mid into a java.lang.reflect.Constructor...
+  // Turn the mid into a java.lang.reflect.Method...
   jobject method = env_->ToReflectedMethod(c, mid, JNI_FALSE);
-  ASSERT_NE(method, nullptr);
-  ASSERT_TRUE(env_->IsInstanceOf(method, jlrConstructor));
+  ASSERT_NE(c, nullptr);
+  ASSERT_TRUE(env_->IsInstanceOf(method, jlrMethod));
   // ...and back again.
   jmethodID mid2 = env_->FromReflectedMethod(method);
   ASSERT_NE(mid2, nullptr);
   // Make sure we can actually use it.
-  jstring s = reinterpret_cast<jstring>(env_->AllocObject(c));
-  ASSERT_NE(s, nullptr);
-  env_->CallVoidMethod(s, mid2);
-  ASSERT_EQ(JNI_FALSE, env_->ExceptionCheck());
-
-  mid = env_->GetMethodID(c, "length", "()I");
-  ASSERT_NE(mid, nullptr);
-  // Turn the mid into a java.lang.reflect.Method...
-  method = env_->ToReflectedMethod(c, mid, JNI_FALSE);
-  ASSERT_NE(method, nullptr);
-  ASSERT_TRUE(env_->IsInstanceOf(method, jlrMethod));
-  // ...and back again.
-  mid2 = env_->FromReflectedMethod(method);
-  ASSERT_NE(mid2, nullptr);
-  // Make sure we can actually use it.
-  s = env_->NewStringUTF("poop");
-  ASSERT_NE(s, nullptr);
+  jstring s = env_->NewStringUTF("poop");
   ASSERT_EQ(4, env_->CallIntMethod(s, mid2));
 
   // Bad arguments.
@@ -449,49 +405,27 @@ static void BogusMethod() {
 TEST_F(JniInternalTest, RegisterAndUnregisterNatives) {
   jclass jlobject = env_->FindClass("java/lang/Object");
   jclass jlnsme = env_->FindClass("java/lang/NoSuchMethodError");
-  void* native_function = reinterpret_cast<void*>(BogusMethod);
 
   // Sanity check that no exceptions are pending.
   ASSERT_FALSE(env_->ExceptionCheck());
 
-  // Check that registering method without name causes a NoSuchMethodError.
-  {
-    JNINativeMethod methods[] = { { nullptr, "()V", native_function } };
-    EXPECT_EQ(env_->RegisterNatives(jlobject, methods, 1), JNI_ERR);
-  }
-  ExpectException(jlnsme);
-
-  // Check that registering method without signature causes a NoSuchMethodError.
-  {
-    JNINativeMethod methods[] = { { "notify", nullptr, native_function } };
-    EXPECT_EQ(env_->RegisterNatives(jlobject, methods, 1), JNI_ERR);
-  }
-  ExpectException(jlnsme);
-
-  // Check that registering method without function causes a NoSuchMethodError.
-  {
-    JNINativeMethod methods[] = { { "notify", "()V", nullptr } };
-    EXPECT_EQ(env_->RegisterNatives(jlobject, methods, 1), JNI_ERR);
-  }
-  ExpectException(jlnsme);
-
   // Check that registering to a non-existent java.lang.Object.foo() causes a NoSuchMethodError.
   {
-    JNINativeMethod methods[] = { { "foo", "()V", native_function } };
+    JNINativeMethod methods[] = { { "foo", "()V", nullptr } };
     EXPECT_EQ(env_->RegisterNatives(jlobject, methods, 1), JNI_ERR);
   }
   ExpectException(jlnsme);
 
   // Check that registering non-native methods causes a NoSuchMethodError.
   {
-    JNINativeMethod methods[] = { { "equals", "(Ljava/lang/Object;)Z", native_function } };
+    JNINativeMethod methods[] = { { "equals", "(Ljava/lang/Object;)Z", nullptr } };
     EXPECT_EQ(env_->RegisterNatives(jlobject, methods, 1), JNI_ERR);
   }
   ExpectException(jlnsme);
 
   // Check that registering native methods is successful.
   {
-    JNINativeMethod methods[] = { { "notify", "()V", native_function } };
+    JNINativeMethod methods[] = { { "notify", "()V", reinterpret_cast<void*>(BogusMethod) } };
     EXPECT_EQ(env_->RegisterNatives(jlobject, methods, 1), JNI_OK);
   }
   EXPECT_FALSE(env_->ExceptionCheck());
@@ -605,8 +539,8 @@ TEST_F(JniInternalTest, RegisterAndUnregisterNatives) {
   ExpectException(aioobe_); \
   \
   /* Prepare a couple of buffers. */ \
-  std::unique_ptr<scalar_type[]> src_buf(new scalar_type[size]); \
-  std::unique_ptr<scalar_type[]> dst_buf(new scalar_type[size]); \
+  UniquePtr<scalar_type[]> src_buf(new scalar_type[size]); \
+  UniquePtr<scalar_type[]> dst_buf(new scalar_type[size]); \
   for (jsize i = 0; i < size; ++i) { src_buf[i] = scalar_type(i); } \
   for (jsize i = 0; i < size; ++i) { dst_buf[i] = scalar_type(-1); } \
   \
@@ -695,13 +629,11 @@ TEST_F(JniInternalTest, GetPrimitiveArrayElementsOfWrongType) {
   jni_abort_catcher.Check(
       "attempt to get double primitive array elements with an object of type boolean[]");
   jbyteArray array2 = env_->NewByteArray(10);
-  EXPECT_EQ(env_->GetBooleanArrayElements(reinterpret_cast<jbooleanArray>(array2), &is_copy),
-            nullptr);
+  EXPECT_EQ(env_->GetBooleanArrayElements(reinterpret_cast<jbooleanArray>(array2), &is_copy), nullptr);
   jni_abort_catcher.Check(
       "attempt to get boolean primitive array elements with an object of type byte[]");
   jobject object = env_->NewStringUTF("Test String");
-  EXPECT_EQ(env_->GetBooleanArrayElements(reinterpret_cast<jbooleanArray>(object), &is_copy),
-            nullptr);
+  EXPECT_EQ(env_->GetBooleanArrayElements(reinterpret_cast<jbooleanArray>(object), &is_copy), nullptr);
   jni_abort_catcher.Check(
       "attempt to get boolean primitive array elements with an object of type java.lang.String");
 }
@@ -748,8 +680,7 @@ TEST_F(JniInternalTest, ReleasePrimitiveArrayElementsOfWrongType) {
   jobject object = env_->NewStringUTF("Test String");
   env_->ReleaseBooleanArrayElements(reinterpret_cast<jbooleanArray>(object), elements, 0);
   jni_abort_catcher.Check(
-      "attempt to release boolean primitive array elements with an object of type "
-      "java.lang.String");
+      "attempt to release boolean primitive array elements with an object of type java.lang.String");
 }
 TEST_F(JniInternalTest, GetReleasePrimitiveArrayCriticalOfWrongType) {
   CheckJniAbortCatcher jni_abort_catcher;
@@ -804,8 +735,7 @@ TEST_F(JniInternalTest, GetPrimitiveArrayRegionElementsOfWrongType) {
   env_->GetBooleanArrayRegion(reinterpret_cast<jbooleanArray>(object), 0, kLength,
                               reinterpret_cast<jboolean*>(elements));
   jni_abort_catcher.Check(
-      "attempt to get region of boolean primitive array elements with an object of type "
-      "java.lang.String");
+      "attempt to get region of boolean primitive array elements with an object of type java.lang.String");
 }
 
 TEST_F(JniInternalTest, SetPrimitiveArrayRegionElementsOfWrongType) {
@@ -851,8 +781,7 @@ TEST_F(JniInternalTest, SetPrimitiveArrayRegionElementsOfWrongType) {
   env_->SetBooleanArrayRegion(reinterpret_cast<jbooleanArray>(object), 0, kLength,
                               reinterpret_cast<jboolean*>(elements));
   jni_abort_catcher.Check(
-      "attempt to set region of boolean primitive array elements with an object of type "
-      "java.lang.String");
+      "attempt to set region of boolean primitive array elements with an object of type java.lang.String");
 }
 
 TEST_F(JniInternalTest, NewObjectArray) {
@@ -966,28 +895,8 @@ TEST_F(JniInternalTest, IsAssignableFrom) {
   jclass string_class = env_->FindClass("java/lang/String");
   ASSERT_NE(string_class, nullptr);
 
-  // A superclass is assignable from an instance of its
-  // subclass but not vice versa.
-  ASSERT_TRUE(env_->IsAssignableFrom(string_class, object_class));
-  ASSERT_FALSE(env_->IsAssignableFrom(object_class, string_class));
-
-  jclass charsequence_interface = env_->FindClass("java/lang/CharSequence");
-  ASSERT_NE(charsequence_interface, nullptr);
-
-  // An interface is assignable from an instance of an implementing
-  // class but not vice versa.
-  ASSERT_TRUE(env_->IsAssignableFrom(string_class, charsequence_interface));
-  ASSERT_FALSE(env_->IsAssignableFrom(charsequence_interface, string_class));
-
-  // Check that arrays are covariant.
-  jclass string_array_class = env_->FindClass("[Ljava/lang/String;");
-  ASSERT_NE(string_array_class, nullptr);
-  jclass object_array_class = env_->FindClass("[Ljava/lang/Object;");
-  ASSERT_NE(object_array_class, nullptr);
-  ASSERT_TRUE(env_->IsAssignableFrom(string_array_class, object_array_class));
-  ASSERT_FALSE(env_->IsAssignableFrom(object_array_class, string_array_class));
-
-  // Primitive types are tested in 004-JniTest.
+  ASSERT_TRUE(env_->IsAssignableFrom(object_class, string_class));
+  ASSERT_FALSE(env_->IsAssignableFrom(string_class, object_class));
 
   // Null as either class should fail.
   CheckJniAbortCatcher jni_abort_catcher;
@@ -1162,8 +1071,6 @@ TEST_F(JniInternalTest, GetStringUTFChars_ReleaseStringUTFChars) {
 
 TEST_F(JniInternalTest, GetStringChars_ReleaseStringChars) {
   jstring s = env_->NewStringUTF("hello");
-  ScopedObjectAccess soa(env_);
-  mirror::String* s_m = soa.Decode<mirror::String*>(s);
   ASSERT_TRUE(s != nullptr);
 
   jchar expected[] = { 'h', 'e', 'l', 'l', 'o' };
@@ -1177,11 +1084,7 @@ TEST_F(JniInternalTest, GetStringChars_ReleaseStringChars) {
 
   jboolean is_copy = JNI_FALSE;
   chars = env_->GetStringChars(s, &is_copy);
-  if (Runtime::Current()->GetHeap()->IsMovableObject(s_m->GetCharArray())) {
-    EXPECT_EQ(JNI_TRUE, is_copy);
-  } else {
-    EXPECT_EQ(JNI_FALSE, is_copy);
-  }
+  EXPECT_EQ(JNI_TRUE, is_copy);
   EXPECT_EQ(expected[0], chars[0]);
   EXPECT_EQ(expected[1], chars[1]);
   EXPECT_EQ(expected[2], chars[2]);
@@ -1203,9 +1106,10 @@ TEST_F(JniInternalTest, GetStringCritical_ReleaseStringCritical) {
   EXPECT_EQ(expected[4], chars[4]);
   env_->ReleaseStringCritical(s, chars);
 
-  jboolean is_copy = JNI_TRUE;
+  jboolean is_copy = JNI_FALSE;
   chars = env_->GetStringCritical(s, &is_copy);
-  EXPECT_EQ(JNI_FALSE, is_copy);
+  // TODO: Fix GetStringCritical to use the same mechanism as GetPrimitiveArrayElementsCritical.
+  EXPECT_EQ(JNI_TRUE, is_copy);
   EXPECT_EQ(expected[0], chars[0]);
   EXPECT_EQ(expected[1], chars[1]);
   EXPECT_EQ(expected[2], chars[2]);
@@ -1531,12 +1435,6 @@ TEST_F(JniInternalTest, DeleteWeakGlobalRef) {
   env_->DeleteWeakGlobalRef(o2);
 }
 
-TEST_F(JniInternalTest, ExceptionDescribe) {
-  // This checks how ExceptionDescribe handles call without exception.
-  env_->ExceptionClear();
-  env_->ExceptionDescribe();
-}
-
 TEST_F(JniInternalTest, Throw) {
   EXPECT_EQ(JNI_ERR, env_->Throw(nullptr));
 
@@ -1600,12 +1498,6 @@ TEST_F(JniInternalTest, NewDirectBuffer_GetDirectBufferAddress_GetDirectBufferCa
   ASSERT_TRUE(env_->IsInstanceOf(buffer, buffer_class));
   ASSERT_EQ(env_->GetDirectBufferAddress(buffer), bytes);
   ASSERT_EQ(env_->GetDirectBufferCapacity(buffer), static_cast<jlong>(sizeof(bytes)));
-
-  {
-    CheckJniAbortCatcher check_jni_abort_catcher;
-    env_->NewDirectByteBuffer(bytes, static_cast<jlong>(INT_MAX) + 1);
-    check_jni_abort_catcher.Check("in call to NewDirectByteBuffer");
-  }
 }
 
 TEST_F(JniInternalTest, MonitorEnterExit) {
@@ -1659,6 +1551,7 @@ TEST_F(JniInternalTest, MonitorEnterExit) {
     CheckJniAbortCatcher check_jni_abort_catcher;
     env_->MonitorEnter(nullptr);
     check_jni_abort_catcher.Check("in call to MonitorEnter");
+
     env_->MonitorExit(nullptr);
     check_jni_abort_catcher.Check("in call to MonitorExit");
   }

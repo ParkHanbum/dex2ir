@@ -40,11 +40,7 @@ struct WellKnownClasses {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   static jclass com_android_dex_Dex;
-  static jclass dalvik_system_DexFile;
-  static jclass dalvik_system_DexPathList;
-  static jclass dalvik_system_DexPathList$Element;
   static jclass dalvik_system_PathClassLoader;
-  static jclass java_lang_BootClassLoader;
   static jclass java_lang_ClassLoader;
   static jclass java_lang_ClassNotFoundException;
   static jclass java_lang_Daemons;
@@ -58,15 +54,12 @@ struct WellKnownClasses {
   static jclass java_lang_reflect_Proxy;
   static jclass java_lang_RuntimeException;
   static jclass java_lang_StackOverflowError;
-  static jclass java_lang_String;
   static jclass java_lang_System;
   static jclass java_lang_Thread;
   static jclass java_lang_ThreadGroup;
   static jclass java_lang_Thread$UncaughtExceptionHandler;
   static jclass java_lang_Throwable;
-  static jclass java_util_Collections;
   static jclass java_nio_DirectByteBuffer;
-  static jclass libcore_util_EmptyArray;
   static jclass org_apache_harmony_dalvik_ddmc_Chunk;
   static jclass org_apache_harmony_dalvik_ddmc_DdmServer;
 
@@ -97,10 +90,6 @@ struct WellKnownClasses {
   static jmethodID org_apache_harmony_dalvik_ddmc_DdmServer_broadcast;
   static jmethodID org_apache_harmony_dalvik_ddmc_DdmServer_dispatch;
 
-  static jfieldID dalvik_system_DexFile_cookie;
-  static jfieldID dalvik_system_DexPathList_dexElements;
-  static jfieldID dalvik_system_DexPathList$Element_dexFile;
-  static jfieldID dalvik_system_PathClassLoader_pathList;
   static jfieldID java_lang_reflect_AbstractMethod_artMethod;
   static jfieldID java_lang_reflect_Field_artField;
   static jfieldID java_lang_reflect_Proxy_h;
@@ -114,15 +103,8 @@ struct WellKnownClasses {
   static jfieldID java_lang_ThreadGroup_mainThreadGroup;
   static jfieldID java_lang_ThreadGroup_name;
   static jfieldID java_lang_ThreadGroup_systemThreadGroup;
-  static jfieldID java_lang_Throwable_cause;
-  static jfieldID java_lang_Throwable_detailMessage;
-  static jfieldID java_lang_Throwable_stackTrace;
-  static jfieldID java_lang_Throwable_stackState;
-  static jfieldID java_lang_Throwable_suppressedExceptions;
   static jfieldID java_nio_DirectByteBuffer_capacity;
   static jfieldID java_nio_DirectByteBuffer_effectiveDirectAddress;
-  static jfieldID java_util_Collections_EMPTY_LIST;
-  static jfieldID libcore_util_EmptyArray_STACK_TRACE_ELEMENT;
   static jfieldID org_apache_harmony_dalvik_ddmc_Chunk_data;
   static jfieldID org_apache_harmony_dalvik_ddmc_Chunk_length;
   static jfieldID org_apache_harmony_dalvik_ddmc_Chunk_offset;

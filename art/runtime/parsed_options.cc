@@ -15,23 +15,17 @@
  */
 
 #include "parsed_options.h"
-
 #ifdef HAVE_ANDROID_OS
 #include "cutils/properties.h"
 #endif
 
-#include "base/stringpiece.h"
 #include "debugger.h"
-#include "gc/heap.h"
 #include "monitor.h"
-#include "runtime.h"
-#include "trace.h"
-#include "utils.h"
 
 namespace art {
 
-ParsedOptions* ParsedOptions::Create(const RuntimeOptions& options, bool ignore_unrecognized) {
-  std::unique_ptr<ParsedOptions> parsed(new ParsedOptions());
+ParsedOptions* ParsedOptions::Create(const Runtime::Options& options, bool ignore_unrecognized) {
+  UniquePtr<ParsedOptions> parsed(new ParsedOptions());
   if (parsed->Parse(options, ignore_unrecognized)) {
     return parsed.release();
   }
@@ -115,8 +109,6 @@ static gc::CollectorType ParseCollectorType(const std::string& option) {
     return gc::kCollectorTypeGSS;
   } else if (option == "CC") {
     return gc::kCollectorTypeCC;
-  } else if (option == "MC") {
-    return gc::kCollectorTypeMC;
   } else {
     return gc::kCollectorTypeNone;
   }
@@ -166,7 +158,7 @@ bool ParsedOptions::ParseXGcOption(const std::string& option) {
   return true;
 }
 
-bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognized) {
+bool ParsedOptions::Parse(const Runtime::Options& options, bool ignore_unrecognized) {
   const char* boot_class_path_string = getenv("BOOTCLASSPATH");
   if (boot_class_path_string != NULL) {
     boot_class_path_string_ = boot_class_path_string;
@@ -182,7 +174,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
   heap_maximum_size_ = gc::Heap::kDefaultMaximumSize;
   heap_min_free_ = gc::Heap::kDefaultMinFree;
   heap_max_free_ = gc::Heap::kDefaultMaxFree;
-  heap_non_moving_space_capacity_ = gc::Heap::kDefaultNonMovingSpaceCapacity;
   heap_target_utilization_ = gc::Heap::kDefaultTargetUtilization;
   foreground_heap_growth_multiplier_ = gc::Heap::kDefaultHeapGrowthMultiplier;
   heap_growth_limit_ = 0;  // 0 means no growth limit .
@@ -200,24 +191,13 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
 #else
 #error "ART default GC type must be set"
 #endif
-  // If we are using homogeneous space compaction then default background compaction to off since
-  // homogeneous space compactions when we transition to not jank perceptible.
-  use_homogeneous_space_compaction_for_oom_ = false;
   // If background_collector_type_ is kCollectorTypeNone, it defaults to the collector_type_ after
-  // parsing options. If you set this to kCollectorTypeHSpaceCompact then we will do an hspace
-  // compaction when we transition to background instead of a normal collector transition.
+  // parsing options.
   background_collector_type_ = gc::kCollectorTypeNone;
-#ifdef ART_USE_HSPACE_COMPACT
-  background_collector_type_ = gc::kCollectorTypeHomogeneousSpaceCompact;
-#endif
-#ifdef ART_USE_BACKGROUND_COMPACT
-  background_collector_type_ = gc::kCollectorTypeSS;
-#endif
   stack_size_ = 0;  // 0 means default.
   max_spins_before_thin_lock_inflation_ = Monitor::kDefaultMaxSpinsBeforeThinLockInflation;
   low_memory_mode_ = false;
   use_tlab_ = false;
-  min_interval_homogeneous_space_compaction_by_oom_ = MsToNs(100 * 1000);  // 100s.
   verify_pre_gc_heap_ = false;
   // Pre sweeping is the one that usually fails if the GC corrupted the heap.
   verify_pre_sweeping_heap_ = kIsDebugBuild;
@@ -228,9 +208,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
 
   compiler_callbacks_ = nullptr;
   is_zygote_ = false;
-  must_relocate_ = kDefaultMustRelocate;
-  dex2oat_enabled_ = true;
-  image_dex2oat_enabled_ = true;
   if (kPoisonHeapReferences) {
     // kPoisonHeapReferences currently works only with the interpreter only.
     // TODO: make it work with the compiler.
@@ -270,10 +247,48 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
   method_trace_file_ = "/data/method-trace-file.bin";
   method_trace_file_size_ = 10 * MB;
 
-  profile_clock_source_ = kDefaultTraceClockSource;
+  profile_ = false;
+  profile_period_s_ = 10;           // Seconds.
+  profile_duration_s_ = 20;          // Seconds.
+  profile_interval_us_ = 500;       // Microseconds.
+  profile_backoff_coefficient_ = 2.0;
+  profile_start_immediately_ = true;
+  profile_clock_source_ = kDefaultProfilerClockSource;
 
   verify_ = true;
   image_isa_ = kRuntimeISA;
+
+  // Default to explicit checks.  Switch off with -implicit-checks:.
+  // or setprop dalvik.vm.implicit_checks check1,check2,...
+#ifdef HAVE_ANDROID_OS
+  {
+    char buf[PROP_VALUE_MAX];
+    property_get("dalvik.vm.implicit_checks", buf, "none");
+    std::string checks(buf);
+    std::vector<std::string> checkvec;
+    Split(checks, ',', checkvec);
+    explicit_checks_ = kExplicitNullCheck | kExplicitSuspendCheck |
+        kExplicitStackOverflowCheck;
+    for (auto& str : checkvec) {
+      std::string val = Trim(str);
+      if (val == "none") {
+        explicit_checks_ = kExplicitNullCheck | kExplicitSuspendCheck |
+          kExplicitStackOverflowCheck;
+      } else if (val == "null") {
+        explicit_checks_ &= ~kExplicitNullCheck;
+      } else if (val == "suspend") {
+        explicit_checks_ &= ~kExplicitSuspendCheck;
+      } else if (val == "stack") {
+        explicit_checks_ &= ~kExplicitStackOverflowCheck;
+      } else if (val == "all") {
+        explicit_checks_ = 0;
+      }
+    }
+  }
+#else
+  explicit_checks_ = kExplicitNullCheck | kExplicitSuspendCheck |
+    kExplicitStackOverflowCheck;
+#endif
 
   for (size_t i = 0; i < options.size(); ++i) {
     if (true && options[0].first == "-Xzygote") {
@@ -290,7 +305,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       Exit(0);
     } else if (StartsWith(option, "-Xbootclasspath:")) {
       boot_class_path_string_ = option.substr(strlen("-Xbootclasspath:")).data();
-      LOG(INFO) << "setting boot class path to " << boot_class_path_string_;
     } else if (option == "-classpath" || option == "-cp") {
       // TODO: support -Djava.class.path
       i++;
@@ -355,14 +369,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
         return false;
       }
       heap_max_free_ = size;
-    } else if (StartsWith(option, "-XX:NonMovingSpaceCapacity=")) {
-      size_t size = ParseMemoryOption(
-          option.substr(strlen("-XX:NonMovingSpaceCapacity=")).c_str(), 1024);
-      if (size == 0) {
-        Usage("Failed to parse memory option %s\n", option.c_str());
-        return false;
-      }
-      heap_non_moving_space_capacity_ = size;
     } else if (StartsWith(option, "-XX:HeapTargetUtilization=")) {
       if (!ParseDouble(option, '=', 0.1, 0.9, &heap_target_utilization_)) {
         return false;
@@ -408,13 +414,8 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       ignore_max_footprint_ = true;
     } else if (option == "-XX:LowMemoryMode") {
       low_memory_mode_ = true;
-      // TODO Might want to turn off must_relocate here.
     } else if (option == "-XX:UseTLAB") {
       use_tlab_ = true;
-    } else if (option == "-XX:EnableHSpaceCompactForOOM") {
-      use_homogeneous_space_compaction_for_oom_ = true;
-    } else if (option == "-XX:DisableHSpaceCompactForOOM") {
-      use_homogeneous_space_compaction_for_oom_ = false;
     } else if (StartsWith(option, "-D")) {
       properties_.push_back(option.substr(strlen("-D")));
     } else if (StartsWith(option, "-Xjnitrace:")) {
@@ -423,30 +424,10 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       compiler_callbacks_ =
           reinterpret_cast<CompilerCallbacks*>(const_cast<void*>(options[i].second));
     } else if (option == "imageinstructionset") {
-      const char* isa_str = reinterpret_cast<const char*>(options[i].second);
-      image_isa_ = GetInstructionSetFromString(isa_str);
-      if (image_isa_ == kNone) {
-        Usage("%s is not a valid instruction set.", isa_str);
-        return false;
-      }
+      image_isa_ = GetInstructionSetFromString(
+          reinterpret_cast<const char*>(options[i].second));
     } else if (option == "-Xzygote") {
       is_zygote_ = true;
-    } else if (StartsWith(option, "-Xpatchoat:")) {
-      if (!ParseStringAfterChar(option, ':', &patchoat_executable_)) {
-        return false;
-      }
-    } else if (option == "-Xrelocate") {
-      must_relocate_ = true;
-    } else if (option == "-Xnorelocate") {
-      must_relocate_ = false;
-    } else if (option == "-Xnodex2oat") {
-      dex2oat_enabled_ = false;
-    } else if (option == "-Xdex2oat") {
-      dex2oat_enabled_ = true;
-    } else if (option == "-Xnoimage-dex2oat") {
-      image_dex2oat_enabled_ = false;
-    } else if (option == "-Ximage-dex2oat") {
-      image_dex2oat_enabled_ = true;
     } else if (option == "-Xint") {
       interpreter_only_ = true;
     } else if (StartsWith(option, "-Xgc:")) {
@@ -458,17 +439,12 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       if (!ParseStringAfterChar(option, '=', &substring)) {
         return false;
       }
-      // Special handling for HSpaceCompact since this is only valid as a background GC type.
-      if (substring == "HSpaceCompact") {
-        background_collector_type_ = gc::kCollectorTypeHomogeneousSpaceCompact;
+      gc::CollectorType collector_type = ParseCollectorType(substring);
+      if (collector_type != gc::kCollectorTypeNone) {
+        background_collector_type_ = collector_type;
       } else {
-        gc::CollectorType collector_type = ParseCollectorType(substring);
-        if (collector_type != gc::kCollectorTypeNone) {
-          background_collector_type_ = collector_type;
-        } else {
-          Usage("Unknown -XX:BackgroundGC option %s\n", substring.c_str());
-          return false;
-        }
+        Usage("Unknown -XX:BackgroundGC option %s\n", substring.c_str());
+        return false;
       }
     } else if (option == "-XX:+DisableExplicitGC") {
       is_explicit_gc_disabled_ = true;
@@ -552,54 +528,81 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
         return false;
       }
     } else if (option == "-Xprofile:threadcpuclock") {
-      Trace::SetDefaultClockSource(kTraceClockSourceThreadCpu);
+      Trace::SetDefaultClockSource(kProfilerClockSourceThreadCpu);
     } else if (option == "-Xprofile:wallclock") {
-      Trace::SetDefaultClockSource(kTraceClockSourceWall);
+      Trace::SetDefaultClockSource(kProfilerClockSourceWall);
     } else if (option == "-Xprofile:dualclock") {
-      Trace::SetDefaultClockSource(kTraceClockSourceDual);
-    } else if (option == "-Xenable-profiler") {
-      profiler_options_.enabled_ = true;
-    } else if (StartsWith(option, "-Xprofile-filename:")) {
-      if (!ParseStringAfterChar(option, ':', &profile_output_filename_)) {
+      Trace::SetDefaultClockSource(kProfilerClockSourceDual);
+    } else if (StartsWith(option, "-Xprofile:")) {
+      if (!ParseStringAfterChar(option, ';', &profile_output_filename_)) {
         return false;
       }
+      profile_ = true;
     } else if (StartsWith(option, "-Xprofile-period:")) {
-      if (!ParseUnsignedInteger(option, ':', &profiler_options_.period_s_)) {
+      if (!ParseUnsignedInteger(option, ':', &profile_period_s_)) {
         return false;
       }
     } else if (StartsWith(option, "-Xprofile-duration:")) {
-      if (!ParseUnsignedInteger(option, ':', &profiler_options_.duration_s_)) {
+      if (!ParseUnsignedInteger(option, ':', &profile_duration_s_)) {
         return false;
       }
     } else if (StartsWith(option, "-Xprofile-interval:")) {
-      if (!ParseUnsignedInteger(option, ':', &profiler_options_.interval_us_)) {
+      if (!ParseUnsignedInteger(option, ':', &profile_interval_us_)) {
         return false;
       }
     } else if (StartsWith(option, "-Xprofile-backoff:")) {
-      if (!ParseDouble(option, ':', 1.0, 10.0, &profiler_options_.backoff_coefficient_)) {
+      if (!ParseDouble(option, ':', 1.0, 10.0, &profile_backoff_coefficient_)) {
         return false;
       }
-    } else if (option == "-Xprofile-start-immediately") {
-      profiler_options_.start_immediately_ = true;
-    } else if (StartsWith(option, "-Xprofile-top-k-threshold:")) {
-      if (!ParseDouble(option, ':', 0.0, 100.0, &profiler_options_.top_k_threshold_)) {
+    } else if (option == "-Xprofile-start-lazy") {
+      profile_start_immediately_ = false;
+    } else if (StartsWith(option, "-implicit-checks:")) {
+      std::string checks;
+      if (!ParseStringAfterChar(option, ':', &checks)) {
         return false;
       }
-    } else if (StartsWith(option, "-Xprofile-top-k-change-threshold:")) {
-      if (!ParseDouble(option, ':', 0.0, 100.0, &profiler_options_.top_k_change_threshold_)) {
+      std::vector<std::string> checkvec;
+      Split(checks, ',', checkvec);
+      for (auto& str : checkvec) {
+        std::string val = Trim(str);
+        if (val == "none") {
+          explicit_checks_ = kExplicitNullCheck | kExplicitSuspendCheck |
+            kExplicitStackOverflowCheck;
+        } else if (val == "null") {
+          explicit_checks_ &= ~kExplicitNullCheck;
+        } else if (val == "suspend") {
+          explicit_checks_ &= ~kExplicitSuspendCheck;
+        } else if (val == "stack") {
+          explicit_checks_ &= ~kExplicitStackOverflowCheck;
+        } else if (val == "all") {
+          explicit_checks_ = 0;
+        } else {
+            return false;
+        }
+      }
+    } else if (StartsWith(option, "-explicit-checks:")) {
+      std::string checks;
+      if (!ParseStringAfterChar(option, ':', &checks)) {
         return false;
       }
-    } else if (option == "-Xprofile-type:method") {
-      profiler_options_.profile_type_ = kProfilerMethod;
-    } else if (option == "-Xprofile-type:stack") {
-      profiler_options_.profile_type_ = kProfilerBoundedStack;
-    } else if (StartsWith(option, "-Xprofile-max-stack-depth:")) {
-      if (!ParseUnsignedInteger(option, ':', &profiler_options_.max_stack_depth_)) {
-        return false;
-      }
-    } else if (StartsWith(option, "-Xcompiler:")) {
-      if (!ParseStringAfterChar(option, ':', &compiler_executable_)) {
-        return false;
+      std::vector<std::string> checkvec;
+      Split(checks, ',', checkvec);
+      for (auto& str : checkvec) {
+        std::string val = Trim(str);
+        if (val == "none") {
+          explicit_checks_ = 0;
+        } else if (val == "null") {
+          explicit_checks_ |= kExplicitNullCheck;
+        } else if (val == "suspend") {
+          explicit_checks_ |= kExplicitSuspendCheck;
+        } else if (val == "stack") {
+          explicit_checks_ |= kExplicitStackOverflowCheck;
+        } else if (val == "all") {
+          explicit_checks_ = kExplicitNullCheck | kExplicitSuspendCheck |
+            kExplicitStackOverflowCheck;
+        } else {
+          return false;
+        }
       }
     } else if (option == "-Xcompiler-option") {
       i++;
@@ -623,10 +626,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
         verify_ = true;
       } else {
         Usage("Unknown -Xverify option %s\n", verify_mode.c_str());
-        return false;
-      }
-    } else if (StartsWith(option, "-XX:NativeBridge=")) {
-      if (!ParseStringAfterChar(option, '=', &native_bridge_library_filename_)) {
         return false;
       }
     } else if (StartsWith(option, "-ea") ||
@@ -669,12 +668,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       Usage("Unrecognized option %s\n", option.c_str());
       return false;
     }
-  }
-  // If not set, background collector type defaults to homogeneous compaction
-  // if not low memory mode, semispace otherwise.
-  if (background_collector_type_ == gc::kCollectorTypeNone) {
-    background_collector_type_ = low_memory_mode_ ?
-        gc::kCollectorTypeSS : gc::kCollectorTypeHomogeneousSpaceCompact;
   }
 
   // If a reference to the dalvik core.jar snuck in, replace it with
@@ -743,7 +736,7 @@ void ParsedOptions::Usage(const char* fmt, ...) {
   UsageMessage(stream, "The following standard options are supported:\n");
   UsageMessage(stream, "  -classpath classpath (-cp classpath)\n");
   UsageMessage(stream, "  -Dproperty=value\n");
-  UsageMessage(stream, "  -verbose:tag ('gc', 'jni', or 'class')\n");
+  UsageMessage(stream, "  -verbose:tag  ('gc', 'jni', or 'class')\n");
   UsageMessage(stream, "  -showversion\n");
   UsageMessage(stream, "  -help\n");
   UsageMessage(stream, "  -agentlib:jdwp=options\n");
@@ -753,9 +746,9 @@ void ParsedOptions::Usage(const char* fmt, ...) {
   UsageMessage(stream, "  -Xrunjdwp:<options>\n");
   UsageMessage(stream, "  -Xbootclasspath:bootclasspath\n");
   UsageMessage(stream, "  -Xcheck:tag  (e.g. 'jni')\n");
-  UsageMessage(stream, "  -XmsN (min heap, must be multiple of 1K, >= 1MB)\n");
-  UsageMessage(stream, "  -XmxN (max heap, must be multiple of 1K, >= 2MB)\n");
-  UsageMessage(stream, "  -XssN (stack size)\n");
+  UsageMessage(stream, "  -XmsN  (min heap, must be multiple of 1K, >= 1MB)\n");
+  UsageMessage(stream, "  -XmxN  (max heap, must be multiple of 1K, >= 2MB)\n");
+  UsageMessage(stream, "  -XssN  (stack size)\n");
   UsageMessage(stream, "  -Xint\n");
   UsageMessage(stream, "\n");
 
@@ -769,7 +762,6 @@ void ParsedOptions::Usage(const char* fmt, ...) {
   UsageMessage(stream, "  -XX:HeapGrowthLimit=N\n");
   UsageMessage(stream, "  -XX:HeapMinFree=N\n");
   UsageMessage(stream, "  -XX:HeapMaxFree=N\n");
-  UsageMessage(stream, "  -XX:NonMovingSpaceCapacity=N\n");
   UsageMessage(stream, "  -XX:HeapTargetUtilization=doublevalue\n");
   UsageMessage(stream, "  -XX:ForegroundHeapGrowthMultiplier=doublevalue\n");
   UsageMessage(stream, "  -XX:LowMemoryMode\n");
@@ -794,24 +786,13 @@ void ParsedOptions::Usage(const char* fmt, ...) {
   UsageMessage(stream, "  -Xmethod-trace\n");
   UsageMessage(stream, "  -Xmethod-trace-file:filename");
   UsageMessage(stream, "  -Xmethod-trace-file-size:integervalue\n");
-  UsageMessage(stream, "  -Xenable-profiler\n");
-  UsageMessage(stream, "  -Xprofile-filename:filename\n");
+  UsageMessage(stream, "  -Xprofile=filename\n");
   UsageMessage(stream, "  -Xprofile-period:integervalue\n");
   UsageMessage(stream, "  -Xprofile-duration:integervalue\n");
   UsageMessage(stream, "  -Xprofile-interval:integervalue\n");
-  UsageMessage(stream, "  -Xprofile-backoff:doublevalue\n");
-  UsageMessage(stream, "  -Xprofile-start-immediately\n");
-  UsageMessage(stream, "  -Xprofile-top-k-threshold:doublevalue\n");
-  UsageMessage(stream, "  -Xprofile-top-k-change-threshold:doublevalue\n");
-  UsageMessage(stream, "  -Xprofile-type:{method,stack}\n");
-  UsageMessage(stream, "  -Xprofile-max-stack-depth:integervalue\n");
-  UsageMessage(stream, "  -Xcompiler:filename\n");
+  UsageMessage(stream, "  -Xprofile-backoff:integervalue\n");
   UsageMessage(stream, "  -Xcompiler-option dex2oat-option\n");
   UsageMessage(stream, "  -Ximage-compiler-option dex2oat-option\n");
-  UsageMessage(stream, "  -Xpatchoat:filename\n");
-  UsageMessage(stream, "  -X[no]relocate\n");
-  UsageMessage(stream, "  -X[no]dex2oat (Whether to invoke dex2oat on the application)\n");
-  UsageMessage(stream, "  -X[no]image-dex2oat (Whether to create and use a boot image)\n");
   UsageMessage(stream, "\n");
 
   UsageMessage(stream, "The following previously supported Dalvik options are ignored:\n");
@@ -902,19 +883,11 @@ bool ParsedOptions::ParseDouble(const std::string& option, char after_char,
   if (!ParseStringAfterChar(option, after_char, &substring)) {
     return false;
   }
-  bool sane_val = true;
+  std::istringstream iss(substring);
   double value;
-  if (false) {
-    // TODO: this doesn't seem to work on the emulator.  b/15114595
-    std::stringstream iss(substring);
-    iss >> value;
-    // Ensure that we have a value, there was no cruft after it and it satisfies a sensible range.
-    sane_val = iss.eof() && (value >= min) && (value <= max);
-  } else {
-    char* end = nullptr;
-    value = strtod(substring.c_str(), &end);
-    sane_val = *end == '\0' && value >= min && value <= max;
-  }
+  iss >> value;
+  // Ensure that we have a value, there was no cruft after it and it satisfies a sensible range.
+  const bool sane_val = iss.eof() && (value >= min) && (value <= max);
   if (!sane_val) {
     Usage("Invalid double value %s for option %s\n", substring.c_str(), option.c_str());
     return false;

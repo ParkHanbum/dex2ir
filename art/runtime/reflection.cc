@@ -20,14 +20,14 @@
 #include "common_throws.h"
 #include "dex_file-inl.h"
 #include "jni_internal.h"
-#include "method_helper-inl.h"
 #include "mirror/art_field-inl.h"
 #include "mirror/art_method-inl.h"
-#include "mirror/class-inl.h"
 #include "mirror/class.h"
-#include "mirror/object_array-inl.h"
+#include "mirror/class-inl.h"
 #include "mirror/object_array.h"
+#include "mirror/object_array-inl.h"
 #include "nth_caller_visitor.h"
+#include "object_utils.h"
 #include "scoped_thread_state_change.h"
 #include "stack.h"
 #include "well_known_classes.h"
@@ -100,8 +100,7 @@ class ArgArray {
     AppendWide(jv.j);
   }
 
-  void BuildArgArrayFromVarArgs(const ScopedObjectAccessAlreadyRunnable& soa,
-                                mirror::Object* receiver, va_list ap)
+  void BuildArgArrayFromVarArgs(const ScopedObjectAccess& soa, mirror::Object* receiver, va_list ap)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     // Set receiver if non-null (method is not static)
     if (receiver != nullptr) {
@@ -136,8 +135,8 @@ class ArgArray {
     }
   }
 
-  void BuildArgArrayFromJValues(const ScopedObjectAccessAlreadyRunnable& soa,
-                                mirror::Object* receiver, jvalue* args)
+  void BuildArgArrayFromJValues(const ScopedObjectAccessUnchecked& soa, mirror::Object* receiver,
+                                jvalue* args)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     // Set receiver if non-null (method is not static)
     if (receiver != nullptr) {
@@ -211,18 +210,17 @@ class ArgArray {
   }
 
   static void ThrowIllegalPrimitiveArgumentException(const char* expected,
-                                                     const char* found_descriptor)
+                                                     const StringPiece& found_descriptor)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     ThrowIllegalArgumentException(nullptr,
         StringPrintf("Invalid primitive conversion from %s to %s", expected,
-                     PrettyDescriptor(found_descriptor).c_str()).c_str());
+                     PrettyDescriptor(found_descriptor.as_string()).c_str()).c_str());
   }
 
-  bool BuildArgArrayFromObjectArray(const ScopedObjectAccessAlreadyRunnable& soa,
-                                    mirror::Object* receiver,
+  bool BuildArgArrayFromObjectArray(const ScopedObjectAccess& soa, mirror::Object* receiver,
                                     mirror::ObjectArray<mirror::Object>* args, MethodHelper& mh)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    const DexFile::TypeList* classes = mh.GetMethod()->GetParameterTypeList();
+    const DexFile::TypeList* classes = mh.GetParameterTypeList();
     // Set receiver if non-null (method is not static)
     if (receiver != nullptr) {
       Append(receiver);
@@ -244,22 +242,22 @@ class ArgArray {
       }
 
 #define DO_FIRST_ARG(match_descriptor, get_fn, append) { \
-          if (LIKELY(arg != nullptr && arg->GetClass<>()->DescriptorEquals(match_descriptor))) { \
+          const StringPiece src_descriptor(arg != nullptr \
+              ? ClassHelper(arg->GetClass<>()).GetDescriptor() \
+              : "null"); \
+          if (LIKELY(src_descriptor == match_descriptor)) { \
             mirror::ArtField* primitive_field = arg->GetClass()->GetIFields()->Get(0); \
             append(primitive_field-> get_fn(arg));
 
 #define DO_ARG(match_descriptor, get_fn, append) \
-          } else if (LIKELY(arg != nullptr && \
-                            arg->GetClass<>()->DescriptorEquals(match_descriptor))) { \
+          } else if (LIKELY(src_descriptor == match_descriptor)) { \
             mirror::ArtField* primitive_field = arg->GetClass()->GetIFields()->Get(0); \
             append(primitive_field-> get_fn(arg));
 
 #define DO_FAIL(expected) \
           } else { \
             if (arg->GetClass<>()->IsPrimitive()) { \
-              std::string temp; \
-              ThrowIllegalPrimitiveArgumentException(expected, \
-                                                     arg->GetClass<>()->GetDescriptor(&temp)); \
+              ThrowIllegalPrimitiveArgumentException(expected, src_descriptor); \
             } else { \
               ThrowIllegalArgumentException(nullptr, \
                   StringPrintf("method %s argument %zd has type %s, got %s", \
@@ -345,12 +343,12 @@ class ArgArray {
   uint32_t num_bytes_;
   uint32_t* arg_array_;
   uint32_t small_arg_array_[kSmallArgArraySize];
-  std::unique_ptr<uint32_t[]> large_arg_array_;
+  UniquePtr<uint32_t[]> large_arg_array_;
 };
 
 static void CheckMethodArguments(mirror::ArtMethod* m, uint32_t* args)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-  const DexFile::TypeList* params = m->GetParameterTypeList();
+  const DexFile::TypeList* params = MethodHelper(m).GetParameterTypeList();
   if (params == nullptr) {
     return;  // No arguments so nothing to check.
   }
@@ -360,31 +358,24 @@ static void CheckMethodArguments(mirror::ArtMethod* m, uint32_t* args)
   if (!m->IsStatic()) {
     offset = 1;
   }
-  // TODO: If args contain object references, it may cause problems
-  Thread* self = Thread::Current();
-  StackHandleScope<1> hs(self);
-  Handle<mirror::ArtMethod> h_m(hs.NewHandle(m));
-  MethodHelper mh(h_m);
   for (uint32_t i = 0; i < num_params; i++) {
     uint16_t type_idx = params->GetTypeItem(i).type_idx_;
-    mirror::Class* param_type = mh.GetClassFromTypeIdx(type_idx);
+    mirror::Class* param_type = MethodHelper(m).GetClassFromTypeIdx(type_idx);
     if (param_type == nullptr) {
+      Thread* self = Thread::Current();
       CHECK(self->IsExceptionPending());
       LOG(ERROR) << "Internal error: unresolvable type for argument type in JNI invoke: "
-          << h_m->GetTypeDescriptorFromTypeIdx(type_idx) << "\n"
+          << MethodHelper(m).GetTypeDescriptorFromTypeIdx(type_idx) << "\n"
           << self->GetException(nullptr)->Dump();
       self->ClearException();
       ++error_count;
     } else if (!param_type->IsPrimitive()) {
       // TODO: check primitives are in range.
-      // TODO: There is a compaction bug here since GetClassFromTypeIdx can cause thread suspension,
-      // this is a hard to fix problem since the args can contain Object*, we need to save and
-      // restore them by using a visitor similar to the ones used in the trampoline entrypoints.
       mirror::Object* argument = reinterpret_cast<mirror::Object*>(args[i + offset]);
       if (argument != nullptr && !argument->InstanceOf(param_type)) {
         LOG(ERROR) << "JNI ERROR (app bug): attempt to pass an instance of "
                    << PrettyTypeOf(argument) << " as argument " << (i + 1)
-                   << " to " << PrettyMethod(h_m.Get());
+                   << " to " << PrettyMethod(m);
         ++error_count;
       }
     } else if (param_type->IsPrimitiveLong() || param_type->IsPrimitiveDouble()) {
@@ -395,7 +386,7 @@ static void CheckMethodArguments(mirror::ArtMethod* m, uint32_t* args)
     // TODO: pass the JNI function name (such as "CallVoidMethodV") through so we can call JniAbort
     // with an argument.
     JniAbortF(nullptr, "bad arguments passed to %s (see above for details)",
-              PrettyMethod(h_m.Get()).c_str());
+              PrettyMethod(m).c_str());
   }
 }
 
@@ -406,9 +397,8 @@ static mirror::ArtMethod* FindVirtualMethod(mirror::Object* receiver,
 }
 
 
-static void InvokeWithArgArray(const ScopedObjectAccessAlreadyRunnable& soa,
-                               mirror::ArtMethod* method, ArgArray* arg_array, JValue* result,
-                               const char* shorty)
+static void InvokeWithArgArray(const ScopedObjectAccessUnchecked& soa, mirror::ArtMethod* method,
+                               ArgArray* arg_array, JValue* result, const char* shorty)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   uint32_t* args = arg_array->GetArray();
   if (UNLIKELY(soa.Env()->check_jni)) {
@@ -417,116 +407,62 @@ static void InvokeWithArgArray(const ScopedObjectAccessAlreadyRunnable& soa,
   method->Invoke(soa.Self(), args, arg_array->GetNumBytes(), result, shorty);
 }
 
-JValue InvokeWithVarArgs(const ScopedObjectAccessAlreadyRunnable& soa, jobject obj, jmethodID mid,
-                         va_list args)
+JValue InvokeWithVarArgs(const ScopedObjectAccess& soa, jobject obj, jmethodID mid, va_list args)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-  // We want to make sure that the stack is not within a small distance from the
-  // protected region in case we are calling into a leaf function whose stack
-  // check has been elided.
-  if (UNLIKELY(__builtin_frame_address(0) < soa.Self()->GetStackEnd())) {
-    ThrowStackOverflowError(soa.Self());
-    return JValue();
-  }
-
   mirror::ArtMethod* method = soa.DecodeMethod(mid);
   mirror::Object* receiver = method->IsStatic() ? nullptr : soa.Decode<mirror::Object*>(obj);
-  uint32_t shorty_len = 0;
-  const char* shorty = method->GetShorty(&shorty_len);
+  MethodHelper mh(method);
   JValue result;
-  ArgArray arg_array(shorty, shorty_len);
+  ArgArray arg_array(mh.GetShorty(), mh.GetShortyLength());
   arg_array.BuildArgArrayFromVarArgs(soa, receiver, args);
-  InvokeWithArgArray(soa, method, &arg_array, &result, shorty);
+  InvokeWithArgArray(soa, method, &arg_array, &result, mh.GetShorty());
   return result;
 }
 
-JValue InvokeWithJValues(const ScopedObjectAccessAlreadyRunnable& soa, mirror::Object* receiver,
+JValue InvokeWithJValues(const ScopedObjectAccessUnchecked& soa, mirror::Object* receiver,
                          jmethodID mid, jvalue* args) {
-  // We want to make sure that the stack is not within a small distance from the
-  // protected region in case we are calling into a leaf function whose stack
-  // check has been elided.
-  if (UNLIKELY(__builtin_frame_address(0) < soa.Self()->GetStackEnd())) {
-    ThrowStackOverflowError(soa.Self());
-    return JValue();
-  }
-
   mirror::ArtMethod* method = soa.DecodeMethod(mid);
-  uint32_t shorty_len = 0;
-  const char* shorty = method->GetShorty(&shorty_len);
+  MethodHelper mh(method);
   JValue result;
-  ArgArray arg_array(shorty, shorty_len);
+  ArgArray arg_array(mh.GetShorty(), mh.GetShortyLength());
   arg_array.BuildArgArrayFromJValues(soa, receiver, args);
-  InvokeWithArgArray(soa, method, &arg_array, &result, shorty);
+  InvokeWithArgArray(soa, method, &arg_array, &result, mh.GetShorty());
   return result;
 }
 
-JValue InvokeVirtualOrInterfaceWithJValues(const ScopedObjectAccessAlreadyRunnable& soa,
+JValue InvokeVirtualOrInterfaceWithJValues(const ScopedObjectAccess& soa,
                                            mirror::Object* receiver, jmethodID mid, jvalue* args) {
-  // We want to make sure that the stack is not within a small distance from the
-  // protected region in case we are calling into a leaf function whose stack
-  // check has been elided.
-  if (UNLIKELY(__builtin_frame_address(0) < soa.Self()->GetStackEnd())) {
-    ThrowStackOverflowError(soa.Self());
-    return JValue();
-  }
-
   mirror::ArtMethod* method = FindVirtualMethod(receiver, soa.DecodeMethod(mid));
-  uint32_t shorty_len = 0;
-  const char* shorty = method->GetShorty(&shorty_len);
+  MethodHelper mh(method);
   JValue result;
-  ArgArray arg_array(shorty, shorty_len);
+  ArgArray arg_array(mh.GetShorty(), mh.GetShortyLength());
   arg_array.BuildArgArrayFromJValues(soa, receiver, args);
-  InvokeWithArgArray(soa, method, &arg_array, &result, shorty);
+  InvokeWithArgArray(soa, method, &arg_array, &result, mh.GetShorty());
   return result;
 }
 
-JValue InvokeVirtualOrInterfaceWithVarArgs(const ScopedObjectAccessAlreadyRunnable& soa,
+JValue InvokeVirtualOrInterfaceWithVarArgs(const ScopedObjectAccess& soa,
                                            jobject obj, jmethodID mid, va_list args) {
-  // We want to make sure that the stack is not within a small distance from the
-  // protected region in case we are calling into a leaf function whose stack
-  // check has been elided.
-  if (UNLIKELY(__builtin_frame_address(0) < soa.Self()->GetStackEnd())) {
-    ThrowStackOverflowError(soa.Self());
-    return JValue();
-  }
-
   mirror::Object* receiver = soa.Decode<mirror::Object*>(obj);
   mirror::ArtMethod* method = FindVirtualMethod(receiver, soa.DecodeMethod(mid));
-  uint32_t shorty_len = 0;
-  const char* shorty = method->GetShorty(&shorty_len);
+  MethodHelper mh(method);
   JValue result;
-  ArgArray arg_array(shorty, shorty_len);
+  ArgArray arg_array(mh.GetShorty(), mh.GetShortyLength());
   arg_array.BuildArgArrayFromVarArgs(soa, receiver, args);
-  InvokeWithArgArray(soa, method, &arg_array, &result, shorty);
+  InvokeWithArgArray(soa, method, &arg_array, &result, mh.GetShorty());
   return result;
 }
 
 void InvokeWithShadowFrame(Thread* self, ShadowFrame* shadow_frame, uint16_t arg_offset,
                            MethodHelper& mh, JValue* result) {
-  // We want to make sure that the stack is not within a small distance from the
-  // protected region in case we are calling into a leaf function whose stack
-  // check has been elided.
-  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd())) {
-    ThrowStackOverflowError(self);
-    return;
-  }
-
   ArgArray arg_array(mh.GetShorty(), mh.GetShortyLength());
   arg_array.BuildArgArrayFromFrame(shadow_frame, arg_offset);
   shadow_frame->GetMethod()->Invoke(self, arg_array.GetArray(), arg_array.GetNumBytes(), result,
                                     mh.GetShorty());
 }
 
-jobject InvokeMethod(const ScopedObjectAccessAlreadyRunnable& soa, jobject javaMethod,
+jobject InvokeMethod(const ScopedObjectAccess& soa, jobject javaMethod,
                      jobject javaReceiver, jobject javaArgs, bool accessible) {
-  // We want to make sure that the stack is not within a small distance from the
-  // protected region in case we are calling into a leaf function whose stack
-  // check has been elided.
-  if (UNLIKELY(__builtin_frame_address(0) <
-               soa.Self()->GetStackEndForInterpreter(true))) {
-    ThrowStackOverflowError(soa.Self());
-    return nullptr;
-  }
-
   mirror::ArtMethod* m = mirror::ArtMethod::FromReflectedMethod(soa, javaMethod);
 
   mirror::Class* declaring_class = m->GetDeclaringClass();
@@ -554,7 +490,8 @@ jobject InvokeMethod(const ScopedObjectAccessAlreadyRunnable& soa, jobject javaM
   // Get our arrays of arguments and their types, and check they're the same size.
   mirror::ObjectArray<mirror::Object>* objects =
       soa.Decode<mirror::ObjectArray<mirror::Object>*>(javaArgs);
-  const DexFile::TypeList* classes = m->GetParameterTypeList();
+  MethodHelper mh(m);
+  const DexFile::TypeList* classes = mh.GetParameterTypeList();
   uint32_t classes_size = (classes == nullptr) ? 0 : classes->Size();
   uint32_t arg_count = (objects != nullptr) ? objects->GetLength() : 0;
   if (arg_count != classes_size) {
@@ -573,17 +510,13 @@ jobject InvokeMethod(const ScopedObjectAccessAlreadyRunnable& soa, jobject javaM
 
   // Invoke the method.
   JValue result;
-  uint32_t shorty_len = 0;
-  const char* shorty = m->GetShorty(&shorty_len);
-  ArgArray arg_array(shorty, shorty_len);
-  StackHandleScope<1> hs(soa.Self());
-  MethodHelper mh(hs.NewHandle(m));
+  ArgArray arg_array(mh.GetShorty(), mh.GetShortyLength());
   if (!arg_array.BuildArgArrayFromObjectArray(soa, receiver, objects, mh)) {
     CHECK(soa.Self()->IsExceptionPending());
     return nullptr;
   }
 
-  InvokeWithArgArray(soa, m, &arg_array, &result, shorty);
+  InvokeWithArgArray(soa, m, &arg_array, &result, mh.GetShorty());
 
   // Wrap any exception with "Ljava/lang/reflect/InvocationTargetException;" and return early.
   if (soa.Self()->IsExceptionPending()) {
@@ -615,10 +548,6 @@ bool VerifyObjectIsClass(mirror::Object* o, mirror::Class* c) {
     return false;
   }
   return true;
-}
-
-static std::string PrettyDescriptor(Primitive::Type type) {
-  return PrettyDescriptor(Primitive::Descriptor(type));
 }
 
 bool ConvertPrimitiveValue(const ThrowLocation* throw_location, bool unbox_for_result,
@@ -813,40 +742,40 @@ static bool UnboxPrimitive(const ThrowLocation* throw_location, mirror::Object* 
   }
 
   JValue boxed_value;
-  mirror::Class* klass = o->GetClass();
+  const StringPiece src_descriptor(ClassHelper(o->GetClass()).GetDescriptor());
   mirror::Class* src_class = nullptr;
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   mirror::ArtField* primitive_field = o->GetClass()->GetIFields()->Get(0);
-  if (klass->DescriptorEquals("Ljava/lang/Boolean;")) {
+  if (src_descriptor == "Ljava/lang/Boolean;") {
     src_class = class_linker->FindPrimitiveClass('Z');
     boxed_value.SetZ(primitive_field->GetBoolean(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Byte;")) {
+  } else if (src_descriptor == "Ljava/lang/Byte;") {
     src_class = class_linker->FindPrimitiveClass('B');
     boxed_value.SetB(primitive_field->GetByte(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Character;")) {
+  } else if (src_descriptor == "Ljava/lang/Character;") {
     src_class = class_linker->FindPrimitiveClass('C');
     boxed_value.SetC(primitive_field->GetChar(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Float;")) {
+  } else if (src_descriptor == "Ljava/lang/Float;") {
     src_class = class_linker->FindPrimitiveClass('F');
     boxed_value.SetF(primitive_field->GetFloat(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Double;")) {
+  } else if (src_descriptor == "Ljava/lang/Double;") {
     src_class = class_linker->FindPrimitiveClass('D');
     boxed_value.SetD(primitive_field->GetDouble(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Integer;")) {
+  } else if (src_descriptor == "Ljava/lang/Integer;") {
     src_class = class_linker->FindPrimitiveClass('I');
     boxed_value.SetI(primitive_field->GetInt(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Long;")) {
+  } else if (src_descriptor == "Ljava/lang/Long;") {
     src_class = class_linker->FindPrimitiveClass('J');
     boxed_value.SetJ(primitive_field->GetLong(o));
-  } else if (klass->DescriptorEquals("Ljava/lang/Short;")) {
+  } else if (src_descriptor == "Ljava/lang/Short;") {
     src_class = class_linker->FindPrimitiveClass('S');
     boxed_value.SetS(primitive_field->GetShort(o));
   } else {
-    std::string temp;
     ThrowIllegalArgumentException(throw_location,
-        StringPrintf("%s has type %s, got %s", UnboxingFailureKind(f).c_str(),
-            PrettyDescriptor(dst_class).c_str(),
-            PrettyDescriptor(o->GetClass()->GetDescriptor(&temp)).c_str()).c_str());
+                                  StringPrintf("%s has type %s, got %s",
+                                               UnboxingFailureKind(f).c_str(),
+                                               PrettyDescriptor(dst_class).c_str(),
+                                               PrettyDescriptor(src_descriptor.data()).c_str()).c_str());
     return false;
   }
 
@@ -869,10 +798,6 @@ bool UnboxPrimitiveForResult(const ThrowLocation& throw_location, mirror::Object
 bool VerifyAccess(mirror::Object* obj, mirror::Class* declaring_class, uint32_t access_flags) {
   NthCallerVisitor visitor(Thread::Current(), 2);
   visitor.WalkStack();
-  if (UNLIKELY(visitor.caller == nullptr)) {
-    // The caller is an attached native thread.
-    return (access_flags & kAccPublic) != 0;
-  }
   mirror::Class* caller_class = visitor.caller->GetDeclaringClass();
 
   if (((access_flags & kAccPublic) != 0) || (caller_class == declaring_class)) {

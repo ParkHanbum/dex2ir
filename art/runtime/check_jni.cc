@@ -23,7 +23,6 @@
 #include "class_linker.h"
 #include "class_linker-inl.h"
 #include "dex_file-inl.h"
-#include "field_helper.h"
 #include "gc/space/space.h"
 #include "mirror/art_field-inl.h"
 #include "mirror/art_method-inl.h"
@@ -32,6 +31,7 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/string-inl.h"
 #include "mirror/throwable.h"
+#include "object_utils.h"
 #include "runtime.h"
 #include "scoped_thread_state_change.h"
 #include "thread.h"
@@ -129,7 +129,7 @@ static bool ShouldTrace(JavaVMExt* vm, mirror::ArtMethod* method)
   // such as NewByteArray.
   // If -verbose:third-party-jni is on, we want to log any JNI function calls
   // made by a third-party native method.
-  std::string class_name(method->GetDeclaringClassDescriptor());
+  std::string class_name(MethodHelper(method).GetDeclaringClassDescriptor());
   if (!vm->trace.empty() && class_name.find(vm->trace) != std::string::npos) {
     return true;
   }
@@ -195,9 +195,8 @@ class ScopedCheck {
    */
   void CheckFieldType(jvalue value, jfieldID fid, char prim, bool isStatic)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    StackHandleScope<1> hs(Thread::Current());
-    Handle<mirror::ArtField> f(hs.NewHandle(CheckFieldID(fid)));
-    if (f.Get() == nullptr) {
+    mirror::ArtField* f = CheckFieldID(fid);
+    if (f == nullptr) {
       return;
     }
     mirror::Class* field_type = FieldHelper(f).GetType();
@@ -209,31 +208,29 @@ class ScopedCheck {
         // obj will be NULL.  Otherwise, obj should always be non-NULL
         // and valid.
         if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(obj)) {
-          Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+          Runtime::Current()->GetHeap()->DumpSpaces();
           JniAbortF(function_name_, "field operation on invalid %s: %p",
                     ToStr<IndirectRefKind>(GetIndirectRefKind(java_object)).c_str(), java_object);
           return;
         } else {
           if (!obj->InstanceOf(field_type)) {
             JniAbortF(function_name_, "attempt to set field %s with value of wrong type: %s",
-                      PrettyField(f.Get()).c_str(), PrettyTypeOf(obj).c_str());
+                      PrettyField(f).c_str(), PrettyTypeOf(obj).c_str());
             return;
           }
         }
       }
     } else if (field_type != Runtime::Current()->GetClassLinker()->FindPrimitiveClass(prim)) {
       JniAbortF(function_name_, "attempt to set field %s with value of wrong type: %c",
-                PrettyField(f.Get()).c_str(), prim);
+                PrettyField(f).c_str(), prim);
       return;
     }
 
-    if (isStatic != f.Get()->IsStatic()) {
+    if (isStatic != f->IsStatic()) {
       if (isStatic) {
-        JniAbortF(function_name_, "accessing non-static field %s as static",
-                  PrettyField(f.Get()).c_str());
+        JniAbortF(function_name_, "accessing non-static field %s as static", PrettyField(f).c_str());
       } else {
-        JniAbortF(function_name_, "accessing static field %s as non-static",
-                  PrettyField(f.Get()).c_str());
+        JniAbortF(function_name_, "accessing static field %s as non-static", PrettyField(f).c_str());
       }
       return;
     }
@@ -248,7 +245,7 @@ class ScopedCheck {
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     mirror::Object* o = soa_.Decode<mirror::Object*>(java_object);
     if (o == nullptr || !Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
-      Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+      Runtime::Current()->GetHeap()->DumpSpaces();
       JniAbortF(function_name_, "field operation on invalid %s: %p",
                 ToStr<IndirectRefKind>(GetIndirectRefKind(java_object)).c_str(), java_object);
       return;
@@ -259,7 +256,8 @@ class ScopedCheck {
       return;
     }
     mirror::Class* c = o->GetClass();
-    if (c->FindInstanceField(f->GetName(), f->GetTypeDescriptor()) == nullptr) {
+    FieldHelper fh(f);
+    if (c->FindInstanceField(fh.GetName(), fh.GetTypeDescriptor()) == nullptr) {
       JniAbortF(function_name_, "jfieldID %s not valid for an object of class %s",
                 PrettyField(f).c_str(), PrettyTypeOf(o).c_str());
     }
@@ -284,7 +282,7 @@ class ScopedCheck {
     if (m == nullptr) {
       return;
     }
-    if (*expectedType != m->GetShorty()[0]) {
+    if (*expectedType != MethodHelper(m).GetShorty()[0]) {
       JniAbortF(function_name_, "the return type of %s does not match %s",
                 function_name_, PrettyMethod(m).c_str());
     }
@@ -353,9 +351,7 @@ class ScopedCheck {
       return;
     }
     mirror::Object* o = soa_.Decode<mirror::Object*>(java_object);
-    if (o == nullptr) {
-      JniAbortF(function_name_, "can't call %s on null object", PrettyMethod(m).c_str());
-    } else if (!o->InstanceOf(m->GetDeclaringClass())) {
+    if (!o->InstanceOf(m->GetDeclaringClass())) {
       JniAbortF(function_name_, "can't call %s on instance of %s",
                 PrettyMethod(m).c_str(), PrettyTypeOf(o).c_str());
     }
@@ -630,7 +626,7 @@ class ScopedCheck {
 
     mirror::Object* obj = soa_.Decode<mirror::Object*>(java_object);
     if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(obj)) {
-      Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+      Runtime::Current()->GetHeap()->DumpSpaces();
       JniAbortF(function_name_, "%s is an invalid %s: %p (%p)",
                 what, ToStr<IndirectRefKind>(GetIndirectRefKind(java_object)).c_str(), java_object, obj);
       return false;
@@ -684,7 +680,7 @@ class ScopedCheck {
 
     mirror::Array* a = soa_.Decode<mirror::Array*>(java_array);
     if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(a)) {
-      Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+      Runtime::Current()->GetHeap()->DumpSpaces();
       JniAbortF(function_name_, "jarray is an invalid %s: %p (%p)",
                 ToStr<IndirectRefKind>(GetIndirectRefKind(java_array)).c_str(), java_array, a);
     } else if (!a->IsArrayInstance()) {
@@ -705,7 +701,7 @@ class ScopedCheck {
     }
     mirror::ArtField* f = soa_.DecodeField(fid);
     if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(f) || !f->IsArtField()) {
-      Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+      Runtime::Current()->GetHeap()->DumpSpaces();
       JniAbortF(function_name_, "invalid jfieldID: %p", fid);
       return nullptr;
     }
@@ -719,7 +715,7 @@ class ScopedCheck {
     }
     mirror::ArtMethod* m = soa_.DecodeMethod(mid);
     if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(m) || !m->IsArtMethod()) {
-      Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+      Runtime::Current()->GetHeap()->DumpSpaces();
       JniAbortF(function_name_, "invalid jmethodID: %p", mid);
       return nullptr;
     }
@@ -740,7 +736,7 @@ class ScopedCheck {
 
     mirror::Object* o = soa_.Decode<mirror::Object*>(java_object);
     if (!Runtime::Current()->GetHeap()->IsValidObjectAddress(o)) {
-      Runtime::Current()->GetHeap()->DumpSpaces(LOG(ERROR));
+      Runtime::Current()->GetHeap()->DumpSpaces();
       // TODO: when we remove work_around_app_jni_bugs, this should be impossible.
       JniAbortF(function_name_, "native code passing in reference to invalid %s: %p",
                 ToStr<IndirectRefKind>(GetIndirectRefKind(java_object)).c_str(), java_object);
@@ -1759,7 +1755,9 @@ PRIMITIVE_ARRAY_FUNCTIONS(jdouble, Double, 'D');
     CHECK_JNI_ENTRY(kFlag_Default, "EpJ", env, address, capacity);
     if (address == nullptr) {
       JniAbortF(__FUNCTION__, "non-nullable address is NULL");
-      return nullptr;
+    }
+    if (capacity < 0) {
+      JniAbortF(__FUNCTION__, "capacity must be non-negative: %" PRId64, capacity);
     }
     return CHECK_JNI_EXIT("L", baseEnv(env)->NewDirectByteBuffer(env, address, capacity));
   }

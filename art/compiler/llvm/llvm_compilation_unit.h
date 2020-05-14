@@ -17,10 +17,6 @@
 #ifndef ART_COMPILER_LLVM_LLVM_COMPILATION_UNIT_H_
 #define ART_COMPILER_LLVM_LLVM_COMPILATION_UNIT_H_
 
-#include <memory>
-#include <string>
-#include <vector>
-
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "dex/compiler_internals.h"
@@ -31,6 +27,10 @@
 #include "runtime_support_builder.h"
 #include "runtime_support_llvm_func.h"
 #include "safe_map.h"
+
+#include <UniquePtr.h>
+#include <string>
+#include <vector>
 
 namespace art {
   class CompiledMethod;
@@ -106,12 +106,12 @@ class LlvmCompilationUnit {
   const CompilerLLVM* compiler_llvm_;
   const size_t cunit_id_;
 
-  std::unique_ptr< ::llvm::LLVMContext> context_;
-  std::unique_ptr<IRBuilder> irb_;
-  std::unique_ptr<RuntimeSupportBuilder> runtime_support_;
+  UniquePtr< ::llvm::LLVMContext> context_;
+  UniquePtr<IRBuilder> irb_;
+  UniquePtr<RuntimeSupportBuilder> runtime_support_;
   ::llvm::Module* module_;  // Managed by context_
-  std::unique_ptr<IntrinsicHelper> intrinsic_helper_;
-  std::unique_ptr<LLVMInfo> llvm_info_;
+  UniquePtr<IntrinsicHelper> intrinsic_helper_;
+  UniquePtr<LLVMInfo> llvm_info_;
   CompilerDriver* driver_;
   DexCompilationUnit* dex_compilation_unit_;
 

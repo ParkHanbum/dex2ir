@@ -16,14 +16,12 @@
 
 
 #include "fault_handler.h"
-
 #include <sys/ucontext.h>
 #include "base/macros.h"
 #include "base/hex_dump.h"
 #include "globals.h"
 #include "base/logging.h"
 #include "base/hex_dump.h"
-#include "instruction_set.h"
 #include "mirror/art_method.h"
 #include "mirror/art_method-inl.h"
 #include "thread.h"
@@ -36,7 +34,7 @@
 namespace art {
 
 extern "C" void art_quick_throw_null_pointer_exception();
-extern "C" void art_quick_throw_stack_overflow();
+extern "C" void art_quick_throw_stack_overflow_from_signal();
 extern "C" void art_quick_implicit_suspend();
 
 // Get the size of a thumb2 instruction in bytes.
@@ -47,27 +45,9 @@ static uint32_t GetInstructionSize(uint8_t* pc) {
   return instr_size;
 }
 
-void FaultManager::HandleNestedSignal(int sig, siginfo_t* info, void* context) {
-  // Note that in this handler we set up the registers and return to
-  // longjmp directly rather than going through an assembly language stub.  The
-  // reason for this is that longjmp is (currently) in ARM mode and that would
-  // require switching modes in the stub - incurring an unwanted relocation.
-
-  struct ucontext *uc = reinterpret_cast<struct ucontext*>(context);
-  struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
-  Thread* self = Thread::Current();
-  CHECK(self != nullptr);       // This will cause a SIGABRT if self is nullptr.
-
-  sc->arm_r0 = reinterpret_cast<uintptr_t>(*self->GetNestedSignalState());
-  sc->arm_r1 = 1;
-  sc->arm_pc = reinterpret_cast<uintptr_t>(longjmp);
-  VLOG(signals) << "longjmp address: " << reinterpret_cast<void*>(sc->arm_pc);
-}
-
-void FaultManager::GetMethodAndReturnPcAndSp(siginfo_t* siginfo, void* context,
-                                             mirror::ArtMethod** out_method,
+void FaultManager::GetMethodAndReturnPCAndSP(void* context, mirror::ArtMethod** out_method,
                                              uintptr_t* out_return_pc, uintptr_t* out_sp) {
-  struct ucontext* uc = reinterpret_cast<struct ucontext*>(context);
+  struct ucontext *uc = (struct ucontext *)context;
   struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
   *out_sp = static_cast<uintptr_t>(sc->arm_sp);
   VLOG(signals) << "sp: " << *out_sp;
@@ -79,7 +59,7 @@ void FaultManager::GetMethodAndReturnPcAndSp(siginfo_t* siginfo, void* context,
   // get the method from the top of the stack.  However it's in r0.
   uintptr_t* fault_addr = reinterpret_cast<uintptr_t*>(sc->fault_address);
   uintptr_t* overflow_addr = reinterpret_cast<uintptr_t*>(
-      reinterpret_cast<uint8_t*>(*out_sp) - GetStackOverflowReservedBytes(kArm));
+      reinterpret_cast<uint8_t*>(*out_sp) - Thread::kStackOverflowReservedBytes);
   if (overflow_addr == fault_addr) {
     *out_method = reinterpret_cast<mirror::ArtMethod*>(sc->arm_r0);
   } else {
@@ -133,7 +113,7 @@ bool SuspensionHandler::Action(int sig, siginfo_t* info, void* context) {
   uint32_t checkinst1 = 0xf8d90000 + Thread::ThreadSuspendTriggerOffset<4>().Int32Value();
   uint16_t checkinst2 = 0x6800;
 
-  struct ucontext* uc = reinterpret_cast<struct ucontext*>(context);
+  struct ucontext *uc = (struct ucontext *)context;
   struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
   uint8_t* ptr2 = reinterpret_cast<uint8_t*>(sc->arm_pc);
   uint8_t* ptr1 = ptr2 - 4;
@@ -197,7 +177,7 @@ bool SuspensionHandler::Action(int sig, siginfo_t* info, void* context) {
 // to the overflow region below the protected region.
 
 bool StackOverflowHandler::Action(int sig, siginfo_t* info, void* context) {
-  struct ucontext* uc = reinterpret_cast<struct ucontext*>(context);
+  struct ucontext *uc = (struct ucontext *)context;
   struct sigcontext *sc = reinterpret_cast<struct sigcontext*>(&uc->uc_mcontext);
   VLOG(signals) << "stack overflow handler with sp at " << std::hex << &uc;
   VLOG(signals) << "sigcontext: " << std::hex << sc;
@@ -210,7 +190,12 @@ bool StackOverflowHandler::Action(int sig, siginfo_t* info, void* context) {
   VLOG(signals) << "checking for stack overflow, sp: " << std::hex << sp <<
     ", fault_addr: " << fault_addr;
 
-  uintptr_t overflow_addr = sp - GetStackOverflowReservedBytes(kArm);
+  uintptr_t overflow_addr = sp - Thread::kStackOverflowReservedBytes;
+
+  Thread* self = reinterpret_cast<Thread*>(sc->arm_r9);
+  CHECK_EQ(self, Thread::Current());
+  uintptr_t pregion = reinterpret_cast<uintptr_t>(self->GetStackEnd()) -
+      Thread::kStackOverflowProtectedSize;
 
   // Check that the fault address is the value expected for a stack overflow.
   if (fault_addr != overflow_addr) {
@@ -218,13 +203,29 @@ bool StackOverflowHandler::Action(int sig, siginfo_t* info, void* context) {
     return false;
   }
 
-  VLOG(signals) << "Stack overflow found";
+  // We know this is a stack overflow.  We need to move the sp to the overflow region
+  // the exists below the protected region.  Determine the address of the next
+  // available valid address below the protected region.
+  uintptr_t prevsp = sp;
+  sp = pregion;
+  VLOG(signals) << "setting sp to overflow region at " << std::hex << sp;
 
-  // Now arrange for the signal handler to return to art_quick_throw_stack_overflow_from.
+  // Since the compiler puts the implicit overflow
+  // check before the callee save instructions, the SP is already pointing to
+  // the previous frame.
+  VLOG(signals) << "previous frame: " << std::hex << prevsp;
+
+  // Now establish the stack pointer for the signal return.
+  sc->arm_sp = prevsp;
+
+  // Tell the stack overflow code where the new stack pointer should be.
+  sc->arm_ip = sp;      // aka r12
+
+  // Now arrange for the signal handler to return to art_quick_throw_stack_overflow_from_signal.
   // The value of LR must be the same as it was when we entered the code that
   // caused this fault.  This will be inserted into a callee save frame by
-  // the function to which this handler returns (art_quick_throw_stack_overflow).
-  sc->arm_pc = reinterpret_cast<uintptr_t>(art_quick_throw_stack_overflow);
+  // the function to which this handler returns (art_quick_throw_stack_overflow_from_signal).
+  sc->arm_pc = reinterpret_cast<uintptr_t>(art_quick_throw_stack_overflow_from_signal);
 
   // The kernel will now return to the address in sc->arm_pc.
   return true;

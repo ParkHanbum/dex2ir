@@ -806,13 +806,6 @@ void X86Assembler::testl(Register reg1, Register reg2) {
 }
 
 
-void X86Assembler::testl(Register reg, const Address& address) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitUint8(0x85);
-  EmitOperand(reg, address);
-}
-
-
 void X86Assembler::testl(Register reg, const Immediate& immediate) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   // For registers that have a byte variant (EAX, EBX, ECX, and EDX)
@@ -1418,12 +1411,10 @@ void X86Assembler::BuildFrame(size_t frame_size, ManagedRegister method_reg,
   }
   // return address then method on stack
   addl(ESP, Immediate(-frame_size + (spill_regs.size() * kFramePointerSize) +
-                      sizeof(StackReference<mirror::ArtMethod>) /*method*/ +
-                      kFramePointerSize /*return address*/));
+                      kFramePointerSize /*method*/ + kFramePointerSize /*return address*/));
   pushl(method_reg.AsX86().AsCpuRegister());
   for (size_t i = 0; i < entry_spills.size(); ++i) {
-    movl(Address(ESP, frame_size + sizeof(StackReference<mirror::ArtMethod>) +
-                 (i * kFramePointerSize)),
+    movl(Address(ESP, frame_size + kFramePointerSize + (i * kFramePointerSize)),
          entry_spills.at(i).AsX86().AsCpuRegister());
   }
 }
@@ -1431,8 +1422,7 @@ void X86Assembler::BuildFrame(size_t frame_size, ManagedRegister method_reg,
 void X86Assembler::RemoveFrame(size_t frame_size,
                             const std::vector<ManagedRegister>& spill_regs) {
   CHECK_ALIGNED(frame_size, kStackAlignment);
-  addl(ESP, Immediate(frame_size - (spill_regs.size() * kFramePointerSize) -
-                      sizeof(StackReference<mirror::ArtMethod>)));
+  addl(ESP, Immediate(frame_size - (spill_regs.size() * kFramePointerSize) - kFramePointerSize));
   for (size_t i = 0; i < spill_regs.size(); ++i) {
     popl(spill_regs.at(i).AsX86().AsCpuRegister());
   }

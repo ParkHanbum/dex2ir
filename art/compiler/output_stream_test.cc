@@ -17,7 +17,6 @@
 #include "file_output_stream.h"
 #include "vector_output_stream.h"
 
-#include "base/unix_file/fd_file.h"
 #include "base/logging.h"
 #include "buffered_output_stream.h"
 #include "common_runtime_test.h"
@@ -65,7 +64,7 @@ TEST_F(OutputStreamTest, File) {
   FileOutputStream output_stream(tmp.GetFile());
   SetOutputStream(output_stream);
   GenerateTestOutput();
-  std::unique_ptr<File> in(OS::OpenFileForReading(tmp.GetFilename().c_str()));
+  UniquePtr<File> in(OS::OpenFileForReading(tmp.GetFilename().c_str()));
   EXPECT_TRUE(in.get() != NULL);
   std::vector<uint8_t> actual(in->GetLength());
   bool readSuccess = in->ReadFully(&actual[0], actual.size());
@@ -75,12 +74,12 @@ TEST_F(OutputStreamTest, File) {
 
 TEST_F(OutputStreamTest, Buffered) {
   ScratchFile tmp;
-  std::unique_ptr<FileOutputStream> file_output_stream(new FileOutputStream(tmp.GetFile()));
+  UniquePtr<FileOutputStream> file_output_stream(new FileOutputStream(tmp.GetFile()));
   CHECK(file_output_stream.get() != NULL);
   BufferedOutputStream buffered_output_stream(file_output_stream.release());
   SetOutputStream(buffered_output_stream);
   GenerateTestOutput();
-  std::unique_ptr<File> in(OS::OpenFileForReading(tmp.GetFilename().c_str()));
+  UniquePtr<File> in(OS::OpenFileForReading(tmp.GetFilename().c_str()));
   EXPECT_TRUE(in.get() != NULL);
   std::vector<uint8_t> actual(in->GetLength());
   bool readSuccess = in->ReadFully(&actual[0], actual.size());

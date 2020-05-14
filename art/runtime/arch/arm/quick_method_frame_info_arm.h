@@ -20,7 +20,6 @@
 #include "quick/quick_method_frame_info.h"
 #include "registers_arm.h"
 #include "runtime.h"  // for Runtime::CalleeSaveType.
-#include "utils.h"
 
 namespace art {
 namespace arm {
@@ -61,22 +60,6 @@ constexpr QuickMethodFrameInfo ArmCalleeSaveMethodFrameInfo(Runtime::CalleeSaveT
   return QuickMethodFrameInfo(ArmCalleeSaveFrameSize(type),
                               ArmCalleeSaveCoreSpills(type),
                               ArmCalleeSaveFpSpills(type));
-}
-
-constexpr size_t ArmCalleeSaveFpr1Offset(Runtime::CalleeSaveType type) {
-  return ArmCalleeSaveFrameSize(type) -
-         (POPCOUNT(ArmCalleeSaveCoreSpills(type)) +
-          POPCOUNT(ArmCalleeSaveFpSpills(type))) * kArmPointerSize;
-}
-
-constexpr size_t ArmCalleeSaveGpr1Offset(Runtime::CalleeSaveType type) {
-  return ArmCalleeSaveFrameSize(type) -
-         POPCOUNT(ArmCalleeSaveCoreSpills(type)) * kArmPointerSize;
-}
-
-constexpr size_t ArmCalleeSaveLrOffset(Runtime::CalleeSaveType type) {
-  return ArmCalleeSaveFrameSize(type) -
-      POPCOUNT(ArmCalleeSaveCoreSpills(type) & (-(1 << LR))) * kArmPointerSize;
 }
 
 }  // namespace arm

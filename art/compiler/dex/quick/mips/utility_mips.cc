@@ -16,7 +16,6 @@
 
 #include "codegen_mips.h"
 #include "dex/quick/mir_to_lir-inl.h"
-#include "dex/reg_storage_eq.h"
 #include "mips_lir.h"
 
 namespace art {
@@ -343,10 +342,6 @@ LIR* MipsMir2Lir::OpCondRegReg(OpKind op, ConditionCode cc, RegStorage r_dest, R
 
 LIR* MipsMir2Lir::LoadConstantWide(RegStorage r_dest, int64_t value) {
   LIR *res;
-  if (!r_dest.IsPair()) {
-    // Form 64-bit pair
-    r_dest = Solo64ToPair64(r_dest);
-  }
   res = LoadConstantNoClobber(r_dest.GetLow(), Low32Bits(value));
   LoadConstantNoClobber(r_dest.GetHigh(), High32Bits(value));
   return res;
@@ -453,7 +448,7 @@ LIR* MipsMir2Lir::StoreBaseIndexed(RegStorage r_base, RegStorage r_index, RegSto
 
 // FIXME: don't split r_dest into 2 containers.
 LIR* MipsMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStorage r_dest,
-                                   OpSize size) {
+                                   RegStorage r_dest_hi, OpSize size) {
 /*
  * Load value from base + displacement.  Optionally perform null check
  * on base (which must have an associated s_reg and MIR).  If not
@@ -467,21 +462,23 @@ LIR* MipsMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStora
   LIR *load2 = NULL;
   MipsOpCode opcode = kMipsNop;
   bool short_form = IS_SIMM16(displacement);
-  bool pair = r_dest.IsPair();
+  bool pair = false;
 
   switch (size) {
     case k64:
     case kDouble:
-      if (!pair) {
-        // Form 64-bit pair
-        r_dest = Solo64ToPair64(r_dest);
-        pair = 1;
-      }
+      pair = true;
+      opcode = kMipsLw;
       if (r_dest.IsFloat()) {
-        DCHECK_EQ(r_dest.GetLowReg(), r_dest.GetHighReg() - 1);
         opcode = kMipsFlwc1;
-      } else {
-        opcode = kMipsLw;
+        if (r_dest.IsDouble()) {
+          int reg_num = (r_dest.GetRegNum() << 1) | RegStorage::kFloatingPoint;
+          r_dest = RegStorage(RegStorage::k64BitSolo, reg_num, reg_num + 1);
+        } else {
+          DCHECK(r_dest_hi.IsFloat());
+          DCHECK_EQ(r_dest.GetReg(), r_dest_hi.GetReg() - 1);
+          r_dest_hi.SetReg(r_dest.GetReg() + 1);
+        }
       }
       short_form = IS_SIMM16_2WORD(displacement);
       DCHECK_EQ((displacement & 0x3), 0);
@@ -518,15 +515,15 @@ LIR* MipsMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStora
     if (!pair) {
       load = res = NewLIR3(opcode, r_dest.GetReg(), displacement, r_base.GetReg());
     } else {
-      load = res = NewLIR3(opcode, r_dest.GetLowReg(), displacement + LOWORD_OFFSET, r_base.GetReg());
-      load2 = NewLIR3(opcode, r_dest.GetHighReg(), displacement + HIWORD_OFFSET, r_base.GetReg());
+      load = res = NewLIR3(opcode, r_dest.GetReg(), displacement + LOWORD_OFFSET, r_base.GetReg());
+      load2 = NewLIR3(opcode, r_dest_hi.GetReg(), displacement + HIWORD_OFFSET, r_base.GetReg());
     }
   } else {
     if (pair) {
       RegStorage r_tmp = AllocTemp();
       res = OpRegRegImm(kOpAdd, r_tmp, r_base, displacement);
-      load = NewLIR3(opcode, r_dest.GetLowReg(), LOWORD_OFFSET, r_tmp.GetReg());
-      load2 = NewLIR3(opcode, r_dest.GetHighReg(), HIWORD_OFFSET, r_tmp.GetReg());
+      load = NewLIR3(opcode, r_dest.GetReg(), LOWORD_OFFSET, r_tmp.GetReg());
+      load2 = NewLIR3(opcode, r_dest_hi.GetReg(), HIWORD_OFFSET, r_tmp.GetReg());
       FreeTemp(r_tmp);
     } else {
       RegStorage r_tmp = (r_base == r_dest) ? AllocTemp() : r_dest;
@@ -537,8 +534,7 @@ LIR* MipsMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStora
     }
   }
 
-  if (mem_ref_type_ == ResourceMask::kDalvikReg) {
-    DCHECK(r_base == rs_rMIPS_SP);
+  if (r_base == rs_rMIPS_SP) {
     AnnotateDalvikRegAccess(load, (displacement + (pair ? LOWORD_OFFSET : 0)) >> 2,
                             true /* is_load */, pair /* is64bit */);
     if (pair) {
@@ -549,30 +545,28 @@ LIR* MipsMir2Lir::LoadBaseDispBody(RegStorage r_base, int displacement, RegStora
   return load;
 }
 
-LIR* MipsMir2Lir::LoadBaseDisp(RegStorage r_base, int displacement, RegStorage r_dest,
-                               OpSize size, VolatileKind is_volatile) {
-  if (UNLIKELY(is_volatile == kVolatile && (size == k64 || size == kDouble))) {
-    // Do atomic 64-bit load.
-    return GenAtomic64Load(r_base, displacement, r_dest);
-  }
+LIR* MipsMir2Lir::LoadBaseDispVolatile(RegStorage r_base, int displacement, RegStorage r_dest,
+                                       OpSize size) {
+  DCHECK(size != k64 && size != kDouble);
+  return LoadBaseDisp(r_base, displacement, r_dest, size);
+}
 
+LIR* MipsMir2Lir::LoadBaseDisp(RegStorage r_base, int displacement, RegStorage r_dest,
+                               OpSize size) {
   // TODO: base this on target.
   if (size == kWord) {
     size = k32;
   }
-  LIR* load;
-  load = LoadBaseDispBody(r_base, displacement, r_dest, size);
-
-  if (UNLIKELY(is_volatile == kVolatile)) {
-    GenMemBarrier(kLoadAny);
+  if (size == k64 || size == kDouble) {
+    return LoadBaseDispBody(r_base, displacement, r_dest.GetLow(), r_dest.GetHigh(), size);
+  } else {
+    return LoadBaseDispBody(r_base, displacement, r_dest, RegStorage::InvalidReg(), size);
   }
-
-  return load;
 }
 
 // FIXME: don't split r_dest into 2 containers.
 LIR* MipsMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement,
-                                    RegStorage r_src, OpSize size) {
+                                    RegStorage r_src, RegStorage r_src_hi, OpSize size) {
   LIR *res;
   LIR *store = NULL;
   LIR *store2 = NULL;
@@ -583,16 +577,17 @@ LIR* MipsMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement,
   switch (size) {
     case k64:
     case kDouble:
-      if (!pair) {
-        // Form 64-bit pair
-        r_src = Solo64ToPair64(r_src);
-        pair = 1;
-      }
+      opcode = kMipsSw;
       if (r_src.IsFloat()) {
-        DCHECK_EQ(r_src.GetLowReg(), r_src.GetHighReg() - 1);
         opcode = kMipsFswc1;
-      } else {
-        opcode = kMipsSw;
+        if (r_src.IsDouble()) {
+          int reg_num = (r_src.GetRegNum() << 1) | RegStorage::kFloatingPoint;
+          r_src = RegStorage(RegStorage::k64BitPair, reg_num, reg_num + 1);
+        } else {
+          DCHECK(r_src_hi.IsFloat());
+          DCHECK_EQ(r_src.GetReg(), (r_src_hi.GetReg() - 1));
+          r_src_hi.SetReg(r_src.GetReg() + 1);
+        }
       }
       short_form = IS_SIMM16_2WORD(displacement);
       DCHECK_EQ((displacement & 0x3), 0);
@@ -624,8 +619,8 @@ LIR* MipsMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement,
     if (!pair) {
       store = res = NewLIR3(opcode, r_src.GetReg(), displacement, r_base.GetReg());
     } else {
-      store = res = NewLIR3(opcode, r_src.GetLowReg(), displacement + LOWORD_OFFSET, r_base.GetReg());
-      store2 = NewLIR3(opcode, r_src.GetHighReg(), displacement + HIWORD_OFFSET, r_base.GetReg());
+      store = res = NewLIR3(opcode, r_src.GetReg(), displacement + LOWORD_OFFSET, r_base.GetReg());
+      store2 = NewLIR3(opcode, r_src_hi.GetReg(), displacement + HIWORD_OFFSET, r_base.GetReg());
     }
   } else {
     RegStorage r_scratch = AllocTemp();
@@ -633,14 +628,13 @@ LIR* MipsMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement,
     if (!pair) {
       store =  NewLIR3(opcode, r_src.GetReg(), 0, r_scratch.GetReg());
     } else {
-      store =  NewLIR3(opcode, r_src.GetLowReg(), LOWORD_OFFSET, r_scratch.GetReg());
-      store2 = NewLIR3(opcode, r_src.GetHighReg(), HIWORD_OFFSET, r_scratch.GetReg());
+      store =  NewLIR3(opcode, r_src.GetReg(), LOWORD_OFFSET, r_scratch.GetReg());
+      store2 = NewLIR3(opcode, r_src_hi.GetReg(), HIWORD_OFFSET, r_scratch.GetReg());
     }
     FreeTemp(r_scratch);
   }
 
-  if (mem_ref_type_ == ResourceMask::kDalvikReg) {
-    DCHECK(r_base == rs_rMIPS_SP);
+  if (r_base == rs_rMIPS_SP) {
     AnnotateDalvikRegAccess(store, (displacement + (pair ? LOWORD_OFFSET : 0)) >> 2,
                             false /* is_load */, pair /* is64bit */);
     if (pair) {
@@ -652,32 +646,33 @@ LIR* MipsMir2Lir::StoreBaseDispBody(RegStorage r_base, int displacement,
   return res;
 }
 
+LIR* MipsMir2Lir::StoreBaseDispVolatile(RegStorage r_base, int displacement, RegStorage r_src,
+                                        OpSize size) {
+  DCHECK(size != k64 && size != kDouble);
+  return StoreBaseDisp(r_base, displacement, r_src, size);
+}
+
 LIR* MipsMir2Lir::StoreBaseDisp(RegStorage r_base, int displacement, RegStorage r_src,
-                                OpSize size, VolatileKind is_volatile) {
-  if (is_volatile == kVolatile) {
-    // Ensure that prior accesses become visible to other threads first.
-    GenMemBarrier(kAnyStore);
+                                OpSize size) {
+  // TODO: base this on target.
+  if (size == kWord) {
+    size = k32;
   }
-
-  LIR* store;
-  if (UNLIKELY(is_volatile == kVolatile && (size == k64 || size == kDouble))) {
-    // Do atomic 64-bit load.
-    store = GenAtomic64Store(r_base, displacement, r_src);
+  if (size == k64 || size == kDouble) {
+    return StoreBaseDispBody(r_base, displacement, r_src.GetLow(), r_src.GetHigh(), size);
   } else {
-    // TODO: base this on target.
-    if (size == kWord) {
-      size = k32;
-    }
-    store = StoreBaseDispBody(r_base, displacement, r_src, size);
+    return StoreBaseDispBody(r_base, displacement, r_src, RegStorage::InvalidReg(), size);
   }
+}
 
-  if (UNLIKELY(is_volatile == kVolatile)) {
-    // Preserve order with respect to any subsequent volatile loads.
-    // We need StoreLoad, but that generally requires the most expensive barrier.
-    GenMemBarrier(kAnyAny);
-  }
+LIR* MipsMir2Lir::OpThreadMem(OpKind op, ThreadOffset<4> thread_offset) {
+  LOG(FATAL) << "Unexpected use of OpThreadMem for MIPS";
+  return NULL;
+}
 
-  return store;
+LIR* MipsMir2Lir::OpThreadMem(OpKind op, ThreadOffset<8> thread_offset) {
+  UNIMPLEMENTED(FATAL) << "Should not be called.";
+  return nullptr;
 }
 
 LIR* MipsMir2Lir::OpMem(OpKind op, RegStorage r_base, int disp) {
@@ -685,13 +680,26 @@ LIR* MipsMir2Lir::OpMem(OpKind op, RegStorage r_base, int disp) {
   return NULL;
 }
 
-LIR* MipsMir2Lir::OpCondBranch(ConditionCode cc, LIR* target) {
-  LOG(FATAL) << "Unexpected use of OpCondBranch for MIPS";
+LIR* MipsMir2Lir::StoreBaseIndexedDisp(RegStorage r_base, RegStorage r_index, int scale,
+                                       int displacement, RegStorage r_src, OpSize size) {
+  LOG(FATAL) << "Unexpected use of StoreBaseIndexedDisp for MIPS";
   return NULL;
 }
 
-LIR* MipsMir2Lir::InvokeTrampoline(OpKind op, RegStorage r_tgt, QuickEntrypointEnum trampoline) {
-  return OpReg(op, r_tgt);
+LIR* MipsMir2Lir::OpRegMem(OpKind op, RegStorage r_dest, RegStorage r_base, int offset) {
+  LOG(FATAL) << "Unexpected use of OpRegMem for MIPS";
+  return NULL;
+}
+
+LIR* MipsMir2Lir::LoadBaseIndexedDisp(RegStorage r_base, RegStorage r_index, int scale,
+                                      int displacement, RegStorage r_dest, OpSize size) {
+  LOG(FATAL) << "Unexpected use of LoadBaseIndexedDisp for MIPS";
+  return NULL;
+}
+
+LIR* MipsMir2Lir::OpCondBranch(ConditionCode cc, LIR* target) {
+  LOG(FATAL) << "Unexpected use of OpCondBranch for MIPS";
+  return NULL;
 }
 
 }  // namespace art

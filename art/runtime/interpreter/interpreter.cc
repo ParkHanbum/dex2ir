@@ -33,7 +33,7 @@ static void UnstartedRuntimeJni(Thread* self, ArtMethod* method,
     DCHECK_GE(length, 0);
     mirror::Class* element_class = reinterpret_cast<Object*>(args[0])->AsClass();
     Runtime* runtime = Runtime::Current();
-    mirror::Class* array_class = runtime->GetClassLinker()->FindArrayClass(self, &element_class);
+    mirror::Class* array_class = runtime->GetClassLinker()->FindArrayClass(self, element_class);
     DCHECK(array_class != nullptr);
     gc::AllocatorType allocator = runtime->GetHeap()->GetCurrentAllocator();
     result->SetL(mirror::Array::Alloc<true>(self, array_class, length,
@@ -49,8 +49,7 @@ static void UnstartedRuntimeJni(Thread* self, ArtMethod* method,
     value.SetJ((static_cast<uint64_t>(args[1]) << 32) | args[0]);
     result->SetD(log(value.GetD()));
   } else if (name == "java.lang.String java.lang.Class.getNameNative()") {
-    StackHandleScope<1> hs(self);
-    result->SetL(mirror::Class::ComputeName(hs.NewHandle(receiver->AsClass())));
+    result->SetL(receiver->AsClass()->ComputeName());
   } else if (name == "int java.lang.Float.floatToRawIntBits(float)") {
     result->SetI(args[0]);
   } else if (name == "float java.lang.Float.intBitsToFloat(int)") {
@@ -95,11 +94,9 @@ static void UnstartedRuntimeJni(Thread* self, ArtMethod* method,
     jint newValue = args[4];
     bool success;
     if (Runtime::Current()->IsActiveTransaction()) {
-      success = obj->CasFieldStrongSequentiallyConsistent32<true>(MemberOffset(offset),
-                                                                  expectedValue, newValue);
+      success = obj->CasField32<true>(MemberOffset(offset), expectedValue, newValue);
     } else {
-      success = obj->CasFieldStrongSequentiallyConsistent32<false>(MemberOffset(offset),
-                                                                   expectedValue, newValue);
+      success = obj->CasField32<false>(MemberOffset(offset), expectedValue, newValue);
     }
     result->SetZ(success ? JNI_TRUE : JNI_FALSE);
   } else if (name == "void sun.misc.Unsafe.putObject(java.lang.Object, long, java.lang.Object)") {
@@ -356,7 +353,6 @@ static inline JValue Execute(Thread* self, MethodHelper& mh, const DexFile::Code
          shadow_frame.GetMethod()->GetDeclaringClass()->IsProxyClass());
   DCHECK(!shadow_frame.GetMethod()->IsAbstract());
   DCHECK(!shadow_frame.GetMethod()->IsNative());
-  shadow_frame.GetMethod()->GetDeclaringClass()->AssertInitializedOrInitializingInThread(self);
 
   bool transaction_active = Runtime::Current()->IsActiveTransaction();
   if (LIKELY(shadow_frame.GetMethod()->IsPreverified())) {
@@ -397,14 +393,14 @@ static inline JValue Execute(Thread* self, MethodHelper& mh, const DexFile::Code
 void EnterInterpreterFromInvoke(Thread* self, ArtMethod* method, Object* receiver,
                                 uint32_t* args, JValue* result) {
   DCHECK_EQ(self, Thread::Current());
-  bool implicit_check = !Runtime::Current()->ExplicitStackOverflowChecks();
-  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
+  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd())) {
     ThrowStackOverflowError(self);
     return;
   }
 
   const char* old_cause = self->StartAssertNoThreadSuspension("EnterInterpreterFromInvoke");
-  const DexFile::CodeItem* code_item = method->GetCodeItem();
+  MethodHelper mh(method);
+  const DexFile::CodeItem* code_item = mh.GetCodeItem();
   uint16_t num_regs;
   uint16_t num_ins;
   if (code_item != NULL) {
@@ -416,7 +412,7 @@ void EnterInterpreterFromInvoke(Thread* self, ArtMethod* method, Object* receive
     return;
   } else {
     DCHECK(method->IsNative());
-    num_regs = num_ins = ArtMethod::NumArgRegisters(method->GetShorty());
+    num_regs = num_ins = ArtMethod::NumArgRegisters(mh.GetShorty());
     if (!method->IsStatic()) {
       num_regs++;
       num_ins++;
@@ -434,10 +430,9 @@ void EnterInterpreterFromInvoke(Thread* self, ArtMethod* method, Object* receive
     shadow_frame->SetVRegReference(cur_reg, receiver);
     ++cur_reg;
   }
-  uint32_t shorty_len = 0;
-  const char* shorty = method->GetShorty(&shorty_len);
+  const char* shorty = mh.GetShorty();
   for (size_t shorty_pos = 0, arg_pos = 0; cur_reg < num_regs; ++shorty_pos, ++arg_pos, cur_reg++) {
-    DCHECK_LT(shorty_pos + 1, shorty_len);
+    DCHECK_LT(shorty_pos + 1, mh.GetShortyLength());
     switch (shorty[shorty_pos + 1]) {
       case 'L': {
         Object* o = reinterpret_cast<StackReference<Object>*>(&args[arg_pos])->AsMirrorPtr();
@@ -458,7 +453,7 @@ void EnterInterpreterFromInvoke(Thread* self, ArtMethod* method, Object* receive
   }
   self->EndAssertNoThreadSuspension(old_cause);
   // Do this after populating the shadow frame in case EnsureInitialized causes a GC.
-  if (method->IsStatic() && UNLIKELY(!method->GetDeclaringClass()->IsInitialized())) {
+  if (method->IsStatic() && UNLIKELY(!method->GetDeclaringClass()->IsInitializing())) {
     ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
     StackHandleScope<1> hs(self);
     Handle<mirror::Class> h_class(hs.NewHandle(method->GetDeclaringClass()));
@@ -469,8 +464,6 @@ void EnterInterpreterFromInvoke(Thread* self, ArtMethod* method, Object* receive
     }
   }
   if (LIKELY(!method->IsNative())) {
-    StackHandleScope<1> hs(self);
-    MethodHelper mh(hs.NewHandle(method));
     JValue r = Execute(self, mh, code_item, *shadow_frame, JValue());
     if (result != NULL) {
       *result = r;
@@ -494,11 +487,11 @@ void EnterInterpreterFromDeoptimize(Thread* self, ShadowFrame* shadow_frame, JVa
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   JValue value;
   value.SetJ(ret_val->GetJ());  // Set value to last known result in case the shadow frame chain is empty.
+  MethodHelper mh;
   while (shadow_frame != NULL) {
     self->SetTopOfShadowStack(shadow_frame);
-    StackHandleScope<1> hs(self);
-    MethodHelper mh(hs.NewHandle(shadow_frame->GetMethod()));
-    const DexFile::CodeItem* code_item = mh.GetMethod()->GetCodeItem();
+    mh.ChangeMethod(shadow_frame->GetMethod());
+    const DexFile::CodeItem* code_item = mh.GetCodeItem();
     value = Execute(self, mh, code_item, *shadow_frame, value);
     ShadowFrame* old_frame = shadow_frame;
     shadow_frame = shadow_frame->GetLink();
@@ -510,8 +503,7 @@ void EnterInterpreterFromDeoptimize(Thread* self, ShadowFrame* shadow_frame, JVa
 JValue EnterInterpreterFromStub(Thread* self, MethodHelper& mh, const DexFile::CodeItem* code_item,
                                 ShadowFrame& shadow_frame) {
   DCHECK_EQ(self, Thread::Current());
-  bool implicit_check = !Runtime::Current()->ExplicitStackOverflowChecks();
-  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
+  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd())) {
     ThrowStackOverflowError(self);
     return JValue();
   }
@@ -522,8 +514,7 @@ JValue EnterInterpreterFromStub(Thread* self, MethodHelper& mh, const DexFile::C
 extern "C" void artInterpreterToInterpreterBridge(Thread* self, MethodHelper& mh,
                                                   const DexFile::CodeItem* code_item,
                                                   ShadowFrame* shadow_frame, JValue* result) {
-  bool implicit_check = !Runtime::Current()->ExplicitStackOverflowChecks();
-  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
+  if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEnd())) {
     ThrowStackOverflowError(self);
     return;
   }
@@ -532,17 +523,16 @@ extern "C" void artInterpreterToInterpreterBridge(Thread* self, MethodHelper& mh
   ArtMethod* method = shadow_frame->GetMethod();
   // Ensure static methods are initialized.
   if (method->IsStatic()) {
-    mirror::Class* declaring_class = method->GetDeclaringClass();
-    if (UNLIKELY(!declaring_class->IsInitialized())) {
-      StackHandleScope<1> hs(self);
-      HandleWrapper<Class> h_declaring_class(hs.NewHandleWrapper(&declaring_class));
-      if (UNLIKELY(!Runtime::Current()->GetClassLinker()->EnsureInitialized(
-          h_declaring_class, true, true))) {
-        DCHECK(self->IsExceptionPending());
+    StackHandleScope<1> hs(self);
+    Handle<Class> declaringClass(hs.NewHandle(method->GetDeclaringClass()));
+    if (UNLIKELY(!declaringClass->IsInitializing())) {
+      if (UNLIKELY(!Runtime::Current()->GetClassLinker()->EnsureInitialized(declaringClass, true,
+                                                                            true))) {
+        DCHECK(Thread::Current()->IsExceptionPending());
         self->PopShadowFrame();
         return;
       }
-      CHECK(h_declaring_class->IsInitializing());
+      CHECK(declaringClass->IsInitializing());
     }
   }
 

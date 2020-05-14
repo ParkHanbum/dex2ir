@@ -6,30 +6,13 @@ objdir := $(CURDIR)
 # start of image reserved address space
 LIBART_IMG_HOST_BASE_ADDRESS   := 0x60000000
 LIBART_IMG_TARGET_BASE_ADDRESS := 0x70000000
-include art/build/Android.common_path.mk
-include art/build/Android.executable.mk
-include art/build/Android.common_build.mk
+include art/build/Android.common.mk
 
 GENERATOR := $(srcdir)/art/tools/generate-operator-out.py
 
 DEX2IR_SRCS := $(srcdir)/dex2oat.cc
 DEX2IR_OBJS := $(patsubst $(srcdir)/%.cc,$(objdir)/%.op,$(DEX2IR_SRCS))
 
-art_cflags := \
-	-fno-rtti \
-	-std=gnu++11 \
-	-ggdb3 \
-	-Wno-sign-promo \
-	-Wno-unused-parameter \
-	-Wstrict-aliasing \
-	-fstrict-aliasing \
-	-fvisibility=protected
-
-# these are necessary for Clang ARM64 ART builds
-ART_TARGET_CLANG_CFLAGS_arm64  += \
-	-Wno-implicit-exception-spec-mismatch \
-	-DNVALGRIND \
-	-Wno-unused-value
 
 ART_C_INCLUDES := \
 	external/gtest/include \
@@ -39,6 +22,9 @@ ART_C_INCLUDES := \
 	external/zlib \
 	frameworks/compile/mclinker/include
 
+FRAMEWORKS_BASE := $(srcdir)/frameworks
+MCLINKER_BASE := $(FRAMEWORKS_BASE)/compile/mclinker
+MCLINKER_HDRS := $(MCLINKER_BASE)/include
 
 LIBRUNTIME_BASE := $(srcdir)/art/runtime
 LIBRUNTIME_HDRS := $(LIBRUNTIME_BASE)
@@ -66,8 +52,6 @@ GTEST_BASE := $(srcdir)/external/gtest
 GTEST_HDRS := $(GTEST_BASE)/include
 VIXL_BASE := $(srcdir)/external/vixl
 VIXL_HDRS := $(VIXL_BASE)/src
-MCLINKER_BASE := $(srcdir)/external/compile/mclinker
-MCLINKER_HDRS := $(MCLINKER_BASE)/include
 LIBZLIB_BASE := $(srcdir)/external/zlib
 
 SYSTEM_CORE_BASE := $(srcdir)/system/core
@@ -90,16 +74,21 @@ CXXFLAGS += -I$(LIBVALGRIND_HDRS) -I$(LIBVALGRIND_MAIN) -I$(GTEST_HDRS) -I$(VIXL
 CXXFLAGS += -I$(SYSTEM_CORE_HDRS) -I$(LIBCUTILS_HDRS) -I$(CUTILS_HDRS)
 CXXFLAGS += -I$(MCLINKER_HDRS)
 
-CXXFLAGS += -O0 -DDYNAMIC_ANNOTATIONS_ENABLED=1
-#CXXFLAGS += -DART_USE_PARTABLE_COMPILER=1 -DIMT_SIZE=64 -DART_SEA_IR_MODE=1
-# change instruction set to div if target arch is cortext a7,a15,krait,denver
-#CXXFLAGS += -DART_DEFAUlT_INSTRUCTION_SET_FEATURES=default
-CXXFLAGS += -Wno-expansion-to-defined
-CXXFLAGS += -D_FILE_OFFSET_BITS=64
-CXXFLAGS += -DANDROID_SMP
-CXXFLAGS += $(ART_HOST_CFLAGS)
+# this flags are come from art_debug_cflags
+CXXFLAGS += -O0 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -UNDEBUG
+CXXFLAGS += -fno-rtti -std=gnu++11 -ggdb3 -Wextra -Wno-sign-promo
+CXXFLAGS += -Wno-unused-parameter -Wstrict-aliasing -fstrict-aliasing
 
-ANDROID_CONFIG_CXXFLAGS := -include $(srcdir)/build/core/combo/include/arch/linux-x86/AndroidConfig.h
+CXXFLAGS += -DART_USE_PARTABLE_COMPILER=1 -DIMT_SIZE=64 -DANDROID_SMP=0
+CXXFLAGS += -DUSE_DLMALLOC -DIMT_SIZE=64
+#CXXFLAGS += -DART_SEA_IR_MODE
+# change instruction set to div if target arch is cortext a7,a15,krait,denver
+CXXFLAGS += -DART_DEFAUlT_INSTRUCTION_SET_FEATURES=default
+CXXFLAGS += -Wno-expansion-to-defined -Wframe-larger-than=1728
+CXXFLAGS += -DART_DEFAULT_GC_TYPE_IS_SS -DART_USE_BACKGROUND_COMPACT
+CXXFLAGS += -D_FILE_OFFSET_BITS=64
+CXXFLAGS += $(ART_HOST_CFLAGS)
+CXXFLAGS += -include $(srcdir)/build/core/combo/include/arch/linux-x86/AndroidConfig.h
 
 LDFLAGS := -lz -lpthread -ldl -lm -lstdc++
 

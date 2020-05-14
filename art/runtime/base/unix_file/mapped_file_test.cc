@@ -30,7 +30,7 @@ class MappedFileTest : public RandomAccessFileTest {
   }
 
   void SetUp() {
-    RandomAccessFileTest::SetUp();
+    art::CommonRuntimeTest::SetEnvironmentVariables(android_data_);
 
     good_path_ = GetTmpPath("some-file.txt");
     int fd = TEMP_FAILURE_RETRY(open(good_path_.c_str(), O_CREAT|O_RDWR, 0666));
@@ -40,12 +40,6 @@ class MappedFileTest : public RandomAccessFileTest {
     src.Assign(kContent);
 
     ASSERT_TRUE(CopyFile(src, &dst));
-  }
-
-  void TearDown() {
-    ASSERT_EQ(unlink(good_path_.c_str()), 0);
-
-    RandomAccessFileTest::TearDown();
   }
 
   virtual RandomAccessFile* MakeTestFile() {

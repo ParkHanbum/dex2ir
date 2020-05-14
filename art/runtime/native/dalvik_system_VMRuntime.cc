@@ -30,6 +30,7 @@
 #include "mirror/class-inl.h"
 #include "mirror/dex_cache-inl.h"
 #include "mirror/object-inl.h"
+#include "object_utils.h"
 #include "runtime.h"
 #include "scoped_fast_native_object_access.h"
 #include "scoped_thread_state_change.h"
@@ -66,8 +67,7 @@ static jobject VMRuntime_newNonMovableArray(JNIEnv* env, jobject, jclass javaEle
     return nullptr;
   }
   Runtime* runtime = Runtime::Current();
-  mirror::Class* array_class =
-      runtime->GetClassLinker()->FindArrayClass(soa.Self(), &element_class);
+  mirror::Class* array_class = runtime->GetClassLinker()->FindArrayClass(soa.Self(), element_class);
   if (UNLIKELY(array_class == nullptr)) {
     return nullptr;
   }
@@ -90,7 +90,7 @@ static jobject VMRuntime_newUnpaddedArray(JNIEnv* env, jobject, jclass javaEleme
     return nullptr;
   }
   Runtime* runtime = Runtime::Current();
-  mirror::Class* array_class = runtime->GetClassLinker()->FindArrayClass(soa.Self(), &element_class);
+  mirror::Class* array_class = runtime->GetClassLinker()->FindArrayClass(soa.Self(), element_class);
   if (UNLIKELY(array_class == nullptr)) {
     return nullptr;
   }
@@ -155,27 +155,13 @@ static jstring VMRuntime_vmLibrary(JNIEnv* env, jobject) {
   return env->NewStringUTF(kIsDebugBuild ? "libartd.so" : "libart.so");
 }
 
-static jstring VMRuntime_vmInstructionSet(JNIEnv* env, jobject) {
-  InstructionSet isa = Runtime::Current()->GetInstructionSet();
-  const char* isa_string = GetInstructionSetString(isa);
-  return env->NewStringUTF(isa_string);
-}
-
-static jboolean VMRuntime_is64Bit(JNIEnv* env, jobject) {
-  bool is64BitMode = (sizeof(void*) == sizeof(uint64_t));
-  return is64BitMode ? JNI_TRUE : JNI_FALSE;
-}
-
-static jboolean VMRuntime_isCheckJniEnabled(JNIEnv* env, jobject) {
-  return Runtime::Current()->GetJavaVM()->check_jni ? JNI_TRUE : JNI_FALSE;
-}
-
-static void VMRuntime_setTargetSdkVersionNative(JNIEnv*, jobject, jint target_sdk_version) {
+static void VMRuntime_setTargetSdkVersionNative(JNIEnv* env, jobject, jint targetSdkVersion) {
   // This is the target SDK version of the app we're about to run. It is intended that this a place
   // where workarounds can be enabled.
   // Note that targetSdkVersion may be CUR_DEVELOPMENT (10000).
   // Note that targetSdkVersion may be 0, meaning "current".
-  Runtime::Current()->SetTargetSdkVersion(target_sdk_version);
+  UNUSED(env);
+  UNUSED(targetSdkVersion);
 }
 
 static void VMRuntime_registerNativeAllocation(JNIEnv* env, jobject, jint bytes) {
@@ -184,7 +170,7 @@ static void VMRuntime_registerNativeAllocation(JNIEnv* env, jobject, jint bytes)
     ThrowRuntimeException("allocation size negative %d", bytes);
     return;
   }
-  Runtime::Current()->GetHeap()->RegisterNativeAllocation(env, static_cast<size_t>(bytes));
+  Runtime::Current()->GetHeap()->RegisterNativeAllocation(env, bytes);
 }
 
 static void VMRuntime_registerNativeFree(JNIEnv* env, jobject, jint bytes) {
@@ -193,7 +179,7 @@ static void VMRuntime_registerNativeFree(JNIEnv* env, jobject, jint bytes) {
     ThrowRuntimeException("allocation size negative %d", bytes);
     return;
   }
-  Runtime::Current()->GetHeap()->RegisterNativeFree(env, static_cast<size_t>(bytes));
+  Runtime::Current()->GetHeap()->RegisterNativeFree(env, bytes);
 }
 
 static void VMRuntime_updateProcessState(JNIEnv* env, jobject, jint process_state) {
@@ -220,7 +206,7 @@ static void PreloadDexCachesStringsCallback(mirror::Object** root, void* arg,
 }
 
 // Based on ClassLinker::ResolveString.
-static void PreloadDexCachesResolveString(Handle<mirror::DexCache> dex_cache, uint32_t string_idx,
+static void PreloadDexCachesResolveString(Handle<mirror::DexCache>& dex_cache, uint32_t string_idx,
                                           StringTable& strings)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   mirror::String* string = dex_cache->GetResolvedString(string_idx);
@@ -266,7 +252,8 @@ static void PreloadDexCachesResolveType(mirror::DexCache* dex_cache, uint32_t ty
 }
 
 // Based on ClassLinker::ResolveField.
-static void PreloadDexCachesResolveField(Handle<mirror::DexCache> dex_cache, uint32_t field_idx,
+static void PreloadDexCachesResolveField(Handle<mirror::DexCache>& dex_cache,
+                                         uint32_t field_idx,
                                          bool is_static)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   mirror::ArtField* field = dex_cache->GetResolvedField(field_idx);
@@ -275,14 +262,12 @@ static void PreloadDexCachesResolveField(Handle<mirror::DexCache> dex_cache, uin
   }
   const DexFile* dex_file = dex_cache->GetDexFile();
   const DexFile::FieldId& field_id = dex_file->GetFieldId(field_idx);
-  Thread* const self = Thread::Current();
-  StackHandleScope<1> hs(self);
-  Handle<mirror::Class> klass(hs.NewHandle(dex_cache->GetResolvedType(field_id.class_idx_)));
-  if (klass.Get() == NULL) {
+  mirror::Class* klass = dex_cache->GetResolvedType(field_id.class_idx_);
+  if (klass == NULL) {
     return;
   }
   if (is_static) {
-    field = mirror::Class::FindStaticField(self, klass, dex_cache.Get(), field_idx);
+    field = klass->FindStaticField(dex_cache.Get(), field_idx);
   } else {
     field = klass->FindInstanceField(dex_cache.Get(), field_idx);
   }
@@ -294,7 +279,8 @@ static void PreloadDexCachesResolveField(Handle<mirror::DexCache> dex_cache, uin
 }
 
 // Based on ClassLinker::ResolveMethod.
-static void PreloadDexCachesResolveMethod(Handle<mirror::DexCache> dex_cache, uint32_t method_idx,
+static void PreloadDexCachesResolveMethod(Handle<mirror::DexCache>& dex_cache,
+                                          uint32_t method_idx,
                                           InvokeType invoke_type)
     SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
   mirror::ArtMethod* method = dex_cache->GetResolvedMethod(method_idx);
@@ -508,13 +494,15 @@ static void VMRuntime_preloadDexCaches(JNIEnv* env, jobject) {
  * process name.  We use this information to start up the sampling profiler for
  * for ART.
  */
-static void VMRuntime_registerAppInfo(JNIEnv* env, jclass, jstring pkgName,
-                                      jstring appDir, jstring procName) {
+static void VMRuntime_registerAppInfo(JNIEnv* env, jclass, jstring pkgName, jstring appDir, jstring procName) {
   const char *pkgNameChars = env->GetStringUTFChars(pkgName, NULL);
+  const char *appDirChars = env->GetStringUTFChars(appDir, NULL);
+  const char *procNameChars = env->GetStringUTFChars(procName, NULL);
+
   std::string profileFile = StringPrintf("/data/dalvik-cache/profiles/%s", pkgNameChars);
-
-  Runtime::Current()->StartProfiler(profileFile.c_str());
-
+  Runtime::Current()->StartProfiler(profileFile.c_str(), procNameChars);
+  env->ReleaseStringUTFChars(appDir, appDirChars);
+  env->ReleaseStringUTFChars(procName, procNameChars);
   env->ReleaseStringUTFChars(pkgName, pkgNameChars);
 }
 
@@ -539,9 +527,6 @@ static JNINativeMethod gMethods[] = {
   NATIVE_METHOD(VMRuntime, trimHeap, "()V"),
   NATIVE_METHOD(VMRuntime, vmVersion, "()Ljava/lang/String;"),
   NATIVE_METHOD(VMRuntime, vmLibrary, "()Ljava/lang/String;"),
-  NATIVE_METHOD(VMRuntime, vmInstructionSet, "()Ljava/lang/String;"),
-  NATIVE_METHOD(VMRuntime, is64Bit, "!()Z"),
-  NATIVE_METHOD(VMRuntime, isCheckJniEnabled, "!()Z"),
   NATIVE_METHOD(VMRuntime, preloadDexCaches, "()V"),
   NATIVE_METHOD(VMRuntime, registerAppInfo, "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"),
 };

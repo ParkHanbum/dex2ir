@@ -32,21 +32,11 @@ static void SigAltStack(stack_t* new_stack, stack_t* old_stack) {
   }
 }
 
-// The default SIGSTKSZ on linux is 8K.  If we do any logging in a signal
-// handler this is too small.  We allocate 16K instead or the minimum signal
-// stack size.
-// TODO: We shouldn't do logging (with locks) in signal handlers.
-static constexpr int kHostAltSigStackSize =
-    16 * KB < MINSIGSTKSZ ? MINSIGSTKSZ : 16 * KB;
-
 void Thread::SetUpAlternateSignalStack() {
   // Create and set an alternate signal stack.
-#ifdef HAVE_ANDROID_OS
-  LOG(FATAL) << "Invalid use of alternate signal stack on Android";
-#endif
   stack_t ss;
-  ss.ss_sp = new uint8_t[kHostAltSigStackSize];
-  ss.ss_size = kHostAltSigStackSize;
+  ss.ss_sp = new uint8_t[SIGSTKSZ];
+  ss.ss_size = SIGSTKSZ;
   ss.ss_flags = 0;
   CHECK(ss.ss_sp != NULL);
   SigAltStack(&ss, NULL);
@@ -66,7 +56,7 @@ void Thread::TearDownAlternateSignalStack() {
   // Tell the kernel to stop using it.
   ss.ss_sp = NULL;
   ss.ss_flags = SS_DISABLE;
-  ss.ss_size = kHostAltSigStackSize;  // Avoid ENOMEM failure with Mac OS' buggy libc.
+  ss.ss_size = SIGSTKSZ;  // Avoid ENOMEM failure with Mac OS' buggy libc.
   SigAltStack(&ss, NULL);
 
   // Free it.

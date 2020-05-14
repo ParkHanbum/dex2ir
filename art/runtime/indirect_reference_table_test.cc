@@ -18,7 +18,6 @@
 
 #include "common_runtime_test.h"
 #include "mirror/object-inl.h"
-#include "scoped_thread_state_change.h"
 
 namespace art {
 

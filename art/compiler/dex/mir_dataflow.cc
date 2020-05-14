@@ -840,54 +840,6 @@ const uint64_t MIRGraph::oat_data_flow_attributes_[kMirOpLast] = {
 
   // 113 MIR_SELECT
   DF_DA | DF_UB,
-
-  // 114 MirOpConstVector
-  DF_DA,
-
-  // 115 MirOpMoveVector
-  0,
-
-  // 116 MirOpPackedMultiply
-  0,
-
-  // 117 MirOpPackedAddition
-  0,
-
-  // 118 MirOpPackedSubtract
-  0,
-
-  // 119 MirOpPackedShiftLeft
-  0,
-
-  // 120 MirOpPackedSignedShiftRight
-  0,
-
-  // 121 MirOpPackedUnsignedShiftRight
-  0,
-
-  // 122 MirOpPackedAnd
-  0,
-
-  // 123 MirOpPackedOr
-  0,
-
-  // 124 MirOpPackedXor
-  0,
-
-  // 125 MirOpPackedAddReduce
-  DF_DA | DF_UA,
-
-  // 126 MirOpPackedReduce
-  DF_DA,
-
-  // 127 MirOpPackedSet
-  DF_UB,
-
-  // 128 MirOpReserveVectorRegisters
-  0,
-
-  // 129 MirOpReturnVectorRegisters
-  0,
 };
 
 /* Return the base virtual register for a SSA name */
@@ -907,16 +859,6 @@ void MIRGraph::HandleLiveInUse(ArenaBitVector* use_v, ArenaBitVector* def_v,
 /* Mark a reg as being defined */
 void MIRGraph::HandleDef(ArenaBitVector* def_v, int dalvik_reg_id) {
   def_v->SetBit(dalvik_reg_id);
-}
-
-void MIRGraph::HandleExtended(ArenaBitVector* use_v, ArenaBitVector* def_v,
-                            ArenaBitVector* live_in_v,
-                            const MIR::DecodedInstruction& d_insn) {
-  switch (static_cast<int>(d_insn.opcode)) {
-    default:
-      LOG(ERROR) << "Unexpected Extended Opcode " << d_insn.opcode;
-      break;
-  }
 }
 
 /*
@@ -976,9 +918,6 @@ bool MIRGraph::FindLocalLiveIn(BasicBlock* bb) {
         HandleDef(def_v, d_insn->vA+1);
       }
     }
-    if (df_attributes & DF_FORMAT_EXTENDED) {
-      HandleExtended(use_v, def_v, live_in_v, mir->dalvikInsn);
-    }
   }
   return true;
 }
@@ -1014,34 +953,18 @@ void MIRGraph::HandleSSADef(int* defs, int dalvik_reg, int reg_index) {
   defs[reg_index] = ssa_reg;
 }
 
-void MIRGraph::AllocateSSAUseData(MIR *mir, int num_uses) {
-  mir->ssa_rep->num_uses = num_uses;
-
-  if (mir->ssa_rep->num_uses_allocated < num_uses) {
-    mir->ssa_rep->uses = static_cast<int*>(arena_->Alloc(sizeof(int) * num_uses, kArenaAllocDFInfo));
-    // NOTE: will be filled in during type & size inference pass
-    mir->ssa_rep->fp_use = static_cast<bool*>(arena_->Alloc(sizeof(bool) * num_uses, kArenaAllocDFInfo));
-  }
-}
-
-void MIRGraph::AllocateSSADefData(MIR *mir, int num_defs) {
-  mir->ssa_rep->num_defs = num_defs;
-
-  if (mir->ssa_rep->num_defs_allocated < num_defs) {
-    mir->ssa_rep->defs = static_cast<int*>(arena_->Alloc(sizeof(int) * num_defs,
-          kArenaAllocDFInfo));
-    mir->ssa_rep->fp_def = static_cast<bool*>(arena_->Alloc(sizeof(bool) * num_defs,
-          kArenaAllocDFInfo));
-  }
-}
-
 /* Look up new SSA names for format_35c instructions */
 void MIRGraph::DataFlowSSAFormat35C(MIR* mir) {
   MIR::DecodedInstruction* d_insn = &mir->dalvikInsn;
   int num_uses = d_insn->vA;
   int i;
 
-  AllocateSSAUseData(mir, num_uses);
+  mir->ssa_rep->num_uses = num_uses;
+  mir->ssa_rep->uses = static_cast<int*>(arena_->Alloc(sizeof(int) * num_uses,
+                                                       kArenaAllocDFInfo));
+  // NOTE: will be filled in during type & size inference pass
+  mir->ssa_rep->fp_use = static_cast<bool*>(arena_->Alloc(sizeof(bool) * num_uses,
+                                                          kArenaAllocDFInfo));
 
   for (i = 0; i < num_uses; i++) {
     HandleSSAUse(mir->ssa_rep->uses, d_insn->arg[i], i);
@@ -1054,18 +977,15 @@ void MIRGraph::DataFlowSSAFormat3RC(MIR* mir) {
   int num_uses = d_insn->vA;
   int i;
 
-  AllocateSSAUseData(mir, num_uses);
+  mir->ssa_rep->num_uses = num_uses;
+  mir->ssa_rep->uses = static_cast<int*>(arena_->Alloc(sizeof(int) * num_uses,
+                                                       kArenaAllocDFInfo));
+  // NOTE: will be filled in during type & size inference pass
+  mir->ssa_rep->fp_use = static_cast<bool*>(arena_->Alloc(sizeof(bool) * num_uses,
+                                                          kArenaAllocDFInfo));
 
   for (i = 0; i < num_uses; i++) {
     HandleSSAUse(mir->ssa_rep->uses, d_insn->vC+i, i);
-  }
-}
-
-void MIRGraph::DataFlowSSAFormatExtended(MIR* mir) {
-  switch (static_cast<int>(mir->dalvikInsn.opcode)) {
-    default:
-      LOG(ERROR) << "Missing case for extended MIR: " << mir->dalvikInsn.opcode;
-      break;
   }
 }
 
@@ -1079,12 +999,12 @@ bool MIRGraph::DoSSAConversion(BasicBlock* bb) {
     mir->ssa_rep =
         static_cast<struct SSARepresentation *>(arena_->Alloc(sizeof(SSARepresentation),
                                                               kArenaAllocDFInfo));
-    memset(mir->ssa_rep, 0, sizeof(*mir->ssa_rep));
 
     uint64_t df_attributes = GetDataFlowAttributes(mir);
 
       // If not a pseudo-op, note non-leaf or can throw
-    if (!MIR::DecodedInstruction::IsPseudoMirOp(mir->dalvikInsn.opcode)) {
+    if (static_cast<int>(mir->dalvikInsn.opcode) <
+        static_cast<int>(kNumPackedOpcodes)) {
       int flags = Instruction::FlagsOf(mir->dalvikInsn.opcode);
 
       if ((flags & Instruction::kInvoke) != 0 && (mir->optimization_flags & MIR_INLINED) == 0) {
@@ -1101,11 +1021,6 @@ bool MIRGraph::DoSSAConversion(BasicBlock* bb) {
 
     if (df_attributes & DF_FORMAT_3RC) {
       DataFlowSSAFormat3RC(mir);
-      continue;
-    }
-
-    if (df_attributes & DF_FORMAT_EXTENDED) {
-      DataFlowSSAFormatExtended(mir);
       continue;
     }
 
@@ -1130,7 +1045,13 @@ bool MIRGraph::DoSSAConversion(BasicBlock* bb) {
       }
     }
 
-    AllocateSSAUseData(mir, num_uses);
+    if (num_uses) {
+      mir->ssa_rep->num_uses = num_uses;
+      mir->ssa_rep->uses = static_cast<int*>(arena_->Alloc(sizeof(int) * num_uses,
+                                                           kArenaAllocDFInfo));
+      mir->ssa_rep->fp_use = static_cast<bool*>(arena_->Alloc(sizeof(bool) * num_uses,
+                                                              kArenaAllocDFInfo));
+    }
 
     int num_defs = 0;
 
@@ -1141,7 +1062,13 @@ bool MIRGraph::DoSSAConversion(BasicBlock* bb) {
       }
     }
 
-    AllocateSSADefData(mir, num_defs);
+    if (num_defs) {
+      mir->ssa_rep->num_defs = num_defs;
+      mir->ssa_rep->defs = static_cast<int*>(arena_->Alloc(sizeof(int) * num_defs,
+                                                           kArenaAllocDFInfo));
+      mir->ssa_rep->fp_def = static_cast<bool*>(arena_->Alloc(sizeof(bool) * num_defs,
+                                                              kArenaAllocDFInfo));
+    }
 
     MIR::DecodedInstruction* d_insn = &mir->dalvikInsn;
 
@@ -1187,11 +1114,11 @@ bool MIRGraph::DoSSAConversion(BasicBlock* bb) {
    * input to PHI nodes can be derived from the snapshot of all
    * predecessor blocks.
    */
-  bb->data_flow_info->vreg_to_ssa_map_exit =
+  bb->data_flow_info->vreg_to_ssa_map =
       static_cast<int*>(arena_->Alloc(sizeof(int) * cu_->num_dalvik_registers,
                                       kArenaAllocDFInfo));
 
-  memcpy(bb->data_flow_info->vreg_to_ssa_map_exit, vreg_to_ssa_map_,
+  memcpy(bb->data_flow_info->vreg_to_ssa_map, vreg_to_ssa_map_,
          sizeof(int) * cu_->num_dalvik_registers);
   return true;
 }
@@ -1355,7 +1282,7 @@ bool MIRGraph::VerifyPredInfo(BasicBlock* bb) {
   GrowableArray<BasicBlockId>::Iterator iter(bb->predecessors);
 
   while (true) {
-    BasicBlock* pred_bb = GetBasicBlock(iter.Next());
+    BasicBlock *pred_bb = GetBasicBlock(iter.Next());
     if (!pred_bb) break;
     bool found = false;
     if (pred_bb->taken == bb->id) {

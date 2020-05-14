@@ -39,10 +39,9 @@
 
 namespace art {
 
-static constexpr uint64_t kLongThreadSuspendThreshold = MsToNs(5);
-
 ThreadList::ThreadList()
-    : suspend_all_count_(0), debug_suspend_all_count_(0),
+    : allocated_ids_lock_("allocated thread ids lock"),
+      suspend_all_count_(0), debug_suspend_all_count_(0),
       thread_exit_cond_("thread exit condition variable", *Locks::thread_list_lock_) {
   CHECK(Monitor::IsValidLockWord(LockWord::FromThinLockId(kMaxThreadId, 1)));
 }
@@ -155,11 +154,13 @@ void ThreadList::AssertThreadsAreSuspended(Thread* self, Thread* ignore1, Thread
 
 #if HAVE_TIMED_RWLOCK
 // Attempt to rectify locks so that we dump thread list with required locks before exiting.
-static void UnsafeLogFatalForThreadSuspendAllTimeout() NO_THREAD_SAFETY_ANALYSIS __attribute__((noreturn));
-static void UnsafeLogFatalForThreadSuspendAllTimeout() {
+static void UnsafeLogFatalForThreadSuspendAllTimeout(Thread* self) NO_THREAD_SAFETY_ANALYSIS __attribute__((noreturn));
+static void UnsafeLogFatalForThreadSuspendAllTimeout(Thread* self) {
   Runtime* runtime = Runtime::Current();
   std::ostringstream ss;
   ss << "Thread suspend timeout\n";
+  runtime->DumpLockHolders(ss);
+  ss << "\n";
   runtime->GetThreadList()->DumpLocked(ss);
   LOG(FATAL) << ss.str();
   exit(0);
@@ -170,7 +171,16 @@ static void UnsafeLogFatalForThreadSuspendAllTimeout() {
 // individual thread requires polling. delay_us is the requested sleep and total_delay_us
 // accumulates the total time spent sleeping for timeouts. The first sleep is just a yield,
 // subsequently sleeps increase delay_us from 1ms to 500ms by doubling.
-static void ThreadSuspendSleep(Thread* self, useconds_t* delay_us, useconds_t* total_delay_us) {
+static void ThreadSuspendSleep(Thread* self, useconds_t* delay_us, useconds_t* total_delay_us,
+                               bool holding_locks) {
+  if (!holding_locks) {
+    for (int i = kLockLevelCount - 1; i >= 0; --i) {
+      BaseMutex* held_mutex = self->GetHeldMutex(static_cast<LockLevel>(i));
+      if (held_mutex != NULL) {
+        LOG(FATAL) << "Holding " << held_mutex->GetName() << " while sleeping for thread suspension";
+      }
+    }
+  }
   useconds_t new_delay_us = (*delay_us) * 2;
   CHECK_GE(new_delay_us, *delay_us);
   if (new_delay_us < 500000) {  // Don't allow sleeping to be more than 0.5s.
@@ -235,7 +245,7 @@ size_t ThreadList::RunCheckpoint(Closure* checkpoint_function) {
       useconds_t total_delay_us = 0;
       do {
         useconds_t delay_us = 100;
-        ThreadSuspendSleep(self, &delay_us, &total_delay_us);
+        ThreadSuspendSleep(self, &delay_us, &total_delay_us, true);
       } while (!thread->IsSuspended());
       // Shouldn't need to wait for longer than 1000 microseconds.
       constexpr useconds_t kLongWaitThresholdUS = 1000;
@@ -294,19 +304,16 @@ size_t ThreadList::RunCheckpointOnRunnableThreads(Closure* checkpoint_function) 
 
 void ThreadList::SuspendAll() {
   Thread* self = Thread::Current();
+  DCHECK(self != nullptr);
 
-  if (self != nullptr) {
-    VLOG(threads) << *self << " SuspendAll starting...";
-  } else {
-    VLOG(threads) << "Thread[null] SuspendAll starting...";
-  }
+  VLOG(threads) << *self << " SuspendAll starting...";
+
   ATRACE_BEGIN("Suspending mutator threads");
-  uint64_t start_time = NanoTime();
 
   Locks::mutator_lock_->AssertNotHeld(self);
   Locks::thread_list_lock_->AssertNotHeld(self);
   Locks::thread_suspend_count_lock_->AssertNotHeld(self);
-  if (kDebugLocking && self != nullptr) {
+  if (kDebugLocking) {
     CHECK_NE(self->GetState(), kRunnable);
   }
   {
@@ -328,16 +335,11 @@ void ThreadList::SuspendAll() {
 #if HAVE_TIMED_RWLOCK
   // Timeout if we wait more than 30 seconds.
   if (!Locks::mutator_lock_->ExclusiveLockWithTimeout(self, 30 * 1000, 0)) {
-    UnsafeLogFatalForThreadSuspendAllTimeout();
+    UnsafeLogFatalForThreadSuspendAllTimeout(self);
   }
 #else
   Locks::mutator_lock_->ExclusiveLock(self);
 #endif
-
-  uint64_t end_time = NanoTime();
-  if (end_time - start_time > kLongThreadSuspendThreshold) {
-    LOG(WARNING) << "Suspending all threads took: " << PrettyDuration(end_time - start_time);
-  }
 
   if (kDebugLocking) {
     // Debug check that all threads are suspended.
@@ -347,21 +349,13 @@ void ThreadList::SuspendAll() {
   ATRACE_END();
   ATRACE_BEGIN("Mutator threads suspended");
 
-  if (self != nullptr) {
-    VLOG(threads) << *self << " SuspendAll complete";
-  } else {
-    VLOG(threads) << "Thread[null] SuspendAll complete";
-  }
+  VLOG(threads) << *self << " SuspendAll complete";
 }
 
 void ThreadList::ResumeAll() {
   Thread* self = Thread::Current();
 
-  if (self != nullptr) {
-    VLOG(threads) << *self << " ResumeAll starting";
-  } else {
-    VLOG(threads) << "Thread[null] ResumeAll starting";
-  }
+  VLOG(threads) << *self << " ResumeAll starting";
 
   ATRACE_END();
   ATRACE_BEGIN("Resuming mutator threads");
@@ -387,27 +381,17 @@ void ThreadList::ResumeAll() {
 
     // Broadcast a notification to all suspended threads, some or all of
     // which may choose to wake up.  No need to wait for them.
-    if (self != nullptr) {
-      VLOG(threads) << *self << " ResumeAll waking others";
-    } else {
-      VLOG(threads) << "Thread[null] ResumeAll waking others";
-    }
+    VLOG(threads) << *self << " ResumeAll waking others";
     Thread::resume_cond_->Broadcast(self);
   }
   ATRACE_END();
-
-  if (self != nullptr) {
-    VLOG(threads) << *self << " ResumeAll complete";
-  } else {
-    VLOG(threads) << "Thread[null] ResumeAll complete";
-  }
+  VLOG(threads) << *self << " ResumeAll complete";
 }
 
 void ThreadList::Resume(Thread* thread, bool for_debugger) {
   Thread* self = Thread::Current();
   DCHECK_NE(thread, self);
-  VLOG(threads) << "Resume(" << reinterpret_cast<void*>(thread) << ") starting..."
-      << (for_debugger ? " (debugger)" : "");
+  VLOG(threads) << "Resume(" << *thread << ") starting..." << (for_debugger ? " (debugger)" : "");
 
   {
     // To check Contains.
@@ -416,22 +400,18 @@ void ThreadList::Resume(Thread* thread, bool for_debugger) {
     MutexLock mu2(self, *Locks::thread_suspend_count_lock_);
     DCHECK(thread->IsSuspended());
     if (!Contains(thread)) {
-      // We only expect threads within the thread-list to have been suspended otherwise we can't
-      // stop such threads from delete-ing themselves.
-      LOG(ERROR) << "Resume(" << reinterpret_cast<void*>(thread)
-          << ") thread not within thread list";
       return;
     }
     thread->ModifySuspendCount(self, -1, for_debugger);
   }
 
   {
-    VLOG(threads) << "Resume(" << reinterpret_cast<void*>(thread) << ") waking others";
+    VLOG(threads) << "Resume(" << *thread << ") waking others";
     MutexLock mu(self, *Locks::thread_suspend_count_lock_);
     Thread::resume_cond_->Broadcast(self);
   }
 
-  VLOG(threads) << "Resume(" << reinterpret_cast<void*>(thread) << ") complete";
+  VLOG(threads) << "Resume(" << *thread << ") complete";
 }
 
 static void ThreadSuspendByPeerWarning(Thread* self, int level, const char* message, jobject peer) {
@@ -456,28 +436,16 @@ Thread* ThreadList::SuspendThreadByPeer(jobject peer, bool request_suspension,
   bool did_suspend_request = false;
   *timed_out = false;
   Thread* self = Thread::Current();
-  VLOG(threads) << "SuspendThreadByPeer starting";
   while (true) {
     Thread* thread;
     {
-      // Note: this will transition to runnable and potentially suspend. We ensure only one thread
-      // is requesting another suspend, to avoid deadlock, by requiring this function be called
-      // holding Locks::thread_list_suspend_thread_lock_. Its important this thread suspend rather
-      // than request thread suspension, to avoid potential cycles in threads requesting each other
-      // suspend.
       ScopedObjectAccess soa(self);
       MutexLock mu(self, *Locks::thread_list_lock_);
       thread = Thread::FromManagedThread(soa, peer);
-      if (thread == nullptr) {
+      if (thread == NULL) {
         ThreadSuspendByPeerWarning(self, WARNING, "No such thread for suspend", peer);
-        return nullptr;
+        return NULL;
       }
-      if (!Contains(thread)) {
-        VLOG(threads) << "SuspendThreadByPeer failed for unattached thread: "
-            << reinterpret_cast<void*>(thread);
-        return nullptr;
-      }
-      VLOG(threads) << "SuspendThreadByPeer found thread: " << *thread;
       {
         MutexLock mu(self, *Locks::thread_suspend_count_lock_);
         if (request_suspension) {
@@ -497,7 +465,6 @@ Thread* ThreadList::SuspendThreadByPeer(jobject peer, bool request_suspension,
         // count, or else we've waited and it has self suspended) or is the current thread, we're
         // done.
         if (thread->IsSuspended()) {
-          VLOG(threads) << "SuspendThreadByPeer thread suspended: " << *thread;
           return thread;
         }
         if (total_delay_us >= kTimeoutUs) {
@@ -506,13 +473,12 @@ Thread* ThreadList::SuspendThreadByPeer(jobject peer, bool request_suspension,
             thread->ModifySuspendCount(soa.Self(), -1, debug_suspension);
           }
           *timed_out = true;
-          return nullptr;
+          return NULL;
         }
       }
       // Release locks and come out of runnable state.
     }
-    VLOG(threads) << "SuspendThreadByPeer sleeping to allow thread chance to suspend";
-    ThreadSuspendSleep(self, &delay_us, &total_delay_us);
+    ThreadSuspendSleep(self, &delay_us, &total_delay_us, false);
   }
 }
 
@@ -529,17 +495,11 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, bool debug_suspe
   Thread* suspended_thread = nullptr;
   Thread* self = Thread::Current();
   CHECK_NE(thread_id, kInvalidThreadId);
-  VLOG(threads) << "SuspendThreadByThreadId starting";
   while (true) {
     {
-      // Note: this will transition to runnable and potentially suspend. We ensure only one thread
-      // is requesting another suspend, to avoid deadlock, by requiring this function be called
-      // holding Locks::thread_list_suspend_thread_lock_. Its important this thread suspend rather
-      // than request thread suspension, to avoid potential cycles in threads requesting each other
-      // suspend.
+      Thread* thread = NULL;
       ScopedObjectAccess soa(self);
       MutexLock mu(self, *Locks::thread_list_lock_);
-      Thread* thread = nullptr;
       for (const auto& it : list_) {
         if (it->GetThreadId() == thread_id) {
           thread = it;
@@ -551,10 +511,8 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, bool debug_suspe
             << " no longer in thread list";
         // There's a race in inflating a lock and the owner giving up ownership and then dying.
         ThreadSuspendByThreadIdWarning(WARNING, "No such thread id for suspend", thread_id);
-        return nullptr;
+        return NULL;
       }
-      VLOG(threads) << "SuspendThreadByThreadId found thread: " << *thread;
-      DCHECK(Contains(thread));
       {
         MutexLock mu(self, *Locks::thread_suspend_count_lock_);
         if (suspended_thread == nullptr) {
@@ -574,7 +532,6 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, bool debug_suspe
         // count, or else we've waited and it has self suspended) or is the current thread, we're
         // done.
         if (thread->IsSuspended()) {
-          VLOG(threads) << "SuspendThreadByThreadId thread suspended: " << *thread;
           return thread;
         }
         if (total_delay_us >= kTimeoutUs) {
@@ -583,13 +540,12 @@ Thread* ThreadList::SuspendThreadByThreadId(uint32_t thread_id, bool debug_suspe
             thread->ModifySuspendCount(soa.Self(), -1, debug_suspension);
           }
           *timed_out = true;
-          return nullptr;
+          return NULL;
         }
       }
       // Release locks and come out of runnable state.
     }
-    VLOG(threads) << "SuspendThreadByThreadId sleeping to allow thread chance to suspend";
-    ThreadSuspendSleep(self, &delay_us, &total_delay_us);
+    ThreadSuspendSleep(self, &delay_us, &total_delay_us, false);
   }
 }
 
@@ -634,7 +590,7 @@ void ThreadList::SuspendAllForDebugger() {
 #if HAVE_TIMED_RWLOCK
   // Timeout if we wait more than 30 seconds.
   if (!Locks::mutator_lock_->ExclusiveLockWithTimeout(self, 30 * 1000, 0)) {
-    UnsafeLogFatalForThreadSuspendAllTimeout();
+    UnsafeLogFatalForThreadSuspendAllTimeout(self);
   } else {
     Locks::mutator_lock_->ExclusiveUnlock(self);
   }
@@ -644,7 +600,7 @@ void ThreadList::SuspendAllForDebugger() {
 #endif
   AssertThreadsAreSuspended(self, self, debug_thread);
 
-  VLOG(threads) << *self << " SuspendAllForDebugger complete";
+  VLOG(threads) << *self << " SuspendAll complete";
 }
 
 void ThreadList::SuspendSelfForDebugger() {
@@ -798,7 +754,6 @@ void ThreadList::Register(Thread* self) {
   if (VLOG_IS_ON(threads)) {
     std::ostringstream oss;
     self->ShortDump(oss);  // We don't hold the mutator_lock_ yet and so cannot call Dump.
-    LOG(INFO) << "ThreadList::Register() " << *self  << "\n" << oss.str();
   }
 
   // Atomically add self to the thread list and make its thread_suspend_count_ reflect ongoing
@@ -833,19 +788,13 @@ void ThreadList::Unregister(Thread* self) {
     // thread_suspend_count_lock_ so that the unregistering thread cannot be suspended.
     // Note: deliberately not using MutexLock that could hold a stale self pointer.
     Locks::thread_list_lock_->ExclusiveLock(self);
-    if (!Contains(self)) {
-      std::ostringstream os;
-      DumpNativeStack(os, GetTid(), "  native: ", nullptr);
-      LOG(ERROR) << "Request to unregister unattached thread\n" << os.str();
+    CHECK(Contains(self));
+    // Note: we don't take the thread_suspend_count_lock_ here as to be suspending a thread other
+    // than yourself you need to hold the thread_list_lock_ (see Thread::ModifySuspendCount).
+    if (!self->IsSuspended()) {
+      list_.remove(self);
+      delete self;
       self = nullptr;
-    } else {
-      // Note: we don't take the thread_suspend_count_lock_ here as to be suspending a thread other
-      // than yourself you need to hold the thread_list_lock_ (see Thread::ModifySuspendCount).
-      if (!self->IsSuspended()) {
-        list_.remove(self);
-        delete self;
-        self = nullptr;
-      }
     }
     Locks::thread_list_lock_->ExclusiveUnlock(self);
   }
@@ -899,7 +848,7 @@ void ThreadList::VerifyRoots(VerifyRootCallback* callback, void* arg) const {
 }
 
 uint32_t ThreadList::AllocThreadId(Thread* self) {
-  MutexLock mu(self, *Locks::allocated_thread_ids_lock_);
+  MutexLock mu(self, allocated_ids_lock_);
   for (size_t i = 0; i < allocated_ids_.size(); ++i) {
     if (!allocated_ids_[i]) {
       allocated_ids_.set(i);
@@ -911,7 +860,7 @@ uint32_t ThreadList::AllocThreadId(Thread* self) {
 }
 
 void ThreadList::ReleaseThreadId(Thread* self, uint32_t id) {
-  MutexLock mu(self, *Locks::allocated_thread_ids_lock_);
+  MutexLock mu(self, allocated_ids_lock_);
   --id;  // Zero is reserved to mean "invalid".
   DCHECK(allocated_ids_[id]) << id;
   allocated_ids_.reset(id);

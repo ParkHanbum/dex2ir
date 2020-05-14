@@ -17,43 +17,36 @@
 #ifndef ART_RUNTIME_MIRROR_ART_METHOD_H_
 #define ART_RUNTIME_MIRROR_ART_METHOD_H_
 
+#include "class.h"
 #include "dex_file.h"
-#include "gc_root.h"
 #include "invoke_type.h"
 #include "modifiers.h"
 #include "object.h"
 #include "object_callbacks.h"
 #include "quick/quick_method_frame_info.h"
-#include "read_barrier_option.h"
 
 namespace art {
 
 struct ArtMethodOffsets;
 struct ConstructorMethodOffsets;
 union JValue;
+struct MethodClassOffsets;
 class MethodHelper;
-class ScopedObjectAccessAlreadyRunnable;
+class ScopedObjectAccess;
 class StringPiece;
 class ShadowFrame;
 
 namespace mirror {
 
+class StaticStorageBase;
+
 typedef void (EntryPointFromInterpreter)(Thread* self, MethodHelper& mh,
     const DexFile::CodeItem* code_item, ShadowFrame* shadow_frame, JValue* result);
 
-// C++ mirror of java.lang.reflect.ArtMethod.
-class MANAGED ArtMethod FINAL : public Object {
+// C++ mirror of java.lang.reflect.Method and java.lang.reflect.Constructor
+class MANAGED ArtMethod : public Object {
  public:
-  // Size of java.lang.reflect.ArtMethod.class.
-  static uint32_t ClassSize();
-
-  // Size of an instance of java.lang.reflect.ArtMethod not including its value array.
-  static constexpr uint32_t InstanceSize() {
-    return sizeof(ArtMethod);
-  }
-
-  static ArtMethod* FromReflectedMethod(const ScopedObjectAccessAlreadyRunnable& soa,
-                                        jobject jlr_method)
+  static ArtMethod* FromReflectedMethod(const ScopedObjectAccess& soa, jobject jlr_method)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   Class* GetDeclaringClass() ALWAYS_INLINE SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -92,11 +85,6 @@ class MANAGED ArtMethod FINAL : public Object {
   // Returns true if the method is a constructor.
   bool IsConstructor() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     return (GetAccessFlags() & kAccConstructor) != 0;
-  }
-
-  // Returns true if the method is a class initializer.
-  bool IsClassInitializer() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return IsConstructor() && IsStatic();
   }
 
   // Returns true if the method is static, private, or a constructor.
@@ -151,7 +139,7 @@ class MANAGED ArtMethod FINAL : public Object {
   }
 
   bool IsPortableCompiled() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return kUsePortableCompiler && ((GetAccessFlags() & kAccPortableCompiled) != 0);
+    return (GetAccessFlags() & kAccPortableCompiled) != 0;
   }
 
   void SetIsPortableCompiled() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
@@ -216,37 +204,25 @@ class MANAGED ArtMethod FINAL : public Object {
     return OFFSET_OF_OBJECT_MEMBER(ArtMethod, dex_cache_resolved_types_);
   }
 
-  ArtMethod* GetDexCacheResolvedMethod(uint16_t method_idx)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  void SetDexCacheResolvedMethod(uint16_t method_idx, ArtMethod* new_method)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  ObjectArray<ArtMethod>* GetDexCacheResolvedMethods() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void SetDexCacheResolvedMethods(ObjectArray<ArtMethod>* new_dex_cache_methods)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool HasDexCacheResolvedMethods() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool HasSameDexCacheResolvedMethods(ArtMethod* other) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool HasSameDexCacheResolvedMethods(ObjectArray<ArtMethod>* other_cache)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  template <bool kWithCheck = true>
-  Class* GetDexCacheResolvedType(uint32_t type_idx) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  ObjectArray<Class>* GetDexCacheResolvedTypes() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void SetDexCacheResolvedTypes(ObjectArray<Class>* new_dex_cache_types)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool HasDexCacheResolvedTypes() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool HasSameDexCacheResolvedTypes(ArtMethod* other) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  bool HasSameDexCacheResolvedTypes(ObjectArray<Class>* other_cache)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Find the method that this method overrides
   ArtMethod* FindOverriddenMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-  void Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue* result, const char* shorty)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue* result,
+              const char* shorty) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
   EntryPointFromInterpreter* GetEntryPointFromInterpreter()
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     return GetFieldPtr<EntryPointFromInterpreter*, kVerifyFlags>(
-        OFFSET_OF_OBJECT_MEMBER(ArtMethod, entry_point_from_interpreter_));
+               OFFSET_OF_OBJECT_MEMBER(ArtMethod, entry_point_from_interpreter_));
   }
 
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
@@ -257,7 +233,6 @@ class MANAGED ArtMethod FINAL : public Object {
         entry_point_from_interpreter);
   }
 
-#if defined(ART_USE_PORTABLE_COMPILER)
   static MemberOffset EntryPointFromPortableCompiledCodeOffset() {
     return MemberOffset(OFFSETOF_MEMBER(ArtMethod, entry_point_from_portable_compiled_code_));
   }
@@ -274,7 +249,6 @@ class MANAGED ArtMethod FINAL : public Object {
     SetFieldPtr<false, true, kVerifyFlags>(
         EntryPointFromPortableCompiledCodeOffset(), entry_point_from_portable_compiled_code);
   }
-#endif
 
   static MemberOffset EntryPointFromQuickCompiledCodeOffset() {
     return MemberOffset(OFFSETOF_MEMBER(ArtMethod, entry_point_from_quick_compiled_code_));
@@ -306,17 +280,15 @@ class MANAGED ArtMethod FINAL : public Object {
      *
      * NOTE: For Thumb both pc and code are offset by 1 indicating the Thumb state.
      */
-    return code <= pc && pc <= code + GetCodeSize();
+    return (code <= pc && pc <= code + GetCodeSize());
   }
 
   void AssertPcIsWithinQuickCode(uintptr_t pc) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
-#if defined(ART_USE_PORTABLE_COMPILER)
-  uint32_t GetPortableOatCodeOffset() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  void SetPortableOatCodeOffset(uint32_t code_offset) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-#endif
   uint32_t GetQuickOatCodeOffset() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  uint32_t GetPortableOatCodeOffset() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   void SetQuickOatCodeOffset(uint32_t code_offset) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  void SetPortableOatCodeOffset(uint32_t code_offset) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   static const void* EntryPointToCodePointer(const void* entry_point) ALWAYS_INLINE {
     uintptr_t code = reinterpret_cast<uintptr_t>(entry_point);
@@ -324,20 +296,14 @@ class MANAGED ArtMethod FINAL : public Object {
     return reinterpret_cast<const void*>(code);
   }
 
-  // Actual entry point pointer to compiled oat code or nullptr.
-  const void* GetQuickOatEntryPoint() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
   // Actual pointer to compiled oat code or nullptr.
-  const void* GetQuickOatCodePointer() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  const void* GetOatCodePointer() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Callers should wrap the uint8_t* in a MappingTable instance for convenient access.
   const uint8_t* GetMappingTable() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  const uint8_t* GetMappingTable(const void* code_pointer)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Callers should wrap the uint8_t* in a VmapTable instance for convenient access.
   const uint8_t* GetVmapTable() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  const uint8_t* GetVmapTable(const void* code_pointer)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   const uint8_t* GetNativeGcMap() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     return GetFieldPtr<uint8_t*>(OFFSET_OF_OBJECT_MEMBER(ArtMethod, gc_map_));
@@ -361,22 +327,16 @@ class MANAGED ArtMethod FINAL : public Object {
   }
 
   QuickMethodFrameInfo GetQuickFrameInfo() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  QuickMethodFrameInfo GetQuickFrameInfo(const void* code_pointer)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   size_t GetReturnPcOffsetInBytes() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    return GetReturnPcOffsetInBytes(GetFrameSizeInBytes());
-  }
-
-  size_t GetReturnPcOffsetInBytes(uint32_t frame_size_in_bytes)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    DCHECK_EQ(frame_size_in_bytes, GetFrameSizeInBytes());
-    return frame_size_in_bytes - kPointerSize;
+    return GetFrameSizeInBytes() - kPointerSize;
   }
 
   size_t GetHandleScopeOffsetInBytes() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
     return kPointerSize;
   }
+
+  bool IsRegistered() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   void RegisterNative(Thread* self, const void* native_method, bool is_fast)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
@@ -410,8 +370,6 @@ class MANAGED ArtMethod FINAL : public Object {
   bool IsImtConflictMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   uintptr_t NativePcOffset(const uintptr_t pc) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-  uintptr_t NativePcOffset(const uintptr_t pc, const void* quick_entry_point)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   // Converts a native PC to a dex PC.
   uint32_t ToDexPc(const uintptr_t pc, bool abort_on_failure = true)
@@ -423,61 +381,25 @@ class MANAGED ArtMethod FINAL : public Object {
   // Find the catch block for the given exception type and dex_pc. When a catch block is found,
   // indicates whether the found catch block is responsible for clearing the exception or whether
   // a move-exception instruction is present.
-  static uint32_t FindCatchBlock(Handle<ArtMethod> h_this, Handle<Class> exception_type,
-                                 uint32_t dex_pc, bool* has_no_move_exception)
+  // In the process of finding a catch block we might trigger resolution errors. This is flagged
+  // by exc_changed, which indicates that a different exception is now stored in the thread and
+  // should be reloaded.
+  uint32_t FindCatchBlock(Handle<Class>& exception_type, uint32_t dex_pc,
+                          bool* has_no_move_exception, bool* exc_changed)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
   static void SetClass(Class* java_lang_reflect_ArtMethod);
 
-  template<ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
-  static Class* GetJavaLangReflectArtMethod() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
+  template <ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
+  static Class* GetJavaLangReflectArtMethod() {
+    // This does not need a RB because it is a root.
+    return java_lang_reflect_ArtMethod_;
+  }
 
   static void ResetClass();
 
   static void VisitRoots(RootCallback* callback, void* arg)
       SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const DexFile* GetDexFile() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const char* GetDeclaringClassDescriptor() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const char* GetShorty() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_) {
-    uint32_t unused_length;
-    return GetShorty(&unused_length);
-  }
-
-  const char* GetShorty(uint32_t* out_length) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const Signature GetSignature() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  ALWAYS_INLINE const char* GetName() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const DexFile::CodeItem* GetCodeItem() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  bool IsResolvedTypeIdx(uint16_t type_idx) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  int32_t GetLineNumFromDexPC(uint32_t dex_pc) SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const DexFile::ProtoId& GetPrototype() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const DexFile::TypeList* GetParameterTypeList() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const char* GetDeclaringClassSourceFile() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  uint16_t GetClassDefIndex() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const DexFile::ClassDef& GetClassDef() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const char* GetReturnTypeDescriptor() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  const char* GetTypeDescriptorFromTypeIdx(uint16_t type_idx)
-      SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  mirror::ClassLoader* GetClassLoader() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  mirror::DexCache* GetDexCache() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  ALWAYS_INLINE ArtMethod* GetInterfaceMethodIfProxy() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
 
  protected:
   // Field order required by test "ValidateFieldOrderOfJavaCppUnionClasses".
@@ -485,13 +407,13 @@ class MANAGED ArtMethod FINAL : public Object {
   HeapReference<Class> declaring_class_;
 
   // Short cuts to declaring_class_->dex_cache_ member for fast compiled code access.
-  HeapReference<ObjectArray<ArtMethod>> dex_cache_resolved_methods_;
+  HeapReference<ObjectArray<ArtMethod> > dex_cache_resolved_methods_;
 
   // Short cuts to declaring_class_->dex_cache_ member for fast compiled code access.
-  HeapReference<ObjectArray<Class>> dex_cache_resolved_types_;
+  HeapReference<ObjectArray<Class> > dex_cache_resolved_types_;
 
   // Short cuts to declaring_class_->dex_cache_ member for fast compiled code access.
-  HeapReference<ObjectArray<String>> dex_cache_strings_;
+  HeapReference<ObjectArray<String> > dex_cache_strings_;
 
   // Method dispatch from the interpreter invokes this pointer which may cause a bridge into
   // compiled code.
@@ -502,9 +424,7 @@ class MANAGED ArtMethod FINAL : public Object {
 
   // Method dispatch from portable compiled code invokes this pointer which may cause bridging into
   // quick compiled code or the interpreter.
-#if defined(ART_USE_PORTABLE_COMPILER)
   uint64_t entry_point_from_portable_compiled_code_;
-#endif
 
   // Method dispatch from quick compiled code invokes this pointer which may cause bridging into
   // portable compiled code or the interpreter.
@@ -533,15 +453,16 @@ class MANAGED ArtMethod FINAL : public Object {
   // ifTable.
   uint32_t method_index_;
 
-  static GcRoot<Class> java_lang_reflect_ArtMethod_;
+  static Class* java_lang_reflect_ArtMethod_;
 
  private:
-  ObjectArray<ArtMethod>* GetDexCacheResolvedMethods() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
-  ObjectArray<Class>* GetDexCacheResolvedTypes() SHARED_LOCKS_REQUIRED(Locks::mutator_lock_);
-
   friend struct art::ArtMethodOffsets;  // for verifying offset information
   DISALLOW_IMPLICIT_CONSTRUCTORS(ArtMethod);
+};
+
+class MANAGED ArtMethodClass : public Class {
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ArtMethodClass);
 };
 
 }  // namespace mirror

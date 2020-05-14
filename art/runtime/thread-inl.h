@@ -23,7 +23,7 @@
 
 #include "base/casts.h"
 #include "base/mutex-inl.h"
-#include "gc/heap.h"
+#include "cutils/atomic-inline.h"
 #include "jni_internal.h"
 
 namespace art {
@@ -57,24 +57,26 @@ inline ThreadState Thread::SetState(ThreadState new_state) {
 }
 
 inline void Thread::AssertThreadSuspensionIsAllowable(bool check_locks) const {
-  if (kIsDebugBuild) {
-    CHECK_EQ(0u, tls32_.no_thread_suspension) << tlsPtr_.last_no_thread_suspension_cause;
-    if (check_locks) {
-      bool bad_mutexes_held = false;
-      for (int i = kLockLevelCount - 1; i >= 0; --i) {
-        // We expect no locks except the mutator_lock_ or thread list suspend thread lock.
-        if (i != kMutatorLock && i != kThreadListSuspendThreadLock) {
-          BaseMutex* held_mutex = GetHeldMutex(static_cast<LockLevel>(i));
-          if (held_mutex != NULL) {
-            LOG(ERROR) << "holding \"" << held_mutex->GetName()
-                      << "\" at point where thread suspension is expected";
-            bad_mutexes_held = true;
-          }
+#ifdef NDEBUG
+  UNUSED(check_locks);  // Keep GCC happy about unused parameters.
+#else
+  CHECK_EQ(0u, tls32_.no_thread_suspension) << tlsPtr_.last_no_thread_suspension_cause;
+  if (check_locks) {
+    bool bad_mutexes_held = false;
+    for (int i = kLockLevelCount - 1; i >= 0; --i) {
+      // We expect no locks except the mutator_lock_.
+      if (i != kMutatorLock) {
+        BaseMutex* held_mutex = GetHeldMutex(static_cast<LockLevel>(i));
+        if (held_mutex != NULL) {
+          LOG(ERROR) << "holding \"" << held_mutex->GetName()
+                  << "\" at point where thread suspension is expected";
+          bad_mutexes_held = true;
         }
       }
-      CHECK(!bad_mutexes_held);
     }
+    CHECK(!bad_mutexes_held);
   }
+#endif
 }
 
 inline void Thread::TransitionFromRunnableToSuspended(ThreadState new_state) {
@@ -95,12 +97,9 @@ inline void Thread::TransitionFromRunnableToSuspended(ThreadState new_state) {
     DCHECK_EQ((old_state_and_flags.as_struct.flags & kCheckpointRequest), 0);
     new_state_and_flags.as_struct.flags = old_state_and_flags.as_struct.flags;
     new_state_and_flags.as_struct.state = new_state;
-
-    // CAS the value without a memory ordering as that is given by the lock release below.
-    bool done =
-        tls32_.state_and_flags.as_atomic_int.CompareExchangeWeakRelaxed(old_state_and_flags.as_int,
-                                                                        new_state_and_flags.as_int);
-    if (LIKELY(done)) {
+    int status = android_atomic_cas(old_state_and_flags.as_int, new_state_and_flags.as_int,
+                                       &tls32_.state_and_flags.as_int);
+    if (LIKELY(status == 0)) {
       break;
     }
   }
@@ -140,10 +139,9 @@ inline ThreadState Thread::TransitionFromSuspendedToRunnable() {
       union StateAndFlags new_state_and_flags;
       new_state_and_flags.as_int = old_state_and_flags.as_int;
       new_state_and_flags.as_struct.state = kRunnable;
-      // CAS the value without a memory ordering as that is given by the lock acquisition above.
-      done =
-          tls32_.state_and_flags.as_atomic_int.CompareExchangeWeakRelaxed(old_state_and_flags.as_int,
-                                                                          new_state_and_flags.as_int);
+      // CAS the value without a memory barrier, that occurred in the lock above.
+      done = android_atomic_cas(old_state_and_flags.as_int, new_state_and_flags.as_int,
+                                &tls32_.state_and_flags.as_int) == 0;
     }
     if (UNLIKELY(!done)) {
       // Failed to transition to Runnable. Release shared mutator_lock_ access and try again.

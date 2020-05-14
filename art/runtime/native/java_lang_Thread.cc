@@ -85,7 +85,6 @@ static jint Thread_nativeGetStatus(JNIEnv* env, jobject java_thread, jboolean ha
     case kWaitingForJniOnLoad:            return kJavaWaiting;
     case kWaitingForSignalCatcherOutput:  return kJavaWaiting;
     case kWaitingInMainSignalCatcherLoop: return kJavaWaiting;
-    case kWaitingForMethodTracingStart:   return kJavaWaiting;
     case kSuspended:                      return kJavaRunnable;
     // Don't add a 'default' here so the compiler can spot incompatible enum changes.
   }
@@ -116,32 +115,24 @@ static void Thread_nativeInterrupt(JNIEnv* env, jobject java_thread) {
 
 static void Thread_nativeSetName(JNIEnv* env, jobject peer, jstring java_name) {
   ScopedUtfChars name(env, java_name);
-  Thread* self;
   {
     ScopedObjectAccess soa(env);
     if (soa.Decode<mirror::Object*>(peer) == soa.Self()->GetPeer()) {
       soa.Self()->SetThreadName(name.c_str());
       return;
     }
-    self = soa.Self();
   }
   // Suspend thread to avoid it from killing itself while we set its name. We don't just hold the
   // thread list lock to avoid this, as setting the thread name causes mutator to lock/unlock
   // in the DDMS send code.
-  ThreadList* thread_list = Runtime::Current()->GetThreadList();
   bool timed_out;
-  // Take suspend thread lock to avoid races with threads trying to suspend this one.
-  Thread* thread;
-  {
-    MutexLock mu(self, *Locks::thread_list_suspend_thread_lock_);
-    thread = thread_list->SuspendThreadByPeer(peer, true, false, &timed_out);
-  }
+  Thread* thread = ThreadList::SuspendThreadByPeer(peer, true, false, &timed_out);
   if (thread != NULL) {
     {
       ScopedObjectAccess soa(env);
       thread->SetThreadName(name.c_str());
     }
-    thread_list->Resume(thread, false);
+    Runtime::Current()->GetThreadList()->Resume(thread, false);
   } else if (timed_out) {
     LOG(ERROR) << "Trying to set thread name to '" << name.c_str() << "' failed as the thread "
         "failed to suspend within a generous timeout.";

@@ -123,16 +123,6 @@ bool MIRGraph::SetHigh(int index) {
  */
 bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
   SSARepresentation *ssa_rep = mir->ssa_rep;
-
-  /*
-   * The dex bytecode definition does not explicitly outlaw the definition of the same
-   * virtual register to be used in both a 32-bit and 64-bit pair context.  However, dx
-   * does not generate this pattern (at least recently).  Further, in the next revision of
-   * dex, we will forbid this.  To support the few cases in the wild, detect this pattern
-   * and punt to the interpreter.
-   */
-  bool type_mismatch = false;
-
   if (ssa_rep) {
     uint64_t attrs = GetDataFlowAttributes(mir);
     const int* uses = ssa_rep->uses;
@@ -155,7 +145,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
       }
     }
 
-
     // Handles uses
     int next = 0;
     if (attrs & DF_UA) {
@@ -173,7 +162,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
         SRegToVReg(uses[next + 1]));
         next += 2;
       } else {
-        type_mismatch |= reg_location_[uses[next]].wide;
         next++;
       }
     }
@@ -192,7 +180,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
                              SRegToVReg(uses[next + 1]));
         next += 2;
       } else {
-        type_mismatch |= reg_location_[uses[next]].wide;
         next++;
       }
     }
@@ -209,8 +196,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
         reg_location_[uses[next + 1]].high_word = true;
         DCHECK_EQ(SRegToVReg(uses[next])+1,
         SRegToVReg(uses[next + 1]));
-      } else {
-        type_mismatch |= reg_location_[uses[next]].wide;
       }
     }
 
@@ -220,7 +205,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
         (mir->dalvikInsn.opcode == Instruction::RETURN_OBJECT)) {
       switch (cu_->shorty[0]) {
           case 'I':
-            type_mismatch |= reg_location_[uses[0]].wide;
             changed |= SetCore(uses[0]);
             break;
           case 'J':
@@ -231,7 +215,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
             reg_location_[uses[1]].high_word = true;
             break;
           case 'F':
-            type_mismatch |= reg_location_[uses[0]].wide;
             changed |= SetFp(uses[0]);
             break;
           case 'D':
@@ -242,7 +225,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
             reg_location_[uses[1]].high_word = true;
             break;
           case 'L':
-            type_mismatch |= reg_location_[uses[0]].wide;
             changed |= SetRef(uses[0]);
             break;
           default: break;
@@ -251,8 +233,8 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
 
     // Special-case handling for format 35c/3rc invokes
     Instruction::Code opcode = mir->dalvikInsn.opcode;
-    int flags = MIR::DecodedInstruction::IsPseudoMirOp(opcode) ?
-                  0 : Instruction::FlagsOf(mir->dalvikInsn.opcode);
+    int flags = (static_cast<int>(opcode) >= kNumPackedOpcodes)
+        ? 0 : Instruction::FlagsOf(mir->dalvikInsn.opcode);
     if ((flags & Instruction::kInvoke) &&
         (attrs & (DF_FORMAT_35C | DF_FORMAT_3RC))) {
       DCHECK_EQ(next, 0);
@@ -280,7 +262,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
           (mir->dalvikInsn.opcode != Instruction::INVOKE_STATIC_RANGE))) {
         reg_location_[uses[next]].defined = true;
         reg_location_[uses[next]].ref = true;
-        type_mismatch |= reg_location_[uses[next]].wide;
         next++;
       }
       uint32_t cpos = 1;
@@ -306,15 +287,12 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
               i++;
               break;
             case 'F':
-              type_mismatch |= reg_location_[uses[i]].wide;
               ssa_rep->fp_use[i] = true;
               break;
             case 'L':
-              type_mismatch |= reg_location_[uses[i]].wide;
               changed |= SetRef(uses[i]);
               break;
             default:
-              type_mismatch |= reg_location_[uses[i]].wide;
               changed |= SetCore(uses[i]);
               break;
           }
@@ -324,15 +302,13 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
     }
 
     for (int i = 0; ssa_rep->fp_use && i< ssa_rep->num_uses; i++) {
-      if (ssa_rep->fp_use[i]) {
+      if (ssa_rep->fp_use[i])
         changed |= SetFp(uses[i]);
       }
-    }
     for (int i = 0; ssa_rep->fp_def && i< ssa_rep->num_defs; i++) {
-      if (ssa_rep->fp_def[i]) {
+      if (ssa_rep->fp_def[i])
         changed |= SetFp(defs[i]);
       }
-    }
     // Special-case handling for moves & Phi
     if (attrs & (DF_IS_MOVE | DF_NULL_TRANSFER_N)) {
       /*
@@ -341,7 +317,8 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
        * The Phi set will include all low words or all high
        * words, so we have to treat them specially.
        */
-      bool is_phi = (static_cast<int>(mir->dalvikInsn.opcode) == kMirOpPhi);
+      bool is_phi = (static_cast<int>(mir->dalvikInsn.opcode) ==
+                    kMirOpPhi);
       RegLocation rl_temp = reg_location_[defs[0]];
       bool defined_fp = rl_temp.defined && rl_temp.fp;
       bool defined_core = rl_temp.defined && rl_temp.core;
@@ -391,12 +368,6 @@ bool MIRGraph::InferTypeAndSize(BasicBlock* bb, MIR* mir, bool changed) {
         changed |= SetHigh(uses[1]);
       }
     }
-  }
-  if (type_mismatch) {
-    LOG(WARNING) << "Deprecated dex type mismatch, interpreting "
-                 << PrettyMethod(cu_->method_idx, *cu_->dex_file);
-    LOG(INFO) << "@ 0x" << std::hex << mir->offset;
-    SetPuntToInterpreter(true);
   }
   return changed;
 }
@@ -453,9 +424,6 @@ void MIRGraph::InitRegLocations() {
     loc[ct->s_reg_low].location = kLocCompilerTemp;
     loc[ct->s_reg_low].defined = true;
   }
-
-  /* Treat Method* as a normal reference */
-  loc[GetMethodSReg()].ref = true;
 
   reg_location_ = loc;
 

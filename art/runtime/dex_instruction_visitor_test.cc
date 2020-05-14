@@ -17,8 +17,8 @@
 #include "dex_instruction_visitor.h"
 
 #include <iostream>
-#include <memory>
 
+#include "UniquePtr.h"
 #include "gtest/gtest.h"
 
 namespace art {
@@ -26,7 +26,7 @@ namespace art {
 class TestVisitor : public DexInstructionVisitor<TestVisitor> {};
 
 TEST(InstructionTest, Init) {
-  std::unique_ptr<TestVisitor> visitor(new TestVisitor);
+  UniquePtr<TestVisitor> visitor(new TestVisitor);
 }
 
 class CountVisitor : public DexInstructionVisitor<CountVisitor> {

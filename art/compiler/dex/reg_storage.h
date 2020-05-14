@@ -17,8 +17,6 @@
 #ifndef ART_COMPILER_DEX_REG_STORAGE_H_
 #define ART_COMPILER_DEX_REG_STORAGE_H_
 
-#include "base/logging.h"
-#include "compiler_enums.h"  // For WideKind
 
 namespace art {
 
@@ -104,104 +102,70 @@ class RegStorage {
   static const uint16_t kHighRegMask = (kHighRegNumMask << kHighRegShift);
 
   // Reg is [F][LLLLL], will override any existing shape and use rs_kind.
-  constexpr RegStorage(RegStorageKind rs_kind, int reg)
-      : reg_(
-          DCHECK_CONSTEXPR(rs_kind != k64BitPair, , 0u)
-          DCHECK_CONSTEXPR((rs_kind & ~kShapeMask) == 0, , 0u)
-          kValid | rs_kind | (reg & kRegTypeMask)) {
+  RegStorage(RegStorageKind rs_kind, int reg) {
+    DCHECK_NE(rs_kind, k64BitPair);
+    DCHECK_EQ(rs_kind & ~kShapeMask, 0);
+    reg_ = kValid | rs_kind | (reg & kRegTypeMask);
   }
-  constexpr RegStorage(RegStorageKind rs_kind, int low_reg, int high_reg)
-      : reg_(
-          DCHECK_CONSTEXPR(rs_kind == k64BitPair, << rs_kind, 0u)
-          DCHECK_CONSTEXPR((low_reg & kFloatingPoint) == (high_reg & kFloatingPoint),
-                           << low_reg << ", " << high_reg, 0u)
-          DCHECK_CONSTEXPR((high_reg & kRegNumMask) <= kHighRegNumMask,
-                           << "High reg must be in 0..31: " << high_reg, false)
-          kValid | rs_kind | ((high_reg & kHighRegNumMask) << kHighRegShift) |
-                  (low_reg & kRegTypeMask)) {
+  RegStorage(RegStorageKind rs_kind, int low_reg, int high_reg) {
+    DCHECK_EQ(rs_kind, k64BitPair);
+    DCHECK_EQ(low_reg & kFloatingPoint, high_reg & kFloatingPoint);
+    DCHECK_LE(high_reg & kRegNumMask, kHighRegNumMask) << "High reg must be in 0..31";
+    reg_ = kValid | rs_kind | ((high_reg & kHighRegNumMask) << kHighRegShift) |
+        (low_reg & kRegTypeMask);
   }
   constexpr explicit RegStorage(uint16_t val) : reg_(val) {}
   RegStorage() : reg_(kInvalid) {}
 
-  // We do not provide a general operator overload for equality of reg storage, as this is
-  // dangerous in the case of architectures with multiple views, and the naming ExactEquals
-  // expresses the exact match expressed here. It is more likely that a comparison between the views
-  // is intended in most cases. Such code can be found in, for example, Mir2Lir::IsSameReg.
-  //
-  // If you know what you are doing, include reg_storage_eq.h, which defines == and != for brevity.
-
-  bool ExactlyEquals(const RegStorage& rhs) const {
+  bool operator==(const RegStorage rhs) const {
     return (reg_ == rhs.GetRawBits());
   }
 
-  bool NotExactlyEquals(const RegStorage& rhs) const {
+  bool operator!=(const RegStorage rhs) const {
     return (reg_ != rhs.GetRawBits());
   }
 
-  constexpr bool Valid() const {
+  bool Valid() const {
     return ((reg_ & kValidMask) == kValid);
   }
 
-  constexpr bool Is32Bit() const {
+  bool Is32Bit() const {
     return ((reg_ & kShapeMask) == k32BitSolo);
   }
 
-  constexpr bool Is64Bit() const {
+  bool Is64Bit() const {
     return ((reg_ & k64BitMask) == k64Bits);
   }
 
-  constexpr WideKind GetWideKind() const {
-    return Is64Bit() ? kWide : kNotWide;
-  }
-
-  constexpr bool Is64BitSolo() const {
-    return ((reg_ & kShapeMask) == k64BitSolo);
-  }
-
-  constexpr bool IsPair() const {
+  bool IsPair() const {
     return ((reg_ & kShapeMask) == k64BitPair);
   }
 
-  constexpr bool IsFloat() const {
-    return
-        DCHECK_CONSTEXPR(Valid(), , false)
-        ((reg_ & kFloatingPoint) == kFloatingPoint);
+  bool IsFloat() const {
+    DCHECK(Valid());
+    return ((reg_ & kFloatingPoint) == kFloatingPoint);
   }
 
-  constexpr bool IsDouble() const {
-    return
-        DCHECK_CONSTEXPR(Valid(), , false)
-        (reg_ & (kFloatingPoint | k64BitMask)) == (kFloatingPoint | k64Bits);
+  bool IsDouble() const {
+    DCHECK(Valid());
+    return (reg_ & (kFloatingPoint | k64BitMask)) == (kFloatingPoint | k64Bits);
   }
 
-  constexpr bool IsSingle() const {
-    return
-        DCHECK_CONSTEXPR(Valid(), , false)
-        (reg_ & (kFloatingPoint | k64BitMask)) == kFloatingPoint;
+  bool IsSingle() const {
+    DCHECK(Valid());
+    return (reg_ & (kFloatingPoint | k64BitMask)) == kFloatingPoint;
   }
 
-  static constexpr bool IsFloat(uint16_t reg) {
+  static bool IsFloat(uint16_t reg) {
     return ((reg & kFloatingPoint) == kFloatingPoint);
   }
 
-  static constexpr bool IsDouble(uint16_t reg) {
+  static bool IsDouble(uint16_t reg) {
     return (reg & (kFloatingPoint | k64BitMask)) == (kFloatingPoint | k64Bits);
   }
 
-  static constexpr bool IsSingle(uint16_t reg) {
+  static bool IsSingle(uint16_t reg) {
     return (reg & (kFloatingPoint | k64BitMask)) == kFloatingPoint;
-  }
-
-  static constexpr bool Is32Bit(uint16_t reg) {
-    return ((reg & kShapeMask) == k32BitSolo);
-  }
-
-  static constexpr bool Is64Bit(uint16_t reg) {
-    return ((reg & k64BitMask) == k64Bits);
-  }
-
-  static constexpr bool Is64BitSolo(uint16_t reg) {
-    return ((reg & kShapeMask) == k64BitSolo);
   }
 
   // Used to retrieve either the low register of a pair, or the only register.
@@ -253,17 +217,35 @@ class RegStorage {
   }
 
   // Return the register number of low or solo.
-  constexpr int GetRegNum() const {
+  int GetRegNum() const {
     return reg_ & kRegNumMask;
   }
 
+  // Aliased double to low single.
+  RegStorage DoubleToLowSingle() const {
+    DCHECK(IsDouble());
+    return FloatSolo32(GetRegNum() << 1);
+  }
+
+  // Aliased double to high single.
+  RegStorage DoubleToHighSingle() const {
+    DCHECK(IsDouble());
+    return FloatSolo32((GetRegNum() << 1) + 1);
+  }
+
+  // Single to aliased double.
+  RegStorage SingleToDouble() const {
+    DCHECK(IsSingle());
+    return FloatSolo64(GetRegNum() >> 1);
+  }
+
   // Is register number in 0..7?
-  constexpr bool Low8() const {
+  bool Low8() const {
     return GetRegNum() < 8;
   }
 
   // Is register number in 0..3?
-  constexpr bool Low4() const {
+  bool Low4() const {
     return GetRegNum() < 4;
   }
 
@@ -276,12 +258,12 @@ class RegStorage {
     return RegStorage(k64BitPair, low.GetReg(), high.GetReg());
   }
 
-  static constexpr bool SameRegType(RegStorage reg1, RegStorage reg2) {
-    return ((reg1.reg_ & kShapeTypeMask) == (reg2.reg_ & kShapeTypeMask));
+  static bool SameRegType(RegStorage reg1, RegStorage reg2) {
+    return (reg1.IsDouble() == reg2.IsDouble()) && (reg1.IsSingle() == reg2.IsSingle());
   }
 
-  static constexpr bool SameRegType(int reg1, int reg2) {
-    return ((reg1 & kShapeTypeMask) == (reg2 & kShapeTypeMask));
+  static bool SameRegType(int reg1, int reg2) {
+    return (IsDouble(reg1) == IsDouble(reg2)) && (IsSingle(reg1) == IsSingle(reg2));
   }
 
   // Create a 32-bit solo.
@@ -290,17 +272,12 @@ class RegStorage {
   }
 
   // Create a floating point 32-bit solo.
-  static constexpr RegStorage FloatSolo32(int reg_num) {
+  static RegStorage FloatSolo32(int reg_num) {
     return RegStorage(k32BitSolo, (reg_num & kRegNumMask) | kFloatingPoint);
   }
 
-  // Create a 128-bit solo.
-  static constexpr RegStorage Solo128(int reg_num) {
-    return RegStorage(k128BitSolo, reg_num & kRegTypeMask);
-  }
-
   // Create a 64-bit solo.
-  static constexpr RegStorage Solo64(int reg_num) {
+  static RegStorage Solo64(int reg_num) {
     return RegStorage(k64BitSolo, reg_num & kRegTypeMask);
   }
 
@@ -309,19 +286,19 @@ class RegStorage {
     return RegStorage(k64BitSolo, (reg_num & kRegNumMask) | kFloatingPoint);
   }
 
-  static constexpr RegStorage InvalidReg() {
+  static RegStorage InvalidReg() {
     return RegStorage(kInvalid);
   }
 
-  static constexpr uint16_t RegNum(int raw_reg_bits) {
+  static uint16_t RegNum(int raw_reg_bits) {
     return raw_reg_bits & kRegNumMask;
   }
 
-  constexpr int GetRawBits() const {
+  int GetRawBits() const {
     return reg_;
   }
 
-  size_t StorageSize() const {
+  size_t StorageSize() {
     switch (reg_ & kShapeMask) {
       case kInvalid: return 0;
       case k32BitSolo: return 4;
@@ -331,7 +308,7 @@ class RegStorage {
       case k256BitSolo: return 32;
       case k512BitSolo: return 64;
       case k1024BitSolo: return 128;
-      default: LOG(FATAL) << "Unexpected shape";
+      default: LOG(FATAL) << "Unexpected shap";
     }
     return 0;
   }

@@ -18,12 +18,12 @@
 #define ART_RUNTIME_GC_ACCOUNTING_ATOMIC_STACK_H_
 
 #include <algorithm>
-#include <memory>
 #include <string>
 
 #include "atomic.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "UniquePtr.h"
 #include "mem_map.h"
 #include "utils.h"
 
@@ -35,8 +35,8 @@ template <typename T>
 class AtomicStack {
  public:
   // Capacity is how many elements we can store in the stack.
-  static AtomicStack* Create(const std::string& name, size_t growth_limit, size_t capacity) {
-    std::unique_ptr<AtomicStack> mark_stack(new AtomicStack(name, growth_limit, capacity));
+  static AtomicStack* Create(const std::string& name, size_t capacity) {
+    UniquePtr<AtomicStack> mark_stack(new AtomicStack(name, capacity));
     mark_stack->Init();
     return mark_stack.release();
   }
@@ -44,24 +44,34 @@ class AtomicStack {
   ~AtomicStack() {}
 
   void Reset() {
-    DCHECK(mem_map_.get() != nullptr);
+    DCHECK(mem_map_.get() != NULL);
     DCHECK(begin_ != NULL);
-    front_index_.StoreRelaxed(0);
-    back_index_.StoreRelaxed(0);
+    front_index_ = 0;
+    back_index_ = 0;
     debug_is_sorted_ = true;
-    mem_map_->MadviseDontNeedAndZero();
+    int result = madvise(begin_, sizeof(T) * capacity_, MADV_DONTNEED);
+    if (result == -1) {
+      PLOG(WARNING) << "madvise failed";
+    }
   }
 
   // Beware: Mixing atomic pushes and atomic pops will cause ABA problem.
 
   // Returns false if we overflowed the stack.
-  bool AtomicPushBackIgnoreGrowthLimit(const T& value) {
-    return AtomicPushBackInternal(value, capacity_);
-  }
-
-  // Returns false if we overflowed the stack.
   bool AtomicPushBack(const T& value) {
-    return AtomicPushBackInternal(value, growth_limit_);
+    if (kIsDebugBuild) {
+      debug_is_sorted_ = false;
+    }
+    int32_t index;
+    do {
+      index = back_index_;
+      if (UNLIKELY(static_cast<size_t>(index) >= capacity_)) {
+        // Stack overflow.
+        return false;
+      }
+    } while (!back_index_.CompareAndSwap(index, index + 1));
+    begin_[index] = value;
+    return true;
   }
 
   // Atomically bump the back index by the given number of
@@ -73,13 +83,13 @@ class AtomicStack {
     int32_t index;
     int32_t new_index;
     do {
-      index = back_index_.LoadRelaxed();
+      index = back_index_;
       new_index = index + num_slots;
-      if (UNLIKELY(static_cast<size_t>(new_index) >= growth_limit_)) {
+      if (UNLIKELY(static_cast<size_t>(new_index) >= capacity_)) {
         // Stack overflow.
         return false;
       }
-    } while (!back_index_.CompareExchangeWeakRelaxed(index, new_index));
+    } while (!back_index_.CompareAndSwap(index, new_index));
     *start_address = &begin_[index];
     *end_address = &begin_[new_index];
     if (kIsDebugBuild) {
@@ -104,31 +114,31 @@ class AtomicStack {
     if (kIsDebugBuild) {
       debug_is_sorted_ = false;
     }
-    int32_t index = back_index_.LoadRelaxed();
-    DCHECK_LT(static_cast<size_t>(index), growth_limit_);
-    back_index_.StoreRelaxed(index + 1);
+    int32_t index = back_index_;
+    DCHECK_LT(static_cast<size_t>(index), capacity_);
+    back_index_ = index + 1;
     begin_[index] = value;
   }
 
   T PopBack() {
-    DCHECK_GT(back_index_.LoadRelaxed(), front_index_.LoadRelaxed());
+    DCHECK_GT(back_index_, front_index_);
     // Decrement the back index non atomically.
-    back_index_.StoreRelaxed(back_index_.LoadRelaxed() - 1);
-    return begin_[back_index_.LoadRelaxed()];
+    back_index_ = back_index_ - 1;
+    return begin_[back_index_];
   }
 
   // Take an item from the front of the stack.
   T PopFront() {
-    int32_t index = front_index_.LoadRelaxed();
-    DCHECK_LT(index, back_index_.LoadRelaxed());
-    front_index_.StoreRelaxed(index + 1);
+    int32_t index = front_index_;
+    DCHECK_LT(index, back_index_.Load());
+    front_index_ = front_index_ + 1;
     return begin_[index];
   }
 
   // Pop a number of elements.
   void PopBackCount(int32_t n) {
     DCHECK_GE(Size(), static_cast<size_t>(n));
-    back_index_.FetchAndSubSequentiallyConsistent(n);
+    back_index_.FetchAndSub(n);
   }
 
   bool IsEmpty() const {
@@ -136,16 +146,16 @@ class AtomicStack {
   }
 
   size_t Size() const {
-    DCHECK_LE(front_index_.LoadRelaxed(), back_index_.LoadRelaxed());
-    return back_index_.LoadRelaxed() - front_index_.LoadRelaxed();
+    DCHECK_LE(front_index_, back_index_);
+    return back_index_ - front_index_;
   }
 
   T* Begin() const {
-    return const_cast<T*>(begin_ + front_index_.LoadRelaxed());
+    return const_cast<T*>(begin_ + front_index_);
   }
 
   T* End() const {
-    return const_cast<T*>(begin_ + back_index_.LoadRelaxed());
+    return const_cast<T*>(begin_ + back_index_);
   }
 
   size_t Capacity() const {
@@ -155,16 +165,15 @@ class AtomicStack {
   // Will clear the stack.
   void Resize(size_t new_capacity) {
     capacity_ = new_capacity;
-    growth_limit_ = new_capacity;
     Init();
   }
 
   void Sort() {
-    int32_t start_back_index = back_index_.LoadRelaxed();
-    int32_t start_front_index = front_index_.LoadRelaxed();
+    int32_t start_back_index = back_index_.Load();
+    int32_t start_front_index = front_index_.Load();
     std::sort(Begin(), End());
-    CHECK_EQ(start_back_index, back_index_.LoadRelaxed());
-    CHECK_EQ(start_front_index, front_index_.LoadRelaxed());
+    CHECK_EQ(start_back_index, back_index_.Load());
+    CHECK_EQ(start_front_index, front_index_.Load());
     if (kIsDebugBuild) {
       debug_is_sorted_ = true;
     }
@@ -180,31 +189,13 @@ class AtomicStack {
   }
 
  private:
-  AtomicStack(const std::string& name, size_t growth_limit, size_t capacity)
+  AtomicStack(const std::string& name, const size_t capacity)
       : name_(name),
         back_index_(0),
         front_index_(0),
-        begin_(nullptr),
-        growth_limit_(growth_limit),
+        begin_(NULL),
         capacity_(capacity),
         debug_is_sorted_(true) {
-  }
-
-  // Returns false if we overflowed the stack.
-  bool AtomicPushBackInternal(const T& value, size_t limit) ALWAYS_INLINE {
-    if (kIsDebugBuild) {
-      debug_is_sorted_ = false;
-    }
-    int32_t index;
-    do {
-      index = back_index_.LoadRelaxed();
-      if (UNLIKELY(static_cast<size_t>(index) >= limit)) {
-        // Stack overflow.
-        return false;
-      }
-    } while (!back_index_.CompareExchangeWeakRelaxed(index, index + 1));
-    begin_[index] = value;
-    return true;
   }
 
   // Size in number of elements.
@@ -222,18 +213,22 @@ class AtomicStack {
 
   // Name of the mark stack.
   std::string name_;
+
   // Memory mapping of the atomic stack.
-  std::unique_ptr<MemMap> mem_map_;
+  UniquePtr<MemMap> mem_map_;
+
   // Back index (index after the last element pushed).
   AtomicInteger back_index_;
+
   // Front index, used for implementing PopFront.
   AtomicInteger front_index_;
+
   // Base of the atomic stack.
   T* begin_;
-  // Current maximum which we can push back to, must be <= capacity_.
-  size_t growth_limit_;
+
   // Maximum number of elements.
   size_t capacity_;
+
   // Whether or not the stack is sorted, only updated in debug mode to avoid performance overhead.
   bool debug_is_sorted_;
 

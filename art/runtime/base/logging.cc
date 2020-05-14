@@ -19,6 +19,7 @@
 #include "base/mutex.h"
 #include "runtime.h"
 #include "thread-inl.h"
+#include "UniquePtr.h"
 #include "utils.h"
 
 namespace art {
@@ -30,9 +31,9 @@ std::vector<std::string> gVerboseMethods;
 unsigned int gAborting = 0;
 
 static LogSeverity gMinimumLogSeverity = INFO;
-static std::unique_ptr<std::string> gCmdLine;
-static std::unique_ptr<std::string> gProgramInvocationName;
-static std::unique_ptr<std::string> gProgramInvocationShortName;
+static UniquePtr<std::string> gCmdLine;
+static UniquePtr<std::string> gProgramInvocationName;
+static UniquePtr<std::string> gProgramInvocationShortName;
 
 const char* GetCmdLine() {
   return (gCmdLine.get() != nullptr) ? gCmdLine->c_str() : nullptr;
