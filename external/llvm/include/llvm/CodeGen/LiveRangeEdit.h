@@ -22,7 +22,6 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/CodeGen/LiveInterval.h"
-#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
@@ -31,9 +30,10 @@ class AliasAnalysis;
 class LiveIntervals;
 class MachineBlockFrequencyInfo;
 class MachineLoopInfo;
+class MachineRegisterInfo;
 class VirtRegMap;
 
-class LiveRangeEdit : private MachineRegisterInfo::Delegate {
+class LiveRangeEdit {
 public:
   /// Callback methods for LiveRangeEdit owners.
   class Delegate {
@@ -58,7 +58,7 @@ public:
 
 private:
   LiveInterval *Parent;
-  SmallVectorImpl<unsigned> &NewRegs;
+  SmallVectorImpl<LiveInterval*> &NewRegs;
   MachineRegisterInfo &MRI;
   LiveIntervals &LIS;
   VirtRegMap *VRM;
@@ -97,10 +97,6 @@ private:
   /// Helper for eliminateDeadDefs.
   void eliminateDeadDef(MachineInstr *MI, ToShrinkSet &ToShrink);
 
-  /// MachineRegisterInfo callback to notify when new virtual
-  /// registers are created.
-  void MRI_NoteNewVirtualRegister(unsigned VReg);
-
 public:
   /// Create a LiveRangeEdit for breaking down parent into smaller pieces.
   /// @param parent The register being spilled or split.
@@ -112,7 +108,7 @@ public:
   ///            function.  If NULL, no virtual register map updates will
   ///            be done.  This could be the case if called before Regalloc.
   LiveRangeEdit(LiveInterval *parent,
-                SmallVectorImpl<unsigned> &newRegs,
+                SmallVectorImpl<LiveInterval*> &newRegs,
                 MachineFunction &MF,
                 LiveIntervals &lis,
                 VirtRegMap *vrm,
@@ -122,9 +118,7 @@ public:
       TII(*MF.getTarget().getInstrInfo()),
       TheDelegate(delegate),
       FirstNew(newRegs.size()),
-      ScannedRemattable(false) { MRI.setDelegate(this); }
-
-  ~LiveRangeEdit() { MRI.resetDelegate(this); }
+      ScannedRemattable(false) {}
 
   LiveInterval &getParent() const {
    assert(Parent && "No parent LiveInterval");
@@ -133,30 +127,23 @@ public:
   unsigned getReg() const { return getParent().reg; }
 
   /// Iterator for accessing the new registers added by this edit.
-  typedef SmallVectorImpl<unsigned>::const_iterator iterator;
+  typedef SmallVectorImpl<LiveInterval*>::const_iterator iterator;
   iterator begin() const { return NewRegs.begin()+FirstNew; }
   iterator end() const { return NewRegs.end(); }
   unsigned size() const { return NewRegs.size()-FirstNew; }
   bool empty() const { return size() == 0; }
-  unsigned get(unsigned idx) const { return NewRegs[idx+FirstNew]; }
+  LiveInterval *get(unsigned idx) const { return NewRegs[idx+FirstNew]; }
 
-  ArrayRef<unsigned> regs() const {
+  ArrayRef<LiveInterval*> regs() const {
     return makeArrayRef(NewRegs).slice(FirstNew);
   }
 
-  /// createEmptyIntervalFrom - Create a new empty interval based on OldReg.
-  LiveInterval &createEmptyIntervalFrom(unsigned OldReg);
-
   /// createFrom - Create a new virtual register based on OldReg.
-  unsigned createFrom(unsigned OldReg);
+  LiveInterval &createFrom(unsigned OldReg);
 
   /// create - Create a new register with the same class and original slot as
   /// parent.
-  LiveInterval &createEmptyInterval() {
-    return createEmptyIntervalFrom(getReg());
-  }
-
-  unsigned create() {
+  LiveInterval &create() {
     return createFrom(getReg());
   }
 

@@ -136,7 +136,7 @@ class RegisterClassInfo;
     ~AggressiveAntiDepBreaker();
 
     /// Start - Initialize anti-dep breaking for a new basic block.
-    void StartBlock(MachineBasicBlock *BB) override;
+    void StartBlock(MachineBasicBlock *BB);
 
     /// BreakAntiDependencies - Identifiy anti-dependencies along the critical
     /// path
@@ -146,16 +146,15 @@ class RegisterClassInfo;
                                    MachineBasicBlock::iterator Begin,
                                    MachineBasicBlock::iterator End,
                                    unsigned InsertPosIndex,
-                                   DbgValueVector &DbgValues) override;
+                                   DbgValueVector &DbgValues);
 
     /// Observe - Update liveness information to account for the current
     /// instruction, which will not be scheduled.
     ///
-    void Observe(MachineInstr *MI, unsigned Count,
-                 unsigned InsertPosIndex) override;
+    void Observe(MachineInstr *MI, unsigned Count, unsigned InsertPosIndex);
 
     /// Finish - Finish anti-dep breaking for a basic block.
-    void FinishBlock() override;
+    void FinishBlock();
 
   private:
     /// Keep track of a position in the allocation order for each regclass.
@@ -170,8 +169,7 @@ class RegisterClassInfo;
     void GetPassthruRegs(MachineInstr *MI, std::set<unsigned>& PassthruRegs);
 
     void HandleLastUse(unsigned Reg, unsigned KillIdx, const char *tag,
-                       const char *header = nullptr,
-                       const char *footer = nullptr);
+                       const char *header =NULL, const char *footer =NULL);
 
     void PrescanInstruction(MachineInstr *MI, unsigned Count,
                             std::set<unsigned>& PassthruRegs);

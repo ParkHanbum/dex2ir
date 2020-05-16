@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/IR/Dominators.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/Pass.h"
 
 using namespace llvm;
@@ -29,13 +29,14 @@ namespace {
     static char ID; // Pass identification, replacement for typeid
     DomInfoPrinter() : FunctionPass(ID) {}
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
-      AU.addRequired<DominatorTreeWrapperPass>();
+      AU.addRequired<DominatorTree>();
+
     }
 
-    bool runOnFunction(Function &F) override {
-      getAnalysis<DominatorTreeWrapperPass>().dump();
+    virtual bool runOnFunction(Function &F) {
+      getAnalysis<DominatorTree>().dump();
       return false;
     }
   };

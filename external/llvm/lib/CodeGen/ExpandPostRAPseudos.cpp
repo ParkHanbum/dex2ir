@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "postrapseudos"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -24,8 +25,6 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 using namespace llvm;
 
-#define DEBUG_TYPE "postrapseudos"
-
 namespace {
 struct ExpandPostRA : public MachineFunctionPass {
 private:
@@ -36,7 +35,7 @@ public:
   static char ID; // Pass identification, replacement for typeid
   ExpandPostRA() : MachineFunctionPass(ID) {}
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesCFG();
     AU.addPreservedID(MachineLoopInfoID);
     AU.addPreservedID(MachineDominatorsID);
@@ -44,7 +43,7 @@ public:
   }
 
   /// runOnMachineFunction - pass entry point
-  bool runOnMachineFunction(MachineFunction&) override;
+  bool runOnMachineFunction(MachineFunction&);
 
 private:
   bool LowerSubregToReg(MachineInstr *MI);
@@ -105,7 +104,7 @@ bool ExpandPostRA::LowerSubregToReg(MachineInstr *MI) {
   }
 
   if (DstSubReg == InsReg) {
-    // No need to insert an identity copy instruction.
+    // No need to insert an identify copy instruction.
     // Watch out for case like this:
     // %RAX<def> = SUBREG_TO_REG 0, %EAX<kill>, 3
     // We must leave %RAX live.

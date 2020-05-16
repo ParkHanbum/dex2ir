@@ -21,9 +21,6 @@
 /* Define if you want backtraces on crash */
 #cmakedefine ENABLE_BACKTRACES
 
-/* Define to enable crash overrides */
-#cmakedefine ENABLE_CRASH_OVERRIDES
-
 /* Define if position independent code is enabled */
 #cmakedefine ENABLE_PIC
 
@@ -50,6 +47,12 @@
 
 /* Define to 1 if you have the `closedir' function. */
 #cmakedefine HAVE_CLOSEDIR ${HAVE_CLOSEDIR}
+
+/* Define if curses provides the has_color() function on this platform. */
+#cmakedefine HAVE_CURSES
+
+/* Define to 1 if you have the <curses.h> header file. */
+#cmakedefine HAVE_CURSES_H
 
 /* Define to 1 if you have the <cxxabi.h> header file. */
 #cmakedefine HAVE_CXXABI_H ${HAVE_CXXABI_H}
@@ -129,13 +132,13 @@
 #cmakedefine HAVE_LOG10 ${HAVE_LOG10}
 
 /* Define to 1 if you have the `exp' function. */
-#cmakedefine HAVE_EXP ${HAVE_EXP}
+#cmakedefine HAVE_EXP ${HAVE_LOG}
 
 /* Define to 1 if you have the `exp2' function. */
-#cmakedefine HAVE_EXP2 ${HAVE_EXP2}
+#cmakedefine HAVE_EXP2 ${HAVE_LOG2}
 
 /* Define to 1 if you have the `exp10' function. */
-#cmakedefine HAVE_EXP10 ${HAVE_EXP10}
+#cmakedefine HAVE_EXP10 ${HAVE_LOG10}
 
 /* Define to 1 if you have the `fmodf' function. */
 #cmakedefine HAVE_FMODF ${HAVE_FMODF}
@@ -203,9 +206,6 @@
 /* Define to 1 if you have the `pthread' library (-lpthread). */
 #cmakedefine HAVE_LIBPTHREAD ${HAVE_LIBPTHREAD}
 
-/* Define to 1 if you have the `shell32' library (-lshell32). */
-#cmakedefine HAVE_LIBSHELL32 ${HAVE_LIBSHELL32}
-
 /* Define to 1 if you have the `udis86' library (-ludis86). */
 #undef HAVE_LIBUDIS86
 
@@ -262,6 +262,18 @@
 /* Define if mmap() can map files into memory */
 #undef HAVE_MMAP_FILE
 
+/* Define to 1 if you have the <ncursesw/curses.h> header file. */
+#cmakedefine HAVE_NCURSESW_CURSES_H
+
+/* Define to 1 if you have the <ncursesw.h> header file. */
+#cmakedefine HAVE_NCURSESW_H
+
+/* Define to 1 if you have the <ncurses/curses.h> header file. */
+#cmakedefine HAVE_NCURSES_CURSES_H
+
+/* Define to 1 if you have the <ncurses.h> header file. */
+#cmakedefine HAVE_NCURSES_H
+
 /* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
 #cmakedefine HAVE_NDIR_H ${HAVE_NDIR_H}
 
@@ -308,7 +320,7 @@
 #cmakedefine HAVE_READDIR ${HAVE_READDIR}
 
 /* Define to 1 if you have the `realpath' function. */
-#cmakedefine HAVE_REALPATH ${HAVE_REALPATH}
+#undef HAVE_REALPATH
 
 /* Define to 1 if you have the `rintf' function. */
 #undef HAVE_RINTF
@@ -407,9 +419,6 @@
 
 /* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
 #cmakedefine HAVE_SYS_WAIT_H ${HAVE_SYS_WAIT_H}
-
-/* Define if the setupterm() function is supported this platform. */
-#cmakedefine HAVE_TERMINFO ${HAVE_TERMINFO}
 
 /* Define to 1 if you have the <termios.h> header file. */
 #cmakedefine HAVE_TERMIOS_H ${HAVE_TERMIOS_H}

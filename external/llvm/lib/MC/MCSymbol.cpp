@@ -68,23 +68,12 @@ void MCSymbol::print(raw_ostream &OS) const {
   // The name for this MCSymbol is required to be a valid target name.  However,
   // some targets support quoting names with funny characters.  If the name
   // contains a funny character, then print it quoted.
-  StringRef Name = getName();
-  if (!NameNeedsQuoting(Name)) {
-    OS << Name;
+  if (!NameNeedsQuoting(getName())) {
+    OS << getName();
     return;
   }
 
-  OS << '"';
-  for (unsigned I = 0, E = Name.size(); I != E; ++I) {
-    char C = Name[I];
-    if (C == '\n')
-      OS << "\\n";
-    else if (C == '"')
-      OS << "\\\"";
-    else
-      OS << C;
-  }
-  OS << '"';
+  OS << '"' << getName() << '"';
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)

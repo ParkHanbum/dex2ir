@@ -14,8 +14,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
-#define DEBUG_TYPE "mips-isel"
-
 namespace llvm {
 
 bool MipsModuleDAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {

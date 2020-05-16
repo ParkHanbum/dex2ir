@@ -7,4 +7,4 @@
 
 foo 42,  42
 
-// CHECK: too many positional arguments
+// CHECK: Too many arguments

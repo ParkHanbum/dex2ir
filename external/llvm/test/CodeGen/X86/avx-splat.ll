@@ -20,7 +20,7 @@ entry:
   ret <16 x i16> %shuffle
 }
 
-; CHECK: vmovq
+; CHECK: vmovd
 ; CHECK-NEXT: vmovlhps %xmm
 ; CHECK-NEXT: vinsertf128 $1
 define <4 x i64> @funcC(i64 %q) nounwind uwtable readnone ssp {
@@ -43,10 +43,13 @@ entry:
   ret <4 x double> %vecinit6.i
 }
 
-; Test this turns into a broadcast:
+; Test this simple opt:
 ;   shuffle (scalar_to_vector (load (ptr + 4))), undef, <0, 0, 0, 0>
-;   
-; CHECK: vbroadcastss
+; To:
+;   shuffle (vload ptr)), undef, <1, 1, 1, 1>
+; CHECK: vmovdqa
+; CHECK-NEXT: vpshufd $-1
+; CHECK-NEXT: vinsertf128  $1
 define <8 x float> @funcE() nounwind {
 allocas:
   %udx495 = alloca [18 x [18 x float]], align 32

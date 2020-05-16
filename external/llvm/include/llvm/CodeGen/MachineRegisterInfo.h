@@ -22,24 +22,12 @@
 #include <vector>
 
 namespace llvm {
-class PSetIterator;
 
 /// MachineRegisterInfo - Keep track of information for virtual and physical
 /// registers, including vreg register classes, use/def chains for registers,
 /// etc.
 class MachineRegisterInfo {
-public:
-  class Delegate {
-    virtual void anchor();
-  public:
-    virtual void MRI_NoteNewVirtualRegister(unsigned Reg) = 0;
-
-    virtual ~Delegate() {}
-  };
-
-private:
   const TargetMachine &TM;
-  Delegate *TheDelegate;
 
   /// IsSSA - True when the machine function is in SSA form and virtual
   /// registers have a single def.
@@ -126,23 +114,6 @@ public:
 
   const TargetRegisterInfo *getTargetRegisterInfo() const {
     return TM.getRegisterInfo();
-  }
-
-  void resetDelegate(Delegate *delegate) {
-    // Ensure another delegate does not take over unless the current
-    // delegate first unattaches itself. If we ever need to multicast
-    // notifications, we will need to change to using a list.
-    assert(TheDelegate == delegate &&
-           "Only the current delegate can perform reset!");
-    TheDelegate = 0;
-  }
-
-  void setDelegate(Delegate *delegate) {
-    assert(delegate && !TheDelegate &&
-           "Attempted to set delegate to null, or to change it without "
-           "first resetting it!");
-
-    TheDelegate = delegate;
   }
 
   //===--------------------------------------------------------------------===//
@@ -327,11 +298,6 @@ public:
   /// throughout the function.  It is safe to move instructions that read such
   /// a physreg.
   bool isConstantPhysReg(unsigned PhysReg, const MachineFunction &MF) const;
-
-  /// Get an iterator over the pressure sets affected by the given physical or
-  /// virtual register. If RegUnit is physical, it must be a register unit (from
-  /// MCRegUnitIterator).
-  PSetIterator getPressureSets(unsigned RegUnit) const;
 
   //===--------------------------------------------------------------------===//
   // Virtual Register Info
@@ -654,48 +620,8 @@ public:
       return Op->getParent();
     }
   };
+
 };
-
-/// Iterate over the pressure sets affected by the given physical or virtual
-/// register. If Reg is physical, it must be a register unit (from
-/// MCRegUnitIterator).
-class PSetIterator {
-  const int *PSet;
-  unsigned Weight;
-public:
-  PSetIterator(): PSet(0), Weight(0) {}
-  PSetIterator(unsigned RegUnit, const MachineRegisterInfo *MRI) {
-    const TargetRegisterInfo *TRI = MRI->getTargetRegisterInfo();
-    if (TargetRegisterInfo::isVirtualRegister(RegUnit)) {
-      const TargetRegisterClass *RC = MRI->getRegClass(RegUnit);
-      PSet = TRI->getRegClassPressureSets(RC);
-      Weight = TRI->getRegClassWeight(RC).RegWeight;
-    }
-    else {
-      PSet = TRI->getRegUnitPressureSets(RegUnit);
-      Weight = TRI->getRegUnitWeight(RegUnit);
-    }
-    if (*PSet == -1)
-      PSet = 0;
-  }
-  bool isValid() const { return PSet; }
-
-  unsigned getWeight() const { return Weight; }
-
-  unsigned operator*() const { return *PSet; }
-
-  void operator++() {
-    assert(isValid() && "Invalid PSetIterator.");
-    ++PSet;
-    if (*PSet == -1)
-      PSet = 0;
-  }
-};
-
-inline PSetIterator MachineRegisterInfo::
-getPressureSets(unsigned RegUnit) const {
-  return PSetIterator(RegUnit, this);
-}
 
 } // End llvm namespace
 

@@ -15,8 +15,6 @@
 
 
 #include "llvm/ADT/DenseMap.h"
-#include "Hexagon.h"
-#include "HexagonTargetMachine.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -24,6 +22,8 @@
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/PassSupport.h"
 #include "llvm/Target/TargetInstrInfo.h"
+#include "Hexagon.h"
+#include "HexagonTargetMachine.h"
 
 using namespace llvm;
 
@@ -40,13 +40,11 @@ namespace {
       initializeHexagonFixupHwLoopsPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
 
-    const char *getPassName() const override {
-      return "Hexagon Hardware Loop Fixup";
-    }
+    const char *getPassName() const { return "Hexagon Hardware Loop Fixup"; }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesCFG();
       MachineFunctionPass::getAnalysisUsage(AU);
     }

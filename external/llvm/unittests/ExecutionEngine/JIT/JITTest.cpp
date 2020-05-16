@@ -8,8 +8,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ExecutionEngine/JIT.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/AsmParser/Parser.h"
+#include "llvm/Assembly/Parser.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/ExecutionEngine/JITMemoryManager.h"
 #include "llvm/IR/BasicBlock.h"
@@ -51,8 +52,7 @@ extern "C" int32_t JITTest_AvailableExternallyFunction() {
 namespace {
 
 // Tests on ARM, PowerPC and SystemZ disabled as we're running the old jit
-#if !defined(__arm__) && !defined(__powerpc__) && !defined(__s390__) \
-                      && !defined(__aarch64__)
+#if !defined(__arm__) && !defined(__powerpc__) && !defined(__s390__)
 
 Function *makeReturnGlobal(std::string Name, GlobalVariable *G, Module *M) {
   std::vector<Type*> params;
@@ -76,8 +76,7 @@ std::string DumpFunction(const Function *F) {
 }
 
 class RecordingJITMemoryManager : public JITMemoryManager {
-  const std::unique_ptr<JITMemoryManager> Base;
-
+  const OwningPtr<JITMemoryManager> Base;
 public:
   RecordingJITMemoryManager()
     : Base(JITMemoryManager::CreateDefaultMemManager()) {
@@ -114,8 +113,8 @@ public:
     return Result;
   }
   int stubsAllocated;
-  uint8_t *allocateStub(const GlobalValue *F, unsigned StubSize,
-                        unsigned Alignment) override {
+  virtual uint8_t *allocateStub(const GlobalValue* F, unsigned StubSize,
+                                unsigned Alignment) {
     stubsAllocated++;
     return Base->allocateStub(F, StubSize, Alignment);
   }
@@ -136,17 +135,13 @@ public:
       EndFunctionBodyCall(F, FunctionStart, FunctionEnd));
     Base->endFunctionBody(F, FunctionStart, FunctionEnd);
   }
-  virtual uint8_t *allocateDataSection(
-    uintptr_t Size, unsigned Alignment, unsigned SectionID,
-    StringRef SectionName, bool IsReadOnly) {
-    return Base->allocateDataSection(
-      Size, Alignment, SectionID, SectionName, IsReadOnly);
+  virtual uint8_t *allocateDataSection(uintptr_t Size, unsigned Alignment,
+                                       unsigned SectionID, bool IsReadOnly) {
+    return Base->allocateDataSection(Size, Alignment, SectionID, IsReadOnly);
   }
-  virtual uint8_t *allocateCodeSection(
-    uintptr_t Size, unsigned Alignment, unsigned SectionID,
-    StringRef SectionName) {
-    return Base->allocateCodeSection(
-      Size, Alignment, SectionID, SectionName);
+  virtual uint8_t *allocateCodeSection(uintptr_t Size, unsigned Alignment,
+                                       unsigned SectionID) {
+    return Base->allocateCodeSection(Size, Alignment, SectionID);
   }
   virtual bool finalizeMemory(std::string *ErrMsg) { return false; }
   virtual uint8_t *allocateSpace(intptr_t Size, unsigned Alignment) {
@@ -169,7 +164,7 @@ public:
 bool LoadAssemblyInto(Module *M, const char *assembly) {
   SMDiagnostic Error;
   bool success =
-    nullptr != ParseAssemblyString(assembly, M, Error, M->getContext());
+    NULL != ParseAssemblyString(assembly, M, Error, M->getContext());
   std::string errMsg;
   raw_string_ostream os(errMsg);
   Error.print("", os);
@@ -193,7 +188,7 @@ class JITTest : public testing::Test {
                  .setJITMemoryManager(RJMM)
                  .setErrorStr(&Error)
                  .setTargetOptions(Options).create());
-    ASSERT_TRUE(TheJIT.get() != nullptr) << Error;
+    ASSERT_TRUE(TheJIT.get() != NULL) << Error;
   }
 
   void LoadAssembly(const char *assembly) {
@@ -203,7 +198,7 @@ class JITTest : public testing::Test {
   LLVMContext Context;
   Module *M;  // Owned by ExecutionEngine.
   RecordingJITMemoryManager *RJMM;
-  std::unique_ptr<ExecutionEngine> TheJIT;
+  OwningPtr<ExecutionEngine> TheJIT;
 };
 
 // Regression test for a bug.  The JIT used to allocate globals inside the same
@@ -220,13 +215,13 @@ TEST(JIT, GlobalInFunction) {
   // memory is more easily tested.
   MemMgr->setPoisonMemory(true);
   std::string Error;
-  std::unique_ptr<ExecutionEngine> JIT(EngineBuilder(M)
-                                           .setEngineKind(EngineKind::JIT)
-                                           .setErrorStr(&Error)
-                                           .setJITMemoryManager(MemMgr)
-                                           // The next line enables the fix:
-                                           .setAllocateGVsWithCode(false)
-                                           .create());
+  OwningPtr<ExecutionEngine> JIT(EngineBuilder(M)
+                                 .setEngineKind(EngineKind::JIT)
+                                 .setErrorStr(&Error)
+                                 .setJITMemoryManager(MemMgr)
+                                 // The next line enables the fix:
+                                 .setAllocateGVsWithCode(false)
+                                 .create());
   ASSERT_EQ(Error, "");
 
   // Create a global variable.
@@ -249,7 +244,7 @@ TEST(JIT, GlobalInFunction) {
 
   // Since F1 was codegen'd, a pointer to G should be available.
   int32_t *GPtr = (int32_t*)JIT->getPointerToGlobalIfAvailable(G);
-  ASSERT_NE((int32_t*)nullptr, GPtr);
+  ASSERT_NE((int32_t*)NULL, GPtr);
   EXPECT_EQ(0, *GPtr);
 
   // F1() should increment G.
@@ -439,7 +434,7 @@ TEST_F(JITTest, ModuleDeletion) {
 // too far away to call directly.  This #if can probably be removed when
 // http://llvm.org/PR5201 is fixed.
 #if !defined(__arm__) && !defined(__mips__) && \
-    !defined(__powerpc__) && !defined(__ppc__) && !defined(__aarch64__)
+    !defined(__powerpc__) && !defined(__ppc__)
 typedef int (*FooPtr) ();
 
 TEST_F(JITTest, NoStubs) {
@@ -515,7 +510,7 @@ TEST_F(JITTest, FunctionPointersOutliveTheirCreator) {
 
 // ARM does not have an implementation of replaceMachineCodeForFunction(),
 // so recompileAndRelinkFunction doesn't work.
-#if !defined(__arm__) && !defined(__aarch64__)
+#if !defined(__arm__)
 TEST_F(JITTest, FunctionIsRecompiledAndRelinked) {
   Function *F = Function::Create(TypeBuilder<int(void), false>::get(Context),
                                  GlobalValue::ExternalLinkage, "test", M);
@@ -632,23 +627,22 @@ ExecutionEngine *getJITFromBitcode(
   // c_str() is null-terminated like MemoryBuffer::getMemBuffer requires.
   MemoryBuffer *BitcodeBuffer =
     MemoryBuffer::getMemBuffer(Bitcode, "Bitcode for test");
-  ErrorOr<Module*> ModuleOrErr = getLazyBitcodeModule(BitcodeBuffer, Context);
-  if (std::error_code EC = ModuleOrErr.getError()) {
-    ADD_FAILURE() << EC.message();
-    delete BitcodeBuffer;
-    return nullptr;
-  }
-  M = ModuleOrErr.get();
   std::string errMsg;
+  M = getLazyBitcodeModule(BitcodeBuffer, Context, &errMsg);
+  if (M == NULL) {
+    ADD_FAILURE() << errMsg;
+    delete BitcodeBuffer;
+    return NULL;
+  }
   ExecutionEngine *TheJIT = EngineBuilder(M)
     .setEngineKind(EngineKind::JIT)
     .setErrorStr(&errMsg)
     .create();
-  if (TheJIT == nullptr) {
+  if (TheJIT == NULL) {
     ADD_FAILURE() << errMsg;
     delete M;
-    M = nullptr;
-    return nullptr;
+    M = NULL;
+    return NULL;
   }
   return TheJIT;
 }
@@ -669,8 +663,7 @@ TEST(LazyLoadedJITTest, MaterializableAvailableExternallyFunctionIsntCompiled) {
                       "} ");
   ASSERT_FALSE(Bitcode.empty()) << "Assembling failed";
   Module *M;
-  std::unique_ptr<ExecutionEngine> TheJIT(
-      getJITFromBitcode(Context, Bitcode, M));
+  OwningPtr<ExecutionEngine> TheJIT(getJITFromBitcode(Context, Bitcode, M));
   ASSERT_TRUE(TheJIT.get()) << "Failed to create JIT.";
   TheJIT->DisableLazyCompilation(true);
 
@@ -709,8 +702,7 @@ TEST(LazyLoadedJITTest, EagerCompiledRecursionThroughGhost) {
                       "} ");
   ASSERT_FALSE(Bitcode.empty()) << "Assembling failed";
   Module *M;
-  std::unique_ptr<ExecutionEngine> TheJIT(
-      getJITFromBitcode(Context, Bitcode, M));
+  OwningPtr<ExecutionEngine> TheJIT(getJITFromBitcode(Context, Bitcode, M));
   ASSERT_TRUE(TheJIT.get()) << "Failed to create JIT.";
   TheJIT->DisableLazyCompilation(true);
 
@@ -724,5 +716,17 @@ TEST(LazyLoadedJITTest, EagerCompiledRecursionThroughGhost) {
   EXPECT_EQ(3, recur1(4));
 }
 #endif // !defined(__arm__) && !defined(__powerpc__) && !defined(__s390__)
+
+// This code is copied from JITEventListenerTest, but it only runs once for all
+// the tests in this directory.  Everything seems fine, but that's strange
+// behavior.
+class JITEnvironment : public testing::Environment {
+  virtual void SetUp() {
+    // Required to create a JIT.
+    InitializeNativeTarget();
+  }
+};
+testing::Environment* const jit_env =
+  testing::AddGlobalTestEnvironment(new JITEnvironment);
 
 }

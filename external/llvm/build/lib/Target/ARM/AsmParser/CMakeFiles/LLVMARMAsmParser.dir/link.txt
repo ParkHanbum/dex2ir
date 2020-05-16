@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMARMAsmParser.a  CMakeFiles/LLVMARMAsmParser.dir/ARMAsmParser.cpp.o
+/usr/bin/ranlib ../../../libLLVMARMAsmParser.a

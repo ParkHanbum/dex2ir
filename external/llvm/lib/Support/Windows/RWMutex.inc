@@ -16,7 +16,7 @@
 //===          is guaranteed to work on *all* Win32 variants.
 //===----------------------------------------------------------------------===//
 
-#include "WindowsSupport.h"
+#include "Windows.h"
 
 namespace llvm {
 using namespace sys;
@@ -48,7 +48,8 @@ static bool loadSRW() {
   if (!sChecked) {
     sChecked = true;
 
-    if (HMODULE hLib = ::GetModuleHandleW(L"Kernel32.dll")) {
+    HMODULE hLib = ::LoadLibrary(TEXT("Kernel32"));
+    if (hLib) {
       fpInitializeSRWLock =
         (VOID (WINAPI *)(PSRWLOCK))::GetProcAddress(hLib,
                                                "InitializeSRWLock");
@@ -64,6 +65,7 @@ static bool loadSRW() {
       fpReleaseSRWLockShared =
         (VOID (WINAPI *)(PSRWLOCK))::GetProcAddress(hLib,
                                                "ReleaseSRWLockShared");
+      ::FreeLibrary(hLib);
 
       if (fpInitializeSRWLock != NULL) {
         sHasSRW = true;

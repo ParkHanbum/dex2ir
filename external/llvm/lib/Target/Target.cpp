@@ -24,6 +24,14 @@
 
 using namespace llvm;
 
+inline DataLayout *unwrap(LLVMTargetDataRef P) {
+  return reinterpret_cast<DataLayout*>(P);
+}
+
+inline LLVMTargetDataRef wrap(const DataLayout *P) {
+  return reinterpret_cast<LLVMTargetDataRef>(const_cast<DataLayout*>(P));
+}
+
 inline TargetLibraryInfo *unwrap(LLVMTargetLibraryInfoRef P) {
   return reinterpret_cast<TargetLibraryInfo*>(P);
 }
@@ -34,7 +42,7 @@ inline LLVMTargetLibraryInfoRef wrap(const TargetLibraryInfo *P) {
 }
 
 void llvm::initializeTarget(PassRegistry &Registry) {
-  initializeDataLayoutPassPass(Registry);
+  initializeDataLayoutPass(Registry);
   initializeTargetLibraryInfoPass(Registry);
 }
 
@@ -47,9 +55,7 @@ LLVMTargetDataRef LLVMCreateTargetData(const char *StringRep) {
 }
 
 void LLVMAddTargetData(LLVMTargetDataRef TD, LLVMPassManagerRef PM) {
-  // The DataLayoutPass must now be in sync with the module. Unfortunatelly we
-  // cannot enforce that from the C api.
-  unwrap(PM)->add(new DataLayoutPass(*unwrap(TD)));
+  unwrap(PM)->add(new DataLayout(*unwrap(TD)));
 }
 
 void LLVMAddTargetLibraryInfo(LLVMTargetLibraryInfoRef TLI,
@@ -82,14 +88,6 @@ LLVMTypeRef LLVMIntPtrTypeForAS(LLVMTargetDataRef TD, unsigned AS) {
   return wrap(unwrap(TD)->getIntPtrType(getGlobalContext(), AS));
 }
 
-LLVMTypeRef LLVMIntPtrTypeInContext(LLVMContextRef C, LLVMTargetDataRef TD) {
-  return wrap(unwrap(TD)->getIntPtrType(*unwrap(C)));
-}
-
-LLVMTypeRef LLVMIntPtrTypeForASInContext(LLVMContextRef C, LLVMTargetDataRef TD, unsigned AS) {
-  return wrap(unwrap(TD)->getIntPtrType(*unwrap(C), AS));
-}
-
 unsigned long long LLVMSizeOfTypeInBits(LLVMTargetDataRef TD, LLVMTypeRef Ty) {
   return unwrap(TD)->getTypeSizeInBits(unwrap(Ty));
 }
@@ -107,7 +105,7 @@ unsigned LLVMABIAlignmentOfType(LLVMTargetDataRef TD, LLVMTypeRef Ty) {
 }
 
 unsigned LLVMCallFrameAlignmentOfType(LLVMTargetDataRef TD, LLVMTypeRef Ty) {
-  return unwrap(TD)->getABITypeAlignment(unwrap(Ty));
+  return unwrap(TD)->getCallFrameTypeAlignment(unwrap(Ty));
 }
 
 unsigned LLVMPreferredAlignmentOfType(LLVMTargetDataRef TD, LLVMTypeRef Ty) {

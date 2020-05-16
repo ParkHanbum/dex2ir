@@ -17,7 +17,6 @@ add_llvm_target(HexagonCodeGen
   HexagonFrameLowering.cpp
   HexagonHardwareLoops.cpp
   HexagonFixupHwLoops.cpp
-  HexagonMachineFunctionInfo.cpp
   HexagonMachineScheduler.cpp
   HexagonMCInstLower.cpp
   HexagonInstrInfo.cpp
@@ -36,6 +35,8 @@ add_llvm_target(HexagonCodeGen
   HexagonNewValueJump.cpp
   HexagonCopyToCombine.cpp
 )
+
+add_dependencies(LLVMHexagonCodeGen HexagonCommonTableGen intrinsics_gen)
 
 add_subdirectory(TargetInfo)
 add_subdirectory(InstPrinter)

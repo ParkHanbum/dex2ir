@@ -19,7 +19,6 @@
 
 #include "AMDGPUAsmPrinter.h"
 #include "AMDGPU.h"
-#include "AMDGPUSubtarget.h"
 #include "R600Defines.h"
 #include "R600MachineFunctionInfo.h"
 #include "R600RegisterInfo.h"
@@ -36,24 +35,6 @@
 
 using namespace llvm;
 
-// TODO: This should get the default rounding mode from the kernel. We just set
-// the default here, but this could change if the OpenCL rounding mode pragmas
-// are used.
-//
-// The denormal mode here should match what is reported by the OpenCL runtime
-// for the CL_FP_DENORM bit from CL_DEVICE_{HALF|SINGLE|DOUBLE}_FP_CONFIG, but
-// can also be override to flush with the -cl-denorms-are-zero compiler flag.
-//
-// AMD OpenCL only sets flush none and reports CL_FP_DENORM for double
-// precision, and leaves single precision to flush all and does not report
-// CL_FP_DENORM for CL_DEVICE_SINGLE_FP_CONFIG. Mesa's OpenCL currently reports
-// CL_FP_DENORM for both.
-static uint32_t getFPMode(MachineFunction &) {
-  return FP_ROUND_MODE_SP(FP_ROUND_ROUND_TO_NEAREST) |
-         FP_ROUND_MODE_DP(FP_ROUND_ROUND_TO_NEAREST) |
-         FP_DENORM_MODE_SP(FP_DENORM_FLUSH_NONE) |
-         FP_DENORM_MODE_DP(FP_DENORM_FLUSH_NONE);
-}
 
 static AsmPrinter *createAMDGPUAsmPrinterPass(TargetMachine &tm,
                                               MCStreamer &Streamer) {
@@ -64,84 +45,32 @@ extern "C" void LLVMInitializeR600AsmPrinter() {
   TargetRegistry::RegisterAsmPrinter(TheAMDGPUTarget, createAMDGPUAsmPrinterPass);
 }
 
-AMDGPUAsmPrinter::AMDGPUAsmPrinter(TargetMachine &TM, MCStreamer &Streamer)
-    : AsmPrinter(TM, Streamer) {
-  DisasmEnabled = TM.getSubtarget<AMDGPUSubtarget>().dumpCode();
-}
-
+/// We need to override this function so we can avoid
+/// the call to EmitFunctionHeader(), which the MCPureStreamer can't handle.
 bool AMDGPUAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
-  SetupMachineFunction(MF);
-
-  OutStreamer.emitRawComment(Twine('@') + MF.getName() + Twine(':'));
-
-  MCContext &Context = getObjFileLowering().getContext();
-  const MCSectionELF *ConfigSection = Context.getELFSection(".AMDGPU.config",
-                                              ELF::SHT_PROGBITS, 0,
-                                              SectionKind::getReadOnly());
-  OutStreamer.SwitchSection(ConfigSection);
-
   const AMDGPUSubtarget &STM = TM.getSubtarget<AMDGPUSubtarget>();
-  SIProgramInfo KernelInfo;
-  if (STM.getGeneration() > AMDGPUSubtarget::NORTHERN_ISLANDS) {
-    getSIProgramInfo(KernelInfo, MF);
-    EmitProgramInfoSI(MF, KernelInfo);
-  } else {
-    EmitProgramInfoR600(MF);
-  }
-
-  DisasmLines.clear();
-  HexLines.clear();
-  DisasmLineMaxLen = 0;
-
-  OutStreamer.SwitchSection(getObjFileLowering().getTextSection());
-  EmitFunctionBody();
-
-  if (isVerbose()) {
-    const MCSectionELF *CommentSection
-      = Context.getELFSection(".AMDGPU.csdata",
-                              ELF::SHT_PROGBITS, 0,
-                              SectionKind::getReadOnly());
-    OutStreamer.SwitchSection(CommentSection);
-
-    if (STM.getGeneration() >= AMDGPUSubtarget::SOUTHERN_ISLANDS) {
-      OutStreamer.emitRawComment(" Kernel info:", false);
-      OutStreamer.emitRawComment(" codeLenInByte = " + Twine(KernelInfo.CodeLen),
-                                 false);
-      OutStreamer.emitRawComment(" NumSgprs: " + Twine(KernelInfo.NumSGPR),
-                                 false);
-      OutStreamer.emitRawComment(" NumVgprs: " + Twine(KernelInfo.NumVGPR),
-                                 false);
-      OutStreamer.emitRawComment(" FloatMode: " + Twine(KernelInfo.FloatMode),
-                                 false);
-      OutStreamer.emitRawComment(" IeeeMode: " + Twine(KernelInfo.IEEEMode),
-                                 false);
-    } else {
-      R600MachineFunctionInfo *MFI = MF.getInfo<R600MachineFunctionInfo>();
-      OutStreamer.emitRawComment(
-        Twine("SQ_PGM_RESOURCES:STACK_SIZE = " + Twine(MFI->StackSize)));
-    }
-  }
-
   if (STM.dumpCode()) {
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
     MF.dump();
 #endif
-
-    if (DisasmEnabled) {
-      OutStreamer.SwitchSection(Context.getELFSection(".AMDGPU.disasm",
-                                                  ELF::SHT_NOTE, 0,
-                                                  SectionKind::getReadOnly()));
-
-      for (size_t i = 0; i < DisasmLines.size(); ++i) {
-        std::string Comment(DisasmLineMaxLen - DisasmLines[i].size(), ' ');
-        Comment += " ; " + HexLines[i] + "\n";
-
-        OutStreamer.EmitBytes(StringRef(DisasmLines[i]));
-        OutStreamer.EmitBytes(StringRef(Comment));
-      }
-    }
+  }
+  SetupMachineFunction(MF);
+  if (OutStreamer.hasRawTextSupport()) {
+    OutStreamer.EmitRawText("@" + MF.getName() + ":");
   }
 
+  const MCSectionELF *ConfigSection = getObjFileLowering().getContext()
+                                              .getELFSection(".AMDGPU.config",
+                                              ELF::SHT_PROGBITS, 0,
+                                              SectionKind::getReadOnly());
+  OutStreamer.SwitchSection(ConfigSection);
+  if (STM.getGeneration() > AMDGPUSubtarget::NORTHERN_ISLANDS) {
+    EmitProgramInfoSI(MF);
+  } else {
+    EmitProgramInfoR600(MF);
+  }
+  OutStreamer.SwitchSection(getObjFileLowering().getTextSection());
+  EmitFunctionBody();
   return false;
 }
 
@@ -209,9 +138,7 @@ void AMDGPUAsmPrinter::EmitProgramInfoR600(MachineFunction &MF) {
   }
 }
 
-void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
-                                        MachineFunction &MF) const {
-  uint64_t CodeSize = 0;
+void AMDGPUAsmPrinter::EmitProgramInfoSI(MachineFunction &MF) {
   unsigned MaxSGPR = 0;
   unsigned MaxVGPR = 0;
   bool VCCUsed = false;
@@ -225,28 +152,24 @@ void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
                                                     I != E; ++I) {
       MachineInstr &MI = *I;
 
-      // TODO: CodeSize should account for multiple functions.
-      CodeSize += MI.getDesc().Size;
-
       unsigned numOperands = MI.getNumOperands();
       for (unsigned op_idx = 0; op_idx < numOperands; op_idx++) {
-        MachineOperand &MO = MI.getOperand(op_idx);
+        MachineOperand & MO = MI.getOperand(op_idx);
+        unsigned maxUsed;
         unsigned width = 0;
         bool isSGPR = false;
-
+        unsigned reg;
+        unsigned hwReg;
         if (!MO.isReg()) {
           continue;
         }
-        unsigned reg = MO.getReg();
-        if (reg == AMDGPU::VCC || reg == AMDGPU::VCC_LO ||
-	    reg == AMDGPU::VCC_HI) {
+        reg = MO.getReg();
+        if (reg == AMDGPU::VCC) {
           VCCUsed = true;
           continue;
         }
-
         switch (reg) {
         default: break;
-        case AMDGPU::SCC:
         case AMDGPU::EXEC:
         case AMDGPU::M0:
           continue;
@@ -279,17 +202,14 @@ void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
         } else if (AMDGPU::VReg_256RegClass.contains(reg)) {
           isSGPR = false;
           width = 8;
-        } else if (AMDGPU::SReg_512RegClass.contains(reg)) {
-          isSGPR = true;
-          width = 16;
         } else if (AMDGPU::VReg_512RegClass.contains(reg)) {
           isSGPR = false;
           width = 16;
         } else {
-          llvm_unreachable("Unknown register class");
+          assert(!"Unknown register class");
         }
-        unsigned hwReg = RI->getEncodingValue(reg) & 0xff;
-        unsigned maxUsed = hwReg + width - 1;
+        hwReg = RI->getEncodingValue(reg) & 0xff;
+        maxUsed = hwReg + width - 1;
         if (isSGPR) {
           MaxSGPR = maxUsed > MaxSGPR ? maxUsed : MaxSGPR;
         } else {
@@ -298,31 +218,10 @@ void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
       }
     }
   }
-
-  if (VCCUsed)
+  if (VCCUsed) {
     MaxSGPR += 2;
-
-  ProgInfo.NumVGPR = MaxVGPR;
-  ProgInfo.NumSGPR = MaxSGPR;
-
-  // Set the value to initialize FP_ROUND and FP_DENORM parts of the mode
-  // register.
-  ProgInfo.FloatMode = getFPMode(MF);
-
-  // XXX: Not quite sure what this does, but sc seems to unset this.
-  ProgInfo.IEEEMode = 0;
-
-  // Do not clamp NAN to 0.
-  ProgInfo.DX10Clamp = 0;
-
-  ProgInfo.CodeLen = CodeSize;
-}
-
-void AMDGPUAsmPrinter::EmitProgramInfoSI(MachineFunction &MF,
-                                         const SIProgramInfo &KernelInfo) {
-  const AMDGPUSubtarget &STM = TM.getSubtarget<AMDGPUSubtarget>();
-  SIMachineFunctionInfo *MFI = MF.getInfo<SIMachineFunctionInfo>();
-
+  }
+  SIMachineFunctionInfo * MFI = MF.getInfo<SIMachineFunctionInfo>();
   unsigned RsrcReg;
   switch (MFI->ShaderType) {
   default: // Fall through
@@ -332,44 +231,16 @@ void AMDGPUAsmPrinter::EmitProgramInfoSI(MachineFunction &MF,
   case ShaderType::VERTEX:   RsrcReg = R_00B128_SPI_SHADER_PGM_RSRC1_VS; break;
   }
 
-  unsigned LDSAlignShift;
-  if (STM.getGeneration() < AMDGPUSubtarget::SEA_ISLANDS) {
-    // LDS is allocated in 64 dword blocks.
-    LDSAlignShift = 8;
-  } else {
-    // LDS is allocated in 128 dword blocks.
-    LDSAlignShift = 9;
-  }
-
-  unsigned LDSBlocks =
-    RoundUpToAlignment(MFI->LDSSize, 1 << LDSAlignShift) >> LDSAlignShift;
+  OutStreamer.EmitIntValue(RsrcReg, 4);
+  OutStreamer.EmitIntValue(S_00B028_VGPRS(MaxVGPR / 4) | S_00B028_SGPRS(MaxSGPR / 8), 4);
 
   if (MFI->ShaderType == ShaderType::COMPUTE) {
-    OutStreamer.EmitIntValue(R_00B848_COMPUTE_PGM_RSRC1, 4);
-
-    const uint32_t ComputePGMRSrc1 =
-      S_00B848_VGPRS(KernelInfo.NumVGPR / 4) |
-      S_00B848_SGPRS(KernelInfo.NumSGPR / 8) |
-      S_00B848_PRIORITY(KernelInfo.Priority) |
-      S_00B848_FLOAT_MODE(KernelInfo.FloatMode) |
-      S_00B848_PRIV(KernelInfo.Priv) |
-      S_00B848_DX10_CLAMP(KernelInfo.DX10Clamp) |
-      S_00B848_IEEE_MODE(KernelInfo.DebugMode) |
-      S_00B848_IEEE_MODE(KernelInfo.IEEEMode);
-
-    OutStreamer.EmitIntValue(ComputePGMRSrc1, 4);
-
     OutStreamer.EmitIntValue(R_00B84C_COMPUTE_PGM_RSRC2, 4);
-    OutStreamer.EmitIntValue(S_00B84C_LDS_SIZE(LDSBlocks), 4);
-  } else {
-    OutStreamer.EmitIntValue(RsrcReg, 4);
-    OutStreamer.EmitIntValue(S_00B028_VGPRS(KernelInfo.NumVGPR / 4) |
-                             S_00B028_SGPRS(KernelInfo.NumSGPR / 8), 4);
+    OutStreamer.EmitIntValue(S_00B84C_LDS_SIZE(RoundUpToAlignment(MFI->LDSSize, 256) >> 8), 4);
   }
-
   if (MFI->ShaderType == ShaderType::PIXEL) {
     OutStreamer.EmitIntValue(R_00B02C_SPI_SHADER_PGM_RSRC2_PS, 4);
-    OutStreamer.EmitIntValue(S_00B02C_EXTRA_LDS_SIZE(LDSBlocks), 4);
+    OutStreamer.EmitIntValue(S_00B02C_EXTRA_LDS_SIZE(RoundUpToAlignment(MFI->LDSSize, 256) >> 8), 4);
     OutStreamer.EmitIntValue(R_0286CC_SPI_PS_INPUT_ENA, 4);
     OutStreamer.EmitIntValue(MFI->PSInputAddr, 4);
   }

@@ -1,7 +1,6 @@
-; Test 64-bit atomic minimum and maximum.  Here we match the z10 versions,
-; which can't use LOCGR.
+; Test 64-bit atomic minimum and maximum.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 ; Check signed minium.
 define i64 @f1(i64 %dummy, i64 *%src, i64 %b) {
@@ -38,8 +37,9 @@ define i64 @f3(i64 %dummy, i64 *%src, i64 %b) {
 ; CHECK-LABEL: f3:
 ; CHECK: lg %r2, 0(%r3)
 ; CHECK: [[LOOP:\.[^:]*]]:
+; CHECK: clgr %r2, %r4
 ; CHECK: lgr [[NEW:%r[0-9]+]], %r2
-; CHECK: clgrjle %r2, %r4, [[KEEP:\..*]]
+; CHECK: jle [[KEEP:\..*]]
 ; CHECK: lgr [[NEW]], %r4
 ; CHECK: csg %r2, [[NEW]], 0(%r3)
 ; CHECK: jl [[LOOP]]
@@ -53,8 +53,9 @@ define i64 @f4(i64 %dummy, i64 *%src, i64 %b) {
 ; CHECK-LABEL: f4:
 ; CHECK: lg %r2, 0(%r3)
 ; CHECK: [[LOOP:\.[^:]*]]:
+; CHECK: clgr %r2, %r4
 ; CHECK: lgr [[NEW:%r[0-9]+]], %r2
-; CHECK: clgrjhe %r2, %r4, [[KEEP:\..*]]
+; CHECK: jhe [[KEEP:\..*]]
 ; CHECK: lgr [[NEW]], %r4
 ; CHECK: csg %r2, [[NEW]], 0(%r3)
 ; CHECK: jl [[LOOP]]

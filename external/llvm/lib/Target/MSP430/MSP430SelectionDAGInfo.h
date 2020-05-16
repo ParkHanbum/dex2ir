@@ -22,7 +22,7 @@ class MSP430TargetMachine;
 
 class MSP430SelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit MSP430SelectionDAGInfo(const DataLayout &DL);
+  explicit MSP430SelectionDAGInfo(const MSP430TargetMachine &TM);
   ~MSP430SelectionDAGInfo();
 };
 

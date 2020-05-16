@@ -99,9 +99,6 @@ class BumpPtrAllocator {
   /// allocate a separate slab.
   size_t SizeThreshold;
 
-  /// \brief the default allocator used if one is not provided
-  MallocSlabAllocator DefaultSlabAllocator;
-
   /// Allocator - The underlying allocator we use to get slabs of memory.  This
   /// defaults to MallocSlabAllocator, which wraps malloc, but it could be
   /// changed to use a custom allocator.
@@ -136,10 +133,12 @@ class BumpPtrAllocator {
   /// one.
   void DeallocateSlabs(MemSlab *Slab);
 
+  static MallocSlabAllocator DefaultSlabAllocator;
+
   template<typename T> friend class SpecificBumpPtrAllocator;
 public:
-  BumpPtrAllocator(size_t size = 4096, size_t threshold = 4096);
-  BumpPtrAllocator(size_t size, size_t threshold, SlabAllocator &allocator);
+  BumpPtrAllocator(size_t size = 4096, size_t threshold = 4096,
+                   SlabAllocator &allocator = DefaultSlabAllocator);
   ~BumpPtrAllocator();
 
   /// Reset - Deallocate all but the current slab and reset the current pointer
@@ -190,10 +189,8 @@ template <typename T>
 class SpecificBumpPtrAllocator {
   BumpPtrAllocator Allocator;
 public:
-  SpecificBumpPtrAllocator(size_t size = 4096, size_t threshold = 4096)
-    : Allocator(size, threshold) {}
-  SpecificBumpPtrAllocator(size_t size, size_t threshold,
-                           SlabAllocator &allocator)
+  SpecificBumpPtrAllocator(size_t size = 4096, size_t threshold = 4096,
+              SlabAllocator &allocator = BumpPtrAllocator::DefaultSlabAllocator)
     : Allocator(size, threshold, allocator) {}
 
   ~SpecificBumpPtrAllocator() {

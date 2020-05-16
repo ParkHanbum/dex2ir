@@ -11,12 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "subtarget"
 #include "X86Subtarget.h"
 #include "X86InstrInfo.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
@@ -24,24 +24,15 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#endif
-
-using namespace llvm;
-
-#define DEBUG_TYPE "subtarget"
-
 #define GET_SUBTARGETINFO_TARGET_DESC
 #define GET_SUBTARGETINFO_CTOR
 #include "X86GenSubtargetInfo.inc"
 
-// Temporary option to control early if-conversion for x86 while adding machine
-// models.
-static cl::opt<bool>
-X86EarlyIfConv("x86-early-ifcvt", cl::Hidden,
-               cl::desc("Enable early if-conversion on X86"));
+using namespace llvm;
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 /// ClassifyBlockAddressReference - Classify a blockaddress reference for the
 /// current subtarget according to how we should reference it in a non-pcrel
@@ -64,7 +55,7 @@ unsigned char X86Subtarget::
 ClassifyGlobalReference(const GlobalValue *GV, const TargetMachine &TM) const {
   // DLLImport only exists on windows, it is implemented as a load from a
   // DLLIMPORT stub.
-  if (GV->hasDLLImportStorageClass())
+  if (GV->hasDLLImportLinkage())
     return X86II::MO_DLLIMPORT;
 
   // Determine whether this is a reference to a definition or a declaration.
@@ -162,7 +153,7 @@ const char *X86Subtarget::getBZeroEntry() const {
       !getTargetTriple().isMacOSXVersionLT(10, 6))
     return "__bzero";
 
-  return nullptr;
+  return 0;
 }
 
 bool X86Subtarget::hasSinCos() const {
@@ -174,24 +165,214 @@ bool X86Subtarget::hasSinCos() const {
 /// IsLegalToCallImmediateAddr - Return true if the subtarget allows calls
 /// to immediate address.
 bool X86Subtarget::IsLegalToCallImmediateAddr(const TargetMachine &TM) const {
-  // FIXME: I386 PE/COFF supports PC relative calls using IMAGE_REL_I386_REL32
-  // but WinCOFFObjectWriter::RecordRelocation cannot emit them.  Once it does,
-  // the following check for Win32 should be removed.
-  if (In64BitMode || isTargetWin32())
+  if (In64BitMode)
     return false;
   return isTargetELF() || TM.getRelocationModel() == Reloc::Static;
 }
 
+static bool OSHasAVXSupport() {
+#if defined(i386) || defined(__i386__) || defined(__x86__) || defined(_M_IX86)\
+    || defined(__x86_64__) || defined(_M_AMD64) || defined (_M_X64)
+#if defined(__GNUC__)
+  // Check xgetbv; this uses a .byte sequence instead of the instruction
+  // directly because older assemblers do not include support for xgetbv and
+  // there is no easy way to conditionally compile based on the assembler used.
+  int rEAX, rEDX;
+  __asm__ (".byte 0x0f, 0x01, 0xd0" : "=a" (rEAX), "=d" (rEDX) : "c" (0));
+#elif defined(_MSC_FULL_VER) && defined(_XCR_XFEATURE_ENABLED_MASK)
+  unsigned long long rEAX = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+#else
+  int rEAX = 0; // Ensures we return false
+#endif
+  return (rEAX & 6) == 6;
+#else
+  return false;
+#endif
+}
+
+void X86Subtarget::AutoDetectSubtargetFeatures() {
+  unsigned EAX = 0, EBX = 0, ECX = 0, EDX = 0;
+  unsigned MaxLevel;
+  union {
+    unsigned u[3];
+    char     c[12];
+  } text;
+
+  if (X86_MC::GetCpuIDAndInfo(0, &MaxLevel, text.u+0, text.u+2, text.u+1) ||
+      MaxLevel < 1)
+    return;
+
+  X86_MC::GetCpuIDAndInfo(0x1, &EAX, &EBX, &ECX, &EDX);
+
+  if ((EDX >> 15) & 1) { HasCMov = true;      ToggleFeature(X86::FeatureCMOV); }
+  if ((EDX >> 23) & 1) { X86SSELevel = MMX;   ToggleFeature(X86::FeatureMMX);  }
+  if ((EDX >> 25) & 1) { X86SSELevel = SSE1;  ToggleFeature(X86::FeatureSSE1); }
+  if ((EDX >> 26) & 1) { X86SSELevel = SSE2;  ToggleFeature(X86::FeatureSSE2); }
+  if (ECX & 0x1)       { X86SSELevel = SSE3;  ToggleFeature(X86::FeatureSSE3); }
+  if ((ECX >> 9)  & 1) { X86SSELevel = SSSE3; ToggleFeature(X86::FeatureSSSE3);}
+  if ((ECX >> 19) & 1) { X86SSELevel = SSE41; ToggleFeature(X86::FeatureSSE41);}
+  if ((ECX >> 20) & 1) { X86SSELevel = SSE42; ToggleFeature(X86::FeatureSSE42);}
+  if (((ECX >> 27) & 1) && ((ECX >> 28) & 1) && OSHasAVXSupport()) {
+    X86SSELevel = AVX;   ToggleFeature(X86::FeatureAVX);
+  }
+
+  bool IsIntel = memcmp(text.c, "GenuineIntel", 12) == 0;
+  bool IsAMD   = !IsIntel && memcmp(text.c, "AuthenticAMD", 12) == 0;
+
+  if ((ECX >> 1) & 0x1) {
+    HasPCLMUL = true;
+    ToggleFeature(X86::FeaturePCLMUL);
+  }
+  if ((ECX >> 12) & 0x1) {
+    HasFMA = true;
+    ToggleFeature(X86::FeatureFMA);
+  }
+  if (IsIntel && ((ECX >> 22) & 0x1)) {
+    HasMOVBE = true;
+    ToggleFeature(X86::FeatureMOVBE);
+  }
+  if ((ECX >> 23) & 0x1) {
+    HasPOPCNT = true;
+    ToggleFeature(X86::FeaturePOPCNT);
+  }
+  if ((ECX >> 25) & 0x1) {
+    HasAES = true;
+    ToggleFeature(X86::FeatureAES);
+  }
+  if ((ECX >> 29) & 0x1) {
+    HasF16C = true;
+    ToggleFeature(X86::FeatureF16C);
+  }
+  if (IsIntel && ((ECX >> 30) & 0x1)) {
+    HasRDRAND = true;
+    ToggleFeature(X86::FeatureRDRAND);
+  }
+
+  if ((ECX >> 13) & 0x1) {
+    HasCmpxchg16b = true;
+    ToggleFeature(X86::FeatureCMPXCHG16B);
+  }
+
+  if (IsIntel || IsAMD) {
+    // Determine if bit test memory instructions are slow.
+    unsigned Family = 0;
+    unsigned Model  = 0;
+    X86_MC::DetectFamilyModel(EAX, Family, Model);
+    if (IsAMD || (Family == 6 && Model >= 13)) {
+      IsBTMemSlow = true;
+      ToggleFeature(X86::FeatureSlowBTMem);
+    }
+
+    // If it's an Intel chip since Nehalem and not an Atom chip, unaligned
+    // memory access is fast. We hard code model numbers here because they
+    // aren't strictly increasing for Intel chips it seems.
+    if (IsIntel &&
+        ((Family == 6 && Model == 0x1E) || // Nehalem: Clarksfield, Lynnfield,
+                                           //          Jasper Froest
+         (Family == 6 && Model == 0x1A) || // Nehalem: Bloomfield, Nehalem-EP
+         (Family == 6 && Model == 0x2E) || // Nehalem: Nehalem-EX
+         (Family == 6 && Model == 0x25) || // Westmere: Arrandale, Clarksdale
+         (Family == 6 && Model == 0x2C) || // Westmere: Gulftown, Westmere-EP
+         (Family == 6 && Model == 0x2F) || // Westmere: Westmere-EX
+         (Family == 6 && Model == 0x2A) || // SandyBridge
+         (Family == 6 && Model == 0x2D) || // SandyBridge: SandyBridge-E*
+         (Family == 6 && Model == 0x3A))) {// IvyBridge
+      IsUAMemFast = true;
+      ToggleFeature(X86::FeatureFastUAMem);
+    }
+
+    // Set processor type. Currently only Atom is detected.
+    if (Family == 6 &&
+        (Model == 28 || Model == 38 || Model == 39
+         || Model == 53 || Model == 54)) {
+      X86ProcFamily = IntelAtom;
+
+      UseLeaForSP = true;
+      ToggleFeature(X86::FeatureLeaForSP);
+    }
+
+    unsigned MaxExtLevel;
+    X86_MC::GetCpuIDAndInfo(0x80000000, &MaxExtLevel, &EBX, &ECX, &EDX);
+
+    if (MaxExtLevel >= 0x80000001) {
+      X86_MC::GetCpuIDAndInfo(0x80000001, &EAX, &EBX, &ECX, &EDX);
+      if ((EDX >> 29) & 0x1) {
+        HasX86_64 = true;
+        ToggleFeature(X86::Feature64Bit);
+      }
+      if ((ECX >> 5) & 0x1) {
+        HasLZCNT = true;
+        ToggleFeature(X86::FeatureLZCNT);
+      }
+      if (IsIntel && ((ECX >> 8) & 0x1)) {
+        HasPRFCHW = true;
+        ToggleFeature(X86::FeaturePRFCHW);
+      }
+      if (IsAMD) {
+        if ((ECX >> 6) & 0x1) {
+          HasSSE4A = true;
+          ToggleFeature(X86::FeatureSSE4A);
+        }
+        if ((ECX >> 11) & 0x1) {
+          HasXOP = true;
+          ToggleFeature(X86::FeatureXOP);
+        }
+        if ((ECX >> 16) & 0x1) {
+          HasFMA4 = true;
+          ToggleFeature(X86::FeatureFMA4);
+        }
+      }
+    }
+  }
+
+  if (MaxLevel >= 7) {
+    if (!X86_MC::GetCpuIDAndInfoEx(0x7, 0x0, &EAX, &EBX, &ECX, &EDX)) {
+      if (IsIntel && (EBX & 0x1)) {
+        HasFSGSBase = true;
+        ToggleFeature(X86::FeatureFSGSBase);
+      }
+      if ((EBX >> 3) & 0x1) {
+        HasBMI = true;
+        ToggleFeature(X86::FeatureBMI);
+      }
+      if ((EBX >> 4) & 0x1) {
+        HasHLE = true;
+        ToggleFeature(X86::FeatureHLE);
+      }
+      if (IsIntel && ((EBX >> 5) & 0x1)) {
+        X86SSELevel = AVX2;
+        ToggleFeature(X86::FeatureAVX2);
+      }
+      if (IsIntel && ((EBX >> 8) & 0x1)) {
+        HasBMI2 = true;
+        ToggleFeature(X86::FeatureBMI2);
+      }
+      if (IsIntel && ((EBX >> 11) & 0x1)) {
+        HasRTM = true;
+        ToggleFeature(X86::FeatureRTM);
+      }
+      if (IsIntel && ((EBX >> 19) & 0x1)) {
+        HasADX = true;
+        ToggleFeature(X86::FeatureADX);
+      }
+      if (IsIntel && ((EBX >> 18) & 0x1)) {
+        HasRDSEED = true;
+        ToggleFeature(X86::FeatureRDSEED);
+      }
+    }
+  }
+}
+
 void X86Subtarget::resetSubtargetFeatures(const MachineFunction *MF) {
   AttributeSet FnAttrs = MF->getFunction()->getAttributes();
-  Attribute CPUAttr =
-      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "target-cpu");
-  Attribute FSAttr =
-      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "target-features");
+  Attribute CPUAttr = FnAttrs.getAttribute(AttributeSet::FunctionIndex,
+                                           "target-cpu");
+  Attribute FSAttr = FnAttrs.getAttribute(AttributeSet::FunctionIndex,
+                                          "target-features");
   std::string CPU =
-      !CPUAttr.hasAttribute(Attribute::None) ? CPUAttr.getValueAsString() : "";
+    !CPUAttr.hasAttribute(Attribute::None) ?CPUAttr.getValueAsString() : "";
   std::string FS =
-      !FSAttr.hasAttribute(Attribute::None) ? FSAttr.getValueAsString() : "";
+    !FSAttr.hasAttribute(Attribute::None) ? FSAttr.getValueAsString() : "";
   if (!FS.empty()) {
     initializeEnvironment();
     resetSubtargetFeatures(CPU, FS);
@@ -200,26 +381,57 @@ void X86Subtarget::resetSubtargetFeatures(const MachineFunction *MF) {
 
 void X86Subtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
   std::string CPUName = CPU;
-  if (CPUName.empty())
-    CPUName = "generic";
+  if (!FS.empty() || !CPU.empty()) {
+    if (CPUName.empty()) {
+#if defined(i386) || defined(__i386__) || defined(__x86__) || defined(_M_IX86)\
+    || defined(__x86_64__) || defined(_M_AMD64) || defined (_M_X64)
+      CPUName = sys::getHostCPUName();
+#else
+      CPUName = "generic";
+#endif
+    }
 
-  // Make sure 64-bit features are available in 64-bit mode. (But make sure
-  // SSE2 can be turned off explicitly.)
-  std::string FullFS = FS;
-  if (In64BitMode) {
-    if (!FullFS.empty())
-      FullFS = "+64bit,+sse2," + FullFS;
-    else
-      FullFS = "+64bit,+sse2";
+    // Make sure 64-bit features are available in 64-bit mode. (But make sure
+    // SSE2 can be turned off explicitly.)
+    std::string FullFS = FS;
+    if (In64BitMode) {
+      if (!FullFS.empty())
+        FullFS = "+64bit,+sse2," + FullFS;
+      else
+        FullFS = "+64bit,+sse2";
+    }
+
+    // If feature string is not empty, parse features string.
+    ParseSubtargetFeatures(CPUName, FullFS);
+  } else {
+    if (CPUName.empty()) {
+#if defined (__x86_64__) || defined(__i386__)
+      CPUName = sys::getHostCPUName();
+#else
+      CPUName = "generic";
+#endif
+    }
+    // Otherwise, use CPUID to auto-detect feature set.
+    AutoDetectSubtargetFeatures();
+
+    // Make sure 64-bit features are available in 64-bit mode.
+    if (In64BitMode) {
+      HasX86_64 = true; ToggleFeature(X86::Feature64Bit);
+      HasCMov = true;   ToggleFeature(X86::FeatureCMOV);
+
+      if (X86SSELevel < SSE2) {
+        X86SSELevel = SSE2;
+        ToggleFeature(X86::FeatureSSE1);
+        ToggleFeature(X86::FeatureSSE2);
+      }
+    }
   }
 
-  // If feature string is not empty, parse features string.
-  ParseSubtargetFeatures(CPUName, FullFS);
+  // CPUName may have been set by the CPU detection code. Make sure the
+  // new MCSchedModel is used.
+  InitMCProcessorInfo(CPUName, FS);
 
-  // Make sure the right MCSchedModel is used.
-  InitCPUSchedModel(CPUName);
-
-  if (X86ProcFamily == IntelAtom || X86ProcFamily == IntelSLM)
+  if (X86ProcFamily == IntelAtom)
     PostRAScheduler = true;
 
   InstrItins = getInstrItineraryForCPU(CPUName);
@@ -228,12 +440,6 @@ void X86Subtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
   // target data structure which is shared with MC code emitter, etc.
   if (In64BitMode)
     ToggleFeature(X86::Mode64Bit);
-  else if (In32BitMode)
-    ToggleFeature(X86::Mode32Bit);
-  else if (In16BitMode)
-    ToggleFeature(X86::Mode16Bit);
-  else
-    llvm_unreachable("Not 16-bit, 32-bit or 64-bit mode!");
 
   DEBUG(dbgs() << "Subtarget features: SSELevel " << X86SSELevel
                << ", 3DNowLevel " << X863DNowLevel
@@ -262,7 +468,6 @@ void X86Subtarget::initializeEnvironment() {
   HasFMA = false;
   HasFMA4 = false;
   HasXOP = false;
-  HasTBM = false;
   HasMOVBE = false;
   HasRDRAND = false;
   HasF16C = false;
@@ -274,13 +479,11 @@ void X86Subtarget::initializeEnvironment() {
   HasHLE = false;
   HasERI = false;
   HasCDI = false;
-  HasPFI = false;
+  HasPFI=false;
   HasADX = false;
-  HasSHA = false;
   HasPRFCHW = false;
   HasRDSEED = false;
   IsBTMemSlow = false;
-  IsSHLDSlow = false;
   IsUAMemFast = false;
   HasVectorUAMem = false;
   HasCmpxchg16b = false;
@@ -290,85 +493,29 @@ void X86Subtarget::initializeEnvironment() {
   PadShortFunctions = false;
   CallRegIndirect = false;
   LEAUsesAG = false;
-  SlowLEA = false;
-  SlowIncDec = false;
   stackAlignment = 4;
   // FIXME: this is a known good value for Yonah. How about others?
   MaxInlineSizeThreshold = 128;
 }
 
-static std::string computeDataLayout(const X86Subtarget &ST) {
-  // X86 is little endian
-  std::string Ret = "e";
-
-  Ret += DataLayout::getManglingComponent(ST.getTargetTriple());
-  // X86 and x32 have 32 bit pointers.
-  if (ST.isTarget64BitILP32() || !ST.is64Bit())
-    Ret += "-p:32:32";
-
-  // Some ABIs align 64 bit integers and doubles to 64 bits, others to 32.
-  if (ST.is64Bit() || ST.isOSWindows() || ST.isTargetNaCl())
-    Ret += "-i64:64";
-  else
-    Ret += "-f64:32:64";
-
-  // Some ABIs align long double to 128 bits, others to 32.
-  if (ST.isTargetNaCl())
-    ; // No f80
-  else if (ST.is64Bit() || ST.isTargetDarwin())
-    Ret += "-f80:128";
-  else
-    Ret += "-f80:32";
-
-  // The registers can hold 8, 16, 32 or, in x86-64, 64 bits.
-  if (ST.is64Bit())
-    Ret += "-n8:16:32:64";
-  else
-    Ret += "-n8:16:32";
-
-  // The stack is aligned to 32 bits on some ABIs and 128 bits on others.
-  if (!ST.is64Bit() && ST.isOSWindows())  
-    Ret += "-S32";
-  else
-    Ret += "-S128";
-
-  return Ret;
-}
-
-X86Subtarget &X86Subtarget::initializeSubtargetDependencies(StringRef CPU,
-                                                            StringRef FS) {
+X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
+                           const std::string &FS,
+                           unsigned StackAlignOverride, bool is64Bit)
+  : X86GenSubtargetInfo(TT, CPU, FS)
+  , X86ProcFamily(Others)
+  , PICStyle(PICStyles::None)
+  , TargetTriple(TT)
+  , StackAlignOverride(StackAlignOverride)
+  , In64BitMode(is64Bit) {
   initializeEnvironment();
   resetSubtargetFeatures(CPU, FS);
-  return *this;
 }
 
-X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
-                           const std::string &FS, X86TargetMachine &TM,
-                           unsigned StackAlignOverride)
-    : X86GenSubtargetInfo(TT, CPU, FS), X86ProcFamily(Others),
-      PICStyle(PICStyles::None), TargetTriple(TT),
-      StackAlignOverride(StackAlignOverride),
-      In64BitMode(TargetTriple.getArch() == Triple::x86_64),
-      In32BitMode(TargetTriple.getArch() == Triple::x86 &&
-                  TargetTriple.getEnvironment() != Triple::CODE16),
-      In16BitMode(TargetTriple.getArch() == Triple::x86 &&
-                  TargetTriple.getEnvironment() == Triple::CODE16),
-      DL(computeDataLayout(*this)), TSInfo(DL),
-      InstrInfo(initializeSubtargetDependencies(CPU, FS)), TLInfo(TM),
-      FrameLowering(TargetFrameLowering::StackGrowsDown, getStackAlignment(),
-                    is64Bit() ? -8 : -4),
-      JITInfo(hasSSE1()) {}
-
-bool
-X86Subtarget::enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                                    TargetSubtargetInfo::AntiDepBreakMode &Mode,
-                                    RegClassVector &CriticalPathRCs) const {
+bool X86Subtarget::enablePostRAScheduler(
+           CodeGenOpt::Level OptLevel,
+           TargetSubtargetInfo::AntiDepBreakMode& Mode,
+           RegClassVector& CriticalPathRCs) const {
   Mode = TargetSubtargetInfo::ANTIDEP_CRITICAL;
   CriticalPathRCs.clear();
   return PostRAScheduler && OptLevel >= CodeGenOpt::Default;
-}
-
-bool
-X86Subtarget::enableEarlyIfConversion() const {
-  return hasCMov() && X86EarlyIfConv;
 }

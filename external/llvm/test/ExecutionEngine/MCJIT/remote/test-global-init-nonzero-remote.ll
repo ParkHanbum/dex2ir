@@ -1,8 +1,9 @@
-; RUN: %lli_mcjit -remote-mcjit -mcjit-remote-process=lli-child-target%exeext %s > /dev/null
+; RUN: %lli_mcjit -remote-mcjit %s > /dev/null
+; XFAIL: mips
 
 @count = global i32 1, align 4
 
-define i32 @main() nounwind {
+define i32 @main() nounwind uwtable {
 entry:
   %retval = alloca i32, align 4
   %i = alloca i32, align 4

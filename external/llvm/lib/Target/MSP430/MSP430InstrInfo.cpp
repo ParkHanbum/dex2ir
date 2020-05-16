@@ -22,17 +22,14 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
 
-using namespace llvm;
-
-#define GET_INSTRINFO_CTOR_DTOR
+#define GET_INSTRINFO_CTOR
 #include "MSP430GenInstrInfo.inc"
 
-// Pin the vtable to this file.
-void MSP430InstrInfo::anchor() {}
+using namespace llvm;
 
-MSP430InstrInfo::MSP430InstrInfo(MSP430Subtarget &STI)
+MSP430InstrInfo::MSP430InstrInfo(MSP430TargetMachine &tm)
   : MSP430GenInstrInfo(MSP430::ADJCALLSTACKDOWN, MSP430::ADJCALLSTACKUP),
-    RI() {}
+    RI(tm) {}
 
 void MSP430InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                           MachineBasicBlock::iterator MI,
@@ -205,14 +202,14 @@ bool MSP430InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       }
 
       // If the block has any instructions after a JMP, delete them.
-      while (std::next(I) != MBB.end())
-        std::next(I)->eraseFromParent();
+      while (llvm::next(I) != MBB.end())
+        llvm::next(I)->eraseFromParent();
       Cond.clear();
-      FBB = nullptr;
+      FBB = 0;
 
       // Delete the JMP if it's equivalent to a fall-through.
       if (MBB.isLayoutSuccessor(I->getOperand(0).getMBB())) {
-        TBB = nullptr;
+        TBB = 0;
         I->eraseFromParent();
         I = MBB.end();
         continue;
@@ -299,7 +296,7 @@ unsigned MSP430InstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
   default:
     switch (Desc.getOpcode()) {
     default: llvm_unreachable("Unknown instruction size!");
-    case TargetOpcode::CFI_INSTRUCTION:
+    case TargetOpcode::PROLOG_LABEL:
     case TargetOpcode::EH_LABEL:
     case TargetOpcode::IMPLICIT_DEF:
     case TargetOpcode::KILL:

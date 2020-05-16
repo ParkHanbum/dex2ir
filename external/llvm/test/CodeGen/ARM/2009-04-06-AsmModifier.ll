@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -no-integrated-as %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | grep "swi 107"
 
 define i32 @_swilseek(i32) nounwind {
 entry:
@@ -18,6 +18,3 @@ return:		; preds = %entry
 	%4 = load i32* %retval		; <i32> [#uses=1]
 	ret i32 %4
 }
-
-; CHECK: swi 107
-

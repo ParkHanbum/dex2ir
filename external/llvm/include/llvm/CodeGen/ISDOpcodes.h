@@ -419,10 +419,6 @@ namespace ISD {
     /// getNode().
     BITCAST,
 
-    /// ADDRSPACECAST - This operator converts between pointers of different
-    /// address spaces.
-    ADDRSPACECAST,
-
     /// CONVERT_RNDSAT - This operator is used to support various conversions
     /// between various types (float, signed, unsigned and vectors of those
     /// types) with rounding and saturation. NOTE: Avoid using this operator as
@@ -444,11 +440,11 @@ namespace ISD {
 
     /// FNEG, FABS, FSQRT, FSIN, FCOS, FPOWI, FPOW,
     /// FLOG, FLOG2, FLOG10, FEXP, FEXP2,
-    /// FCEIL, FTRUNC, FRINT, FNEARBYINT, FROUND, FFLOOR - Perform various unary
+    /// FCEIL, FTRUNC, FRINT, FNEARBYINT, FFLOOR - Perform various unary
     /// floating point operations. These are inspired by libm.
     FNEG, FABS, FSQRT, FSIN, FCOS, FPOWI, FPOW,
     FLOG, FLOG2, FLOG10, FEXP, FEXP2,
-    FCEIL, FTRUNC, FRINT, FNEARBYINT, FROUND, FFLOOR,
+    FCEIL, FTRUNC, FRINT, FNEARBYINT, FFLOOR,
     
     /// FSINCOS - Compute both fsin and fcos as a single operation.
     FSINCOS,
@@ -608,17 +604,11 @@ namespace ISD {
     ATOMIC_STORE,
 
     /// Val, OUTCHAIN = ATOMIC_CMP_SWAP(INCHAIN, ptr, cmp, swap)
-    /// For double-word atomic operations:
-    /// ValLo, ValHi, OUTCHAIN = ATOMIC_CMP_SWAP(INCHAIN, ptr, cmpLo, cmpHi,
-    ///                                          swapLo, swapHi)
     /// This corresponds to the cmpxchg instruction.
     ATOMIC_CMP_SWAP,
 
     /// Val, OUTCHAIN = ATOMIC_SWAP(INCHAIN, ptr, amt)
     /// Val, OUTCHAIN = ATOMIC_LOAD_[OpName](INCHAIN, ptr, amt)
-    /// For double-word atomic operations:
-    /// ValLo, ValHi, OUTCHAIN = ATOMIC_SWAP(INCHAIN, ptr, amtLo, amtHi)
-    /// ValLo, ValHi, OUTCHAIN = ATOMIC_LOAD_[OpName](INCHAIN, ptr, amtLo, amtHi)
     /// These correspond to the atomicrmw instruction.
     ATOMIC_SWAP,
     ATOMIC_LOAD_ADD,

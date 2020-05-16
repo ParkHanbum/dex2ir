@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMSparcAsmPrinter.a  CMakeFiles/LLVMSparcAsmPrinter.dir/SparcInstPrinter.cpp.o
+/usr/bin/ranlib ../../../libLLVMSparcAsmPrinter.a

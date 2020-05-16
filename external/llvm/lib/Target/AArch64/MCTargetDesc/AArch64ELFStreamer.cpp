@@ -55,15 +55,16 @@ namespace {
 /// by MachO. Beware!
 class AArch64ELFStreamer : public MCELFStreamer {
 public:
-  AArch64ELFStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
-                   MCCodeEmitter *Emitter)
-      : MCELFStreamer(Context, TAB, OS, Emitter), MappingSymbolCounter(0),
-        LastEMS(EMS_None) {}
+  AArch64ELFStreamer(MCContext &Context, MCAsmBackend &TAB,
+                 raw_ostream &OS, MCCodeEmitter *Emitter)
+    : MCELFStreamer(Context, TAB, OS, Emitter),
+      MappingSymbolCounter(0), LastEMS(EMS_None) {
+  }
 
   ~AArch64ELFStreamer() {}
 
-  void ChangeSection(const MCSection *Section,
-                     const MCExpr *Subsection) override {
+  virtual void ChangeSection(const MCSection *Section,
+                             const MCExpr *Subsection) {
     // We have to keep track of the mapping symbol state of any sections we
     // use. Each one should start off as EMS_None, which is provided as the
     // default constructor by DenseMap::lookup.
@@ -76,16 +77,15 @@ public:
   /// This function is the one used to emit instruction data into the ELF
   /// streamer. We override it to add the appropriate mapping symbol if
   /// necessary.
-  void EmitInstruction(const MCInst &Inst,
-                       const MCSubtargetInfo &STI) override {
+  virtual void EmitInstruction(const MCInst& Inst) {
     EmitA64MappingSymbol();
-    MCELFStreamer::EmitInstruction(Inst, STI);
+    MCELFStreamer::EmitInstruction(Inst);
   }
 
   /// This is one of the functions used to emit data into an ELF section, so the
   /// AArch64 streamer overrides it to add the appropriate mapping symbol ($d)
   /// if necessary.
-  void EmitBytes(StringRef Data) override {
+  virtual void EmitBytes(StringRef Data) {
     EmitDataMappingSymbol();
     MCELFStreamer::EmitBytes(Data);
   }
@@ -93,8 +93,7 @@ public:
   /// This is one of the functions used to emit data into an ELF section, so the
   /// AArch64 streamer overrides it to add the appropriate mapping symbol ($d)
   /// if necessary.
-  void EmitValueImpl(const MCExpr *Value, unsigned Size,
-                     const SMLoc &Loc) override {
+  virtual void EmitValueImpl(const MCExpr *Value, unsigned Size) {
     EmitDataMappingSymbol();
     MCELFStreamer::EmitValueImpl(Value, Size);
   }
@@ -107,15 +106,13 @@ private:
   };
 
   void EmitDataMappingSymbol() {
-    if (LastEMS == EMS_Data)
-      return;
+    if (LastEMS == EMS_Data) return;
     EmitMappingSymbol("$d");
     LastEMS = EMS_Data;
   }
 
   void EmitA64MappingSymbol() {
-    if (LastEMS == EMS_A64)
-      return;
+    if (LastEMS == EMS_A64) return;
     EmitMappingSymbol("$x");
     LastEMS = EMS_A64;
   }
@@ -124,8 +121,9 @@ private:
     MCSymbol *Start = getContext().CreateTempSymbol();
     EmitLabel(Start);
 
-    MCSymbol *Symbol = getContext().GetOrCreateSymbol(
-        Name + "." + Twine(MappingSymbolCounter++));
+    MCSymbol *Symbol =
+      getContext().GetOrCreateSymbol(Name + "." +
+                                     Twine(MappingSymbolCounter++));
 
     MCSymbolData &SD = getAssembler().getOrCreateSymbolData(*Symbol);
     MCELF::SetType(SD, ELF::STT_NOTYPE);
@@ -147,14 +145,16 @@ private:
 }
 
 namespace llvm {
-MCELFStreamer *createAArch64ELFStreamer(MCContext &Context, MCAsmBackend &TAB,
-                                        raw_ostream &OS, MCCodeEmitter *Emitter,
-                                        bool RelaxAll, bool NoExecStack) {
-  AArch64ELFStreamer *S = new AArch64ELFStreamer(Context, TAB, OS, Emitter);
-  if (RelaxAll)
-    S->getAssembler().setRelaxAll(true);
-  if (NoExecStack)
-    S->getAssembler().setNoExecStack(true);
-  return S;
+  MCELFStreamer* createAArch64ELFStreamer(MCContext &Context, MCAsmBackend &TAB,
+                                      raw_ostream &OS, MCCodeEmitter *Emitter,
+                                      bool RelaxAll, bool NoExecStack) {
+    AArch64ELFStreamer *S = new AArch64ELFStreamer(Context, TAB, OS, Emitter);
+    if (RelaxAll)
+      S->getAssembler().setRelaxAll(true);
+    if (NoExecStack)
+      S->getAssembler().setNoExecStack(true);
+    return S;
+  }
 }
-}
+
+

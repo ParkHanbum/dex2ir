@@ -19,6 +19,10 @@ SystemZMCAsmInfo::SystemZMCAsmInfo(StringRef TT) {
   IsLittleEndian = false;
 
   CommentString = "#";
+  PCSymbol = ".";
+  GlobalPrefix = "";
+  PrivateGlobalPrefix = ".L";
+  WeakRefDirective = "\t.weak\t";
   ZeroDirective = "\t.space\t";
   Data64bitsDirective = "\t.quad\t";
   UsesELFSectionDirectiveForBSS = true;

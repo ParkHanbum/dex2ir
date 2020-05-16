@@ -41,11 +41,15 @@ public:
       TM(TM_), Subtarget(TM.getSubtarget<MipsSubtarget>()) {}
 
   // Pass Name
-  const char *getPassName() const override {
+  virtual const char *getPassName() const {
     return "MIPS DAG->DAG Pattern Instruction Selection";
   }
 
-  bool runOnMachineFunction(MachineFunction &MF) override;
+  virtual bool runOnMachineFunction(MachineFunction &MF);
+
+  virtual SDNode *Select(SDNode *N) {
+    llvm_unreachable("unexpected");
+  }
 
 protected:
   /// Keep a pointer to the MipsSubtarget around so that we can make the right

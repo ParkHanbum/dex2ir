@@ -28,16 +28,16 @@ private:
 
   SDValue getMips16SPAliasReg();
 
-  bool runOnMachineFunction(MachineFunction &MF) override;
+  virtual bool runOnMachineFunction(MachineFunction &MF);
 
   void getMips16SPRefReg(SDNode *Parent, SDValue &AliasReg);
 
-  bool selectAddr16(SDNode *Parent, SDValue N, SDValue &Base,
-                    SDValue &Offset, SDValue &Alias) override;
+  virtual bool selectAddr16(SDNode *Parent, SDValue N, SDValue &Base,
+                            SDValue &Offset, SDValue &Alias);
 
-  std::pair<bool, SDNode*> selectNode(SDNode *Node) override;
+  virtual std::pair<bool, SDNode*> selectNode(SDNode *Node);
 
-  void processFunctionAfterISel(MachineFunction &MF) override;
+  virtual void processFunctionAfterISel(MachineFunction &MF);
 
   // Insert instructions to initialize the global base register in the
   // first MBB of the function.

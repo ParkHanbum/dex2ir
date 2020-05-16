@@ -17,9 +17,10 @@ namespace llvm {
   class MipsTargetObjectFile : public TargetLoweringObjectFileELF {
     const MCSection *SmallDataSection;
     const MCSection *SmallBSSSection;
+    const MCSection *ReginfoSection;
   public:
 
-    void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
+    void Initialize(MCContext &Ctx, const TargetMachine &TM);
 
 
     /// IsGlobalInSmallSection - Return true if this global address should be
@@ -30,8 +31,12 @@ namespace llvm {
                                 const TargetMachine &TM) const;
 
     const MCSection *SelectSectionForGlobal(const GlobalValue *GV,
-                                        SectionKind Kind, Mangler &Mang,
-                                        const TargetMachine &TM) const override;
+                                            SectionKind Kind,
+                                            Mangler *Mang,
+                                            const TargetMachine &TM) const;
+
+    // TODO: Classify globals as mips wishes.
+    const MCSection *getReginfoSection() const { return ReginfoSection; }
   };
 } // end namespace llvm
 

@@ -57,7 +57,7 @@ ARMHazardRecognizer::getHazardType(SUnit *SU, int Stalls) {
           (LastMCID.TSFlags & ARMII::DomainMask) == ARMII::DomainGeneral) {
         MachineBasicBlock::iterator I = LastMI;
         if (I != LastMI->getParent()->begin()) {
-          I = std::prev(I);
+          I = llvm::prior(I);
           DefMI = &*I;
         }
       }
@@ -77,7 +77,7 @@ ARMHazardRecognizer::getHazardType(SUnit *SU, int Stalls) {
 }
 
 void ARMHazardRecognizer::Reset() {
-  LastMI = nullptr;
+  LastMI = 0;
   FpMLxStalls = 0;
   ScoreboardHazardRecognizer::Reset();
 }
@@ -95,7 +95,7 @@ void ARMHazardRecognizer::EmitInstruction(SUnit *SU) {
 void ARMHazardRecognizer::AdvanceCycle() {
   if (FpMLxStalls && --FpMLxStalls == 0)
     // Stalled for 4 cycles but still can't schedule any other instructions.
-    LastMI = nullptr;
+    LastMI = 0;
   ScoreboardHazardRecognizer::AdvanceCycle();
 }
 

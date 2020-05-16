@@ -8,8 +8,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCSymbolizer.h"
+#include "llvm/MC/MCRelocationInfo.h"
 
 using namespace llvm;
+
+MCSymbolizer::MCSymbolizer(MCContext &Ctx, OwningPtr<MCRelocationInfo> &RelInfo)
+  : Ctx(Ctx), RelInfo(RelInfo.take()) {
+}
 
 MCSymbolizer::~MCSymbolizer() {
 }

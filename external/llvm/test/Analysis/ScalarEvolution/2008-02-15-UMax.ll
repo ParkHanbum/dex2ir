@@ -1,7 +1,5 @@
-; RUN: opt < %s -analyze -scalar-evolution | FileCheck %s
+; RUN: opt < %s -analyze -scalar-evolution | grep umax
 ; PR2003
-
-; CHECK: umax
 
 define i32 @foo(i32 %n) {
 entry:

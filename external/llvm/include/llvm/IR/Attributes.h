@@ -18,7 +18,6 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/FoldingSet.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
 #include <bitset>
 #include <cassert>
@@ -89,7 +88,6 @@ public:
     NoReturn,              ///< Mark the function as not returning
     NoUnwind,              ///< Function doesn't unwind stack
     OptimizeForSize,       ///< opt_size
-    OptimizeNone,          ///< Function must not be optimized.
     ReadNone,              ///< Function does not access memory
     ReadOnly,              ///< Function only reads from memory
     Returned,              ///< Return value is always equal to this argument
@@ -201,7 +199,7 @@ public:
 /// index `1'.
 class AttributeSet {
 public:
-  enum AttrIndex LLVM_ENUM_INT_TYPE(unsigned) {
+  enum AttrIndex {
     ReturnIndex = 0U,
     FunctionIndex = ~0U
   };

@@ -73,7 +73,7 @@ namespace HexagonII {
     NoMemAccess = 0,            // Not a memory acces instruction.
     ByteAccess = 1,             // Byte access instruction (memb).
     HalfWordAccess = 2,         // Half word access instruction (memh).
-    WordAccess = 3,             // Word access instruction (memw).
+    WordAccess = 3,             // Word access instrution (memw).
     DoubleWordAccess = 4        // Double word access instruction (memd)
   };
 
@@ -87,82 +87,70 @@ namespace HexagonII {
     // Solo instructions.
     SoloPos  = 5,
     SoloMask = 0x1,
-    // Packed only with A or X-type instructions.
-    SoloAXPos  = 6,
-    SoloAXMask = 0x1,
-    // Only A-type instruction in first slot or nothing.
-    SoloAin1Pos  = 7,
-    SoloAin1Mask = 0x1,
 
     // Predicated instructions.
-    PredicatedPos  = 8,
+    PredicatedPos  = 6,
     PredicatedMask = 0x1,
-    PredicatedFalsePos  = 9,
+    PredicatedFalsePos  = 7,
     PredicatedFalseMask = 0x1,
-    PredicatedNewPos  = 10,
+    PredicatedNewPos  = 8,
     PredicatedNewMask = 0x1,
-    PredicateLatePos  = 11,
-    PredicateLateMask = 0x1,
 
     // New-Value consumer instructions.
-    NewValuePos  = 12,
+    NewValuePos  = 9,
     NewValueMask = 0x1,
+
     // New-Value producer instructions.
-    hasNewValuePos  = 13,
+    hasNewValuePos  = 10,
     hasNewValueMask = 0x1,
+
     // Which operand consumes or produces a new value.
-    NewValueOpPos  = 14,
+    NewValueOpPos  = 11,
     NewValueOpMask = 0x7,
+
+    // Which bits encode the new value.
+    NewValueBitsPos  = 14,
+    NewValueBitsMask = 0x3,
+
     // Stores that can become new-value stores.
-    mayNVStorePos  = 17,
+    mayNVStorePos  = 16,
     mayNVStoreMask = 0x1,
+
     // New-value store instructions.
-    NVStorePos  = 18,
+    NVStorePos  = 17,
     NVStoreMask = 0x1,
-    // Loads that can become current-value loads.
-    mayCVLoadPos  = 19,
-    mayCVLoadMask = 0x1,
-    // Current-value load instructions.
-    CVLoadPos  = 20,
-    CVLoadMask = 0x1,
 
     // Extendable insns.
-    ExtendablePos  = 21,
+    ExtendablePos  = 18,
     ExtendableMask = 0x1,
+
     // Insns must be extended.
-    ExtendedPos  = 22,
+    ExtendedPos  = 19,
     ExtendedMask = 0x1,
+
     // Which operand may be extended.
-    ExtendableOpPos  = 23,
+    ExtendableOpPos  = 20,
     ExtendableOpMask = 0x7,
+
     // Signed or unsigned range.
-    ExtentSignedPos  = 26,
+    ExtentSignedPos = 23,
     ExtentSignedMask = 0x1,
+
     // Number of bits of range before extending operand.
-    ExtentBitsPos  = 27,
+    ExtentBitsPos  = 24,
     ExtentBitsMask = 0x1f,
-    // Alignment power-of-two before extending operand.
-    ExtentAlignPos  = 32,
-    ExtentAlignMask = 0x3,
 
     // Valid subtargets
-    validSubTargetPos  = 34,
+    validSubTargetPos = 29,
     validSubTargetMask = 0xf,
 
     // Addressing mode for load/store instructions.
-    AddrModePos  = 40,
+    AddrModePos = 33,
     AddrModeMask = 0x7,
-    // Access size for load/store instructions.
-    MemAccessSizePos = 43,
-    MemAccesSizeMask = 0x7,
 
-    // Branch predicted taken.
-    TakenPos = 47,
-    TakenMask = 0x1,
-
-    // Floating-point instructions.
-    FPPos  = 48,
-    FPMask = 0x1
+    // Access size of memory access instructions (load/store).
+    MemAccessSizePos = 36,
+    MemAccesSizeMask = 0x7
   };
 
   // *** The code above must match HexagonInstrFormat*.td *** //

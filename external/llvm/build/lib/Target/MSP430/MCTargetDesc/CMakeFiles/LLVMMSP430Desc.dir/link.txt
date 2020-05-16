@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMMSP430Desc.a  CMakeFiles/LLVMMSP430Desc.dir/MSP430MCTargetDesc.cpp.o CMakeFiles/LLVMMSP430Desc.dir/MSP430MCAsmInfo.cpp.o
+/usr/bin/ranlib ../../../libLLVMMSP430Desc.a

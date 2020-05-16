@@ -62,12 +62,12 @@ void PrintError(const Twine &Msg) {
   errs() << "error:" << Msg << "\n";
 }
 
-void PrintFatalError(const Twine &Msg) {
-  PrintError(Msg);
+void PrintFatalError(const std::string &Msg) {
+  PrintError(Twine(Msg));
   std::exit(1);
 }
 
-void PrintFatalError(ArrayRef<SMLoc> ErrorLoc, const Twine &Msg) {
+void PrintFatalError(ArrayRef<SMLoc> ErrorLoc, const std::string &Msg) {
   PrintError(ErrorLoc, Msg);
   std::exit(1);
 }

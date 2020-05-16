@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | FileCheck %s
 
 define double @f(double %x) {
 entry:

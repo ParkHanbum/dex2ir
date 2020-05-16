@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 
 define double @t(double %x, double %y) nounwind optsize {
 entry:

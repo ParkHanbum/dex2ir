@@ -19,8 +19,9 @@ class AMDGPUELFObjectWriter : public MCELFObjectTargetWriter {
 public:
   AMDGPUELFObjectWriter();
 protected:
-  unsigned GetRelocType(const MCValue &Target, const MCFixup &Fixup,
-                        bool IsPCRel) const override {
+  virtual unsigned GetRelocType(const MCValue &Target, const MCFixup &Fixup,
+                                bool IsPCRel, bool IsRelocWithSymbol,
+                                int64_t Addend) const {
     llvm_unreachable("Not implemented");
   }
 

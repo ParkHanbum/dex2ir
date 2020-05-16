@@ -13,12 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Disassembler.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/MC/MCAsmInfo.h"
-#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCInst.h"
-#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -38,10 +36,10 @@ private:
 public:
   VectorMemoryObject(const ByteArrayTy &bytes) : Bytes(bytes) {}
 
-  uint64_t getBase() const override { return 0; }
-  uint64_t getExtent() const override { return Bytes.size(); }
+  uint64_t getBase() const { return 0; }
+  uint64_t getExtent() const { return Bytes.size(); }
 
-  int readByte(uint64_t Addr, uint8_t *Byte) const override {
+  int readByte(uint64_t Addr, uint8_t *Byte) const {
     if (Addr >= getExtent())
       return -1;
     *Byte = Bytes[Addr].first;
@@ -53,8 +51,7 @@ public:
 static bool PrintInsts(const MCDisassembler &DisAsm,
                        const ByteArrayTy &Bytes,
                        SourceMgr &SM, raw_ostream &Out,
-                       MCStreamer &Streamer, bool InAtomicBlock,
-                       const MCSubtargetInfo &STI) {
+                       MCStreamer &Streamer, bool InAtomicBlock) {
   // Wrap the vector in a MemoryObject.
   VectorMemoryObject memoryObject(Bytes);
 
@@ -89,7 +86,7 @@ static bool PrintInsts(const MCDisassembler &DisAsm,
       // Fall through
 
     case MCDisassembler::Success:
-      Streamer.EmitInstruction(Inst, STI);
+      Streamer.EmitInstruction(Inst);
       break;
     }
   }
@@ -161,24 +158,7 @@ int Disassembler::disassemble(const Target &T,
                               MemoryBuffer &Buffer,
                               SourceMgr &SM,
                               raw_ostream &Out) {
-
-  std::unique_ptr<const MCRegisterInfo> MRI(T.createMCRegInfo(Triple));
-  if (!MRI) {
-    errs() << "error: no register info for target " << Triple << "\n";
-    return -1;
-  }
-
-  std::unique_ptr<const MCAsmInfo> MAI(T.createMCAsmInfo(*MRI, Triple));
-  if (!MAI) {
-    errs() << "error: no assembly info for target " << Triple << "\n";
-    return -1;
-  }
-
-  // Set up the MCContext for creating symbols and MCExpr's.
-  MCContext Ctx(MAI.get(), MRI.get(), nullptr);
-
-  std::unique_ptr<const MCDisassembler> DisAsm(
-    T.createMCDisassembler(STI, Ctx));
+  OwningPtr<const MCDisassembler> DisAsm(T.createMCDisassembler(STI));
   if (!DisAsm) {
     errs() << "error: no disassembler for target " << Triple << "\n";
     return -1;
@@ -222,7 +202,7 @@ int Disassembler::disassemble(const Target &T,
 
     if (!ByteArray.empty())
       ErrorOccurred |= PrintInsts(*DisAsm, ByteArray, SM, Out, Streamer,
-                                  InAtomicBlock, STI);
+                                  InAtomicBlock);
   }
 
   if (InAtomicBlock) {

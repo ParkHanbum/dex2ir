@@ -14,7 +14,9 @@
 #ifndef ARMREGISTERINFO_H
 #define ARMREGISTERINFO_H
 
+#include "ARM.h"
 #include "ARMBaseRegisterInfo.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 
 namespace llvm {
 

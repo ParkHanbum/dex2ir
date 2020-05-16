@@ -7,15 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "ppcmcexpr"
 #include "PPCMCExpr.h"
-#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCObjectStreamer.h"
+#include "llvm/MC/MCAsmInfo.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "ppcmcexpr"
 
 const PPCMCExpr*
 PPCMCExpr::Create(VariantKind Kind, const MCExpr *Expr,
@@ -56,7 +54,7 @@ PPCMCExpr::EvaluateAsRelocatableImpl(MCValue &Res,
                                      const MCAsmLayout *Layout) const {
   MCValue Value;
 
-  if (!getSubExpr()->EvaluateAsRelocatable(Value, Layout))
+  if (!getSubExpr()->EvaluateAsRelocatable(Value, *Layout))
     return false;
 
   if (Value.isAbsolute()) {
@@ -88,9 +86,6 @@ PPCMCExpr::EvaluateAsRelocatableImpl(MCValue &Res,
     }
     Res = MCValue::get(Result);
   } else {
-    if (!Layout)
-      return false;
-
     MCContext &Context = Layout->getAssembler().getContext();
     const MCSymbolRefExpr *Sym = Value.getSymA();
     MCSymbolRefExpr::VariantKind Modifier = Sym->getKind();
@@ -128,6 +123,33 @@ PPCMCExpr::EvaluateAsRelocatableImpl(MCValue &Res,
   return true;
 }
 
-void PPCMCExpr::visitUsedExpr(MCStreamer &Streamer) const {
-  Streamer.visitUsedExpr(*getSubExpr());
+// FIXME: This basically copies MCObjectStreamer::AddValueSymbols. Perhaps
+// that method should be made public?
+static void AddValueSymbols_(const MCExpr *Value, MCAssembler *Asm) {
+  switch (Value->getKind()) {
+  case MCExpr::Target:
+    llvm_unreachable("Can't handle nested target expr!");
+
+  case MCExpr::Constant:
+    break;
+
+  case MCExpr::Binary: {
+    const MCBinaryExpr *BE = cast<MCBinaryExpr>(Value);
+    AddValueSymbols_(BE->getLHS(), Asm);
+    AddValueSymbols_(BE->getRHS(), Asm);
+    break;
+  }
+
+  case MCExpr::SymbolRef:
+    Asm->getOrCreateSymbolData(cast<MCSymbolRefExpr>(Value)->getSymbol());
+    break;
+
+  case MCExpr::Unary:
+    AddValueSymbols_(cast<MCUnaryExpr>(Value)->getSubExpr(), Asm);
+    break;
+  }
+}
+
+void PPCMCExpr::AddValueSymbols(MCAssembler *Asm) const {
+  AddValueSymbols_(getSubExpr(), Asm);
 }

@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "msp430-reg-info"
+
 #include "MSP430RegisterInfo.h"
 #include "MSP430.h"
 #include "MSP430MachineFunctionInfo.h"
@@ -24,38 +26,38 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 
-using namespace llvm;
-
-#define DEBUG_TYPE "msp430-reg-info"
-
 #define GET_REGINFO_TARGET_DESC
 #include "MSP430GenRegisterInfo.inc"
 
-// FIXME: Provide proper call frame setup / destroy opcodes.
-MSP430RegisterInfo::MSP430RegisterInfo()
-  : MSP430GenRegisterInfo(MSP430::PCW) {}
+using namespace llvm;
 
-const MCPhysReg*
+// FIXME: Provide proper call frame setup / destroy opcodes.
+MSP430RegisterInfo::MSP430RegisterInfo(MSP430TargetMachine &tm)
+  : MSP430GenRegisterInfo(MSP430::PCW), TM(tm) {
+  StackAlign = TM.getFrameLowering()->getStackAlignment();
+}
+
+const uint16_t*
 MSP430RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   const TargetFrameLowering *TFI = MF->getTarget().getFrameLowering();
   const Function* F = MF->getFunction();
-  static const MCPhysReg CalleeSavedRegs[] = {
+  static const uint16_t CalleeSavedRegs[] = {
     MSP430::FPW, MSP430::R5W, MSP430::R6W, MSP430::R7W,
     MSP430::R8W, MSP430::R9W, MSP430::R10W, MSP430::R11W,
     0
   };
-  static const MCPhysReg CalleeSavedRegsFP[] = {
+  static const uint16_t CalleeSavedRegsFP[] = {
     MSP430::R5W, MSP430::R6W, MSP430::R7W,
     MSP430::R8W, MSP430::R9W, MSP430::R10W, MSP430::R11W,
     0
   };
-  static const MCPhysReg CalleeSavedRegsIntr[] = {
+  static const uint16_t CalleeSavedRegsIntr[] = {
     MSP430::FPW,  MSP430::R5W,  MSP430::R6W,  MSP430::R7W,
     MSP430::R8W,  MSP430::R9W,  MSP430::R10W, MSP430::R11W,
     MSP430::R12W, MSP430::R13W, MSP430::R14W, MSP430::R15W,
     0
   };
-  static const MCPhysReg CalleeSavedRegsIntrFP[] = {
+  static const uint16_t CalleeSavedRegsIntrFP[] = {
     MSP430::R5W,  MSP430::R6W,  MSP430::R7W,
     MSP430::R8W,  MSP430::R9W,  MSP430::R10W, MSP430::R11W,
     MSP430::R12W, MSP430::R13W, MSP430::R14W, MSP430::R15W,
@@ -86,10 +88,8 @@ BitVector MSP430RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   Reserved.set(MSP430::CGW);
 
   // Mark frame pointer as reserved if needed.
-  if (TFI->hasFP(MF)) {
-    Reserved.set(MSP430::FPB);
+  if (TFI->hasFP(MF))
     Reserved.set(MSP430::FPW);
-  }
 
   return Reserved;
 }
@@ -142,10 +142,10 @@ MSP430RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     // We need to materialize the offset via add instruction.
     unsigned DstReg = MI.getOperand(0).getReg();
     if (Offset < 0)
-      BuildMI(MBB, std::next(II), dl, TII.get(MSP430::SUB16ri), DstReg)
+      BuildMI(MBB, llvm::next(II), dl, TII.get(MSP430::SUB16ri), DstReg)
         .addReg(DstReg).addImm(-Offset);
     else
-      BuildMI(MBB, std::next(II), dl, TII.get(MSP430::ADD16ri), DstReg)
+      BuildMI(MBB, llvm::next(II), dl, TII.get(MSP430::ADD16ri), DstReg)
         .addReg(DstReg).addImm(Offset);
 
     return;

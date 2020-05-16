@@ -10,9 +10,6 @@
 LEVEL := ../..
 TOOLNAME := bugpoint
 LINK_COMPONENTS := asmparser instrumentation scalaropts ipo linker bitreader \
-                   bitwriter irreader vectorize objcarcopts codegen
-
-# Support plugins.
-NO_DEAD_STRIP := 1
+                   bitwriter irreader vectorize objcarcopts
 
 include $(LEVEL)/Makefile.common

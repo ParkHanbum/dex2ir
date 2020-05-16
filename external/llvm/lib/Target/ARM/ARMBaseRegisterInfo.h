@@ -14,7 +14,7 @@
 #ifndef ARMBASEREGISTERINFO_H
 #define ARMBASEREGISTERINFO_H
 
-#include "MCTargetDesc/ARMBaseInfo.h"
+#include "ARM.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 
 #define GET_REGINFO_HEADER
@@ -42,7 +42,7 @@ static inline bool isARMArea1Register(unsigned Reg, bool isIOS) {
     case R4:  case R5:  case R6:  case R7:
     case LR:  case SP:  case PC:
       return true;
-    case R8:  case R9:  case R10: case R11: case R12:
+    case R8:  case R9:  case R10: case R11:
       // For iOS we want r7 and lr to be next to each other.
       return !isIOS;
     default:
@@ -53,7 +53,7 @@ static inline bool isARMArea1Register(unsigned Reg, bool isIOS) {
 static inline bool isARMArea2Register(unsigned Reg, bool isIOS) {
   using namespace ARM;
   switch (Reg) {
-    case R8: case R9: case R10: case R11: case R12:
+    case R8: case R9: case R10: case R11:
       // iOS has this second area.
       return isIOS;
     default:
@@ -70,14 +70,6 @@ static inline bool isARMArea3Register(unsigned Reg, bool isIOS) {
     default:
       return false;
   }
-}
-
-static inline bool isCalleeSavedRegister(unsigned Reg,
-                                         const MCPhysReg *CSRegs) {
-  for (unsigned i = 0; CSRegs[i]; ++i)
-    if (Reg == CSRegs[i])
-      return true;
-  return false;
 }
 
 class ARMBaseRegisterInfo : public ARMGenRegisterInfo {
@@ -100,9 +92,8 @@ protected:
 
 public:
   /// Code Generation virtual methods...
-  const MCPhysReg *
-  getCalleeSavedRegs(const MachineFunction *MF = nullptr) const override;
-  const uint32_t *getCallPreservedMask(CallingConv::ID) const override;
+  const uint16_t *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
+  const uint32_t *getCallPreservedMask(CallingConv::ID) const;
   const uint32_t *getNoPreservedMask() const;
 
   /// getThisReturnPreservedMask - Returns a call preserved mask specific to the
@@ -114,52 +105,53 @@ public:
   /// Should return NULL in the case that the calling convention does not have
   /// this property
   const uint32_t *getThisReturnPreservedMask(CallingConv::ID) const;
+  
+  BitVector getReservedRegs(const MachineFunction &MF) const;
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
+  const TargetRegisterClass*
+  getPointerRegClass(const MachineFunction &MF, unsigned Kind = 0) const;
+  const TargetRegisterClass*
+  getCrossCopyRegClass(const TargetRegisterClass *RC) const;
 
-  const TargetRegisterClass *
-  getPointerRegClass(const MachineFunction &MF,
-                     unsigned Kind = 0) const override;
-  const TargetRegisterClass *
-  getCrossCopyRegClass(const TargetRegisterClass *RC) const override;
-
-  const TargetRegisterClass *
-  getLargestLegalSuperClass(const TargetRegisterClass *RC) const override;
+  const TargetRegisterClass*
+  getLargestLegalSuperClass(const TargetRegisterClass *RC) const;
 
   unsigned getRegPressureLimit(const TargetRegisterClass *RC,
-                               MachineFunction &MF) const override;
+                               MachineFunction &MF) const;
 
   void getRegAllocationHints(unsigned VirtReg,
                              ArrayRef<MCPhysReg> Order,
                              SmallVectorImpl<MCPhysReg> &Hints,
                              const MachineFunction &MF,
-                             const VirtRegMap *VRM) const override;
+                             const VirtRegMap *VRM) const;
 
   void UpdateRegAllocHint(unsigned Reg, unsigned NewReg,
-                          MachineFunction &MF) const override;
+                          MachineFunction &MF) const;
 
-  bool avoidWriteAfterWrite(const TargetRegisterClass *RC) const override;
+  virtual bool avoidWriteAfterWrite(const TargetRegisterClass *RC) const;
 
   bool hasBasePointer(const MachineFunction &MF) const;
 
   bool canRealignStack(const MachineFunction &MF) const;
-  bool needsStackRealignment(const MachineFunction &MF) const override;
-  int64_t getFrameIndexInstrOffset(const MachineInstr *MI,
-                                   int Idx) const override;
-  bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const override;
+  bool needsStackRealignment(const MachineFunction &MF) const;
+  int64_t getFrameIndexInstrOffset(const MachineInstr *MI, int Idx) const;
+  bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const;
   void materializeFrameBaseRegister(MachineBasicBlock *MBB,
                                     unsigned BaseReg, int FrameIdx,
-                                    int64_t Offset) const override;
-  void resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
-                         int64_t Offset) const override;
-  bool isFrameOffsetLegal(const MachineInstr *MI,
-                          int64_t Offset) const override;
+                                    int64_t Offset) const;
+  void resolveFrameIndex(MachineBasicBlock::iterator I,
+                         unsigned BaseReg, int64_t Offset) const;
+  bool isFrameOffsetLegal(const MachineInstr *MI, int64_t Offset) const;
 
   bool cannotEliminateFrame(const MachineFunction &MF) const;
 
   // Debug information queries.
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  unsigned getFrameRegister(const MachineFunction &MF) const;
   unsigned getBaseRegister() const { return BasePtr; }
+
+  // Exception handling queries.
+  unsigned getEHExceptionRegister() const;
+  unsigned getEHHandlerRegister() const;
 
   bool isLowRegister(unsigned Reg) const;
 
@@ -168,25 +160,25 @@ public:
   /// specified immediate.
   virtual void emitLoadConstPool(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator &MBBI,
-                                 DebugLoc dl, unsigned DestReg, unsigned SubIdx,
-                                 int Val, ARMCC::CondCodes Pred = ARMCC::AL,
+                                 DebugLoc dl,
+                                 unsigned DestReg, unsigned SubIdx,
+                                 int Val,
+                                 ARMCC::CondCodes Pred = ARMCC::AL,
                                  unsigned PredReg = 0,
                                  unsigned MIFlags = MachineInstr::NoFlags)const;
 
   /// Code Generation virtual methods...
-  bool mayOverrideLocalAssignment() const override;
+  virtual bool requiresRegisterScavenging(const MachineFunction &MF) const;
 
-  bool requiresRegisterScavenging(const MachineFunction &MF) const override;
+  virtual bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const;
 
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override;
+  virtual bool requiresFrameIndexScavenging(const MachineFunction &MF) const;
 
-  bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
+  virtual bool requiresVirtualBaseRegisters(const MachineFunction &MF) const;
 
-  bool requiresVirtualBaseRegisters(const MachineFunction &MF) const override;
-
-  void eliminateFrameIndex(MachineBasicBlock::iterator II,
-                           int SPAdj, unsigned FIOperandNum,
-                           RegScavenger *RS = nullptr) const override;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator II,
+                                   int SPAdj, unsigned FIOperandNum,
+                                   RegScavenger *RS = NULL) const;
 };
 
 } // end namespace llvm

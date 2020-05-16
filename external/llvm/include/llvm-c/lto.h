@@ -16,22 +16,9 @@
 #ifndef LLVM_C_LTO_H
 #define LLVM_C_LTO_H
 
-#include <stddef.h>
-#include <sys/types.h>
-
-#ifndef __cplusplus
-#if !defined(_MSC_VER)
 #include <stdbool.h>
-typedef bool lto_bool_t;
-#else
-/* MSVC in particular does not have anything like _Bool or bool in C, but we can
-   at least make sure the type is the same size.  The implementation side will
-   use C++ bool. */
-typedef unsigned char lto_bool_t;
-#endif
-#else
-typedef bool lto_bool_t;
-#endif
+#include <stddef.h>
+#include <unistd.h>
 
 /**
  * @defgroup LLVMCLTO LTO
@@ -40,7 +27,7 @@ typedef bool lto_bool_t;
  * @{
  */
 
-#define LTO_API_VERSION 5
+#define LTO_API_VERSION 4
 
 typedef enum {
     LTO_SYMBOL_ALIGNMENT_MASK              = 0x0000001F, /* log2 of alignment */
@@ -100,14 +87,14 @@ lto_get_error_message(void);
 /**
  * Checks if a file is a loadable object file.
  */
-extern lto_bool_t
+extern bool
 lto_module_is_object_file(const char* path);
 
 
 /**
  * Checks if a file is a loadable object compiled for requested target.
  */
-extern lto_bool_t
+extern bool
 lto_module_is_object_file_for_target(const char* path,
                                      const char* target_triple_prefix);
 
@@ -115,14 +102,14 @@ lto_module_is_object_file_for_target(const char* path,
 /**
  * Checks if a buffer is a loadable object file.
  */
-extern lto_bool_t
+extern bool
 lto_module_is_object_file_in_memory(const void* mem, size_t length);
 
 
 /**
  * Checks if a buffer is a loadable object compiled for requested target.
  */
-extern lto_bool_t
+extern bool
 lto_module_is_object_file_in_memory_for_target(const void* mem, size_t length,
                                               const char* target_triple_prefix);
 
@@ -221,7 +208,7 @@ lto_codegen_dispose(lto_code_gen_t);
  * Add an object module to the set of modules for which code will be generated.
  * Returns true on error (check lto_get_error_message() for details).
  */
-extern lto_bool_t
+extern bool
 lto_codegen_add_module(lto_code_gen_t cg, lto_module_t mod);
 
 
@@ -230,7 +217,7 @@ lto_codegen_add_module(lto_code_gen_t cg, lto_module_t mod);
  * Sets if debug info should be generated.
  * Returns true on error (check lto_get_error_message() for details).
  */
-extern lto_bool_t
+extern bool
 lto_codegen_set_debug_model(lto_code_gen_t cg, lto_debug_model);
 
 
@@ -238,7 +225,7 @@ lto_codegen_set_debug_model(lto_code_gen_t cg, lto_debug_model);
  * Sets which PIC code model to generated.
  * Returns true on error (check lto_get_error_message() for details).
  */
-extern lto_bool_t
+extern bool
 lto_codegen_set_pic_model(lto_code_gen_t cg, lto_codegen_model);
 
 
@@ -264,8 +251,9 @@ lto_codegen_set_assembler_args(lto_code_gen_t cg, const char **args,
                                int nargs);
 
 /**
- * Tells LTO optimization passes that this symbol must be preserved
- * because it is referenced by native code or a command line option.
+ * Adds to a list of all global symbols that must exist in the final
+ * generated code.  If a function is not listed, it might be
+ * inlined into every usage and optimized away.
  */
 extern void
 lto_codegen_add_must_preserve_symbol(lto_code_gen_t cg, const char* symbol);
@@ -275,7 +263,7 @@ lto_codegen_add_must_preserve_symbol(lto_code_gen_t cg, const char* symbol);
  * merged contents of all modules added so far.
  * Returns true on error (check lto_get_error_message() for details).
  */
-extern lto_bool_t
+extern bool
 lto_codegen_write_merged_modules(lto_code_gen_t cg, const char* path);
 
 /**
@@ -293,7 +281,7 @@ lto_codegen_compile(lto_code_gen_t cg, size_t* length);
  * Generates code for all added modules into one native object file.
  * The name of the file is written to name. Returns true on error.
  */
-extern lto_bool_t
+extern bool
 lto_codegen_compile_to_file(lto_code_gen_t cg, const char** name);
 
 

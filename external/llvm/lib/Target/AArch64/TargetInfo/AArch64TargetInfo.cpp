@@ -1,4 +1,4 @@
-//===-- AArch64TargetInfo.cpp - AArch64 Target Implementation -----------------===//
+//===-- AArch64TargetInfo.cpp - AArch64 Target Implementation -------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6,26 +6,19 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+//
+// This file contains the key registration step for the architecture.
+//
+//===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/Triple.h"
+#include "AArch64.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
-namespace llvm {
-Target TheAArch64leTarget;
-Target TheAArch64beTarget;
-Target TheARM64leTarget;
-Target TheARM64beTarget;
-} // end namespace llvm
+Target llvm::TheAArch64Target;
 
 extern "C" void LLVMInitializeAArch64TargetInfo() {
-  RegisterTarget<Triple::arm64, /*HasJIT=*/true> X(TheARM64leTarget, "arm64",
-                                                   "AArch64 (little endian)");
-  RegisterTarget<Triple::arm64_be, /*HasJIT=*/true> Y(TheARM64beTarget, "arm64_be",
-                                                      "AArch64 (big endian)");
-
-  RegisterTarget<Triple::aarch64, /*HasJIT=*/true> Z(
-      TheAArch64leTarget, "aarch64", "AArch64 (little endian)");
-  RegisterTarget<Triple::aarch64_be, /*HasJIT=*/true> W(
-      TheAArch64beTarget, "aarch64_be", "AArch64 (big endian)");
+    RegisterTarget<Triple::aarch64, /*HasJIT=*/true>
+    X(TheAArch64Target, "aarch64", "AArch64 (ARM 64-bit target)");
 }

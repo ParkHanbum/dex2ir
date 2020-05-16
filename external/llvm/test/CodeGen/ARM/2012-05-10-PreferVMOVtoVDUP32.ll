@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mcpu=swift %s -o - | FileCheck %s
+; RUN: llc -march=arm -mcpu=swift < %s | FileCheck %s
 ; <rdar://problem/10451892>
 
 define void @f(i32 %x, i32* %p) nounwind ssp {

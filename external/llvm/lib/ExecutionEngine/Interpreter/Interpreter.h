@@ -16,10 +16,10 @@
 
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/InstVisitor.h"
+#include "llvm/InstVisitor.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -108,29 +108,29 @@ public:
   
   /// create - Create an interpreter ExecutionEngine. This can never fail.
   ///
-  static ExecutionEngine *create(Module *M, std::string *ErrorStr = nullptr);
+  static ExecutionEngine *create(Module *M, std::string *ErrorStr = 0);
 
   /// run - Start execution with the specified function and arguments.
   ///
-  GenericValue runFunction(Function *F,
-                           const std::vector<GenericValue> &ArgValues) override;
+  virtual GenericValue runFunction(Function *F,
+                                   const std::vector<GenericValue> &ArgValues);
 
-  void *getPointerToNamedFunction(const std::string &Name,
-                                  bool AbortOnFailure = true) override {
+  virtual void *getPointerToNamedFunction(const std::string &Name,
+                                          bool AbortOnFailure = true) {
     // FIXME: not implemented.
-    return nullptr;
+    return 0;
   }
 
   /// recompileAndRelinkFunction - For the interpreter, functions are always
   /// up-to-date.
   ///
-  void *recompileAndRelinkFunction(Function *F) override {
+  virtual void *recompileAndRelinkFunction(Function *F) {
     return getPointerToFunction(F);
   }
 
   /// freeMachineCodeForFunction - The interpreter does not generate any code.
   ///
-  void freeMachineCodeForFunction(Function *F) override { }
+  void freeMachineCodeForFunction(Function *F) { }
 
   // Methods used to execute code:
   // Place a call on the stack
@@ -179,12 +179,6 @@ public:
 
   void visitVAArgInst(VAArgInst &I);
   void visitExtractElementInst(ExtractElementInst &I);
-  void visitInsertElementInst(InsertElementInst &I);
-  void visitShuffleVectorInst(ShuffleVectorInst &I);
-
-  void visitExtractValueInst(ExtractValueInst &I);
-  void visitInsertValueInst(InsertValueInst &I);
-
   void visitInstruction(Instruction &I) {
     errs() << I << "\n";
     llvm_unreachable("Instruction not interpretable yet!");
@@ -212,8 +206,8 @@ private:  // Helper functions
   //
   void SwitchToNewBasicBlock(BasicBlock *Dest, ExecutionContext &SF);
 
-  void *getPointerToFunction(Function *F) override { return (void*)F; }
-  void *getPointerToBasicBlock(BasicBlock *BB) override { return (void*)BB; }
+  void *getPointerToFunction(Function *F) { return (void*)F; }
+  void *getPointerToBasicBlock(BasicBlock *BB) { return (void*)BB; }
 
   void initializeExecutionEngine() { }
   void initializeExternalFunctions();

@@ -113,7 +113,6 @@ namespace ISD {
   struct InputArg {
     ArgFlagsTy Flags;
     MVT VT;
-    EVT ArgVT;
     bool Used;
 
     /// Index original Function's argument.
@@ -125,11 +124,10 @@ namespace ISD {
     unsigned PartOffset;
 
     InputArg() : VT(MVT::Other), Used(false) {}
-    InputArg(ArgFlagsTy flags, EVT vt, EVT argvt, bool used,
+    InputArg(ArgFlagsTy flags, EVT vt, bool used,
              unsigned origIdx, unsigned partOffs)
       : Flags(flags), Used(used), OrigArgIndex(origIdx), PartOffset(partOffs) {
       VT = vt.getSimpleVT();
-      ArgVT = argvt;
     }
   };
 
@@ -140,7 +138,6 @@ namespace ISD {
   struct OutputArg {
     ArgFlagsTy Flags;
     MVT VT;
-    EVT ArgVT;
 
     /// IsFixed - Is this a "fixed" value, ie not passed through a vararg "...".
     bool IsFixed;
@@ -154,12 +151,11 @@ namespace ISD {
     unsigned PartOffset;
 
     OutputArg() : IsFixed(false) {}
-    OutputArg(ArgFlagsTy flags, EVT vt, EVT argvt, bool isfixed,
+    OutputArg(ArgFlagsTy flags, EVT vt, bool isfixed,
               unsigned origIdx, unsigned partOffs)
       : Flags(flags), IsFixed(isfixed), OrigArgIndex(origIdx),
         PartOffset(partOffs) {
       VT = vt.getSimpleVT();
-      ArgVT = argvt;
     }
   };
 }

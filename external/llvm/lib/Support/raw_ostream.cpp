@@ -22,10 +22,10 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/system_error.h"
 #include <cctype>
 #include <cerrno>
 #include <sys/stat.h>
-#include <system_error>
 
 // <fcntl.h> may provide O_BINARY.
 #if defined(HAVE_FCNTL_H)
@@ -87,8 +87,8 @@ void raw_ostream::SetBuffered() {
 
 void raw_ostream::SetBufferAndMode(char *BufferStart, size_t Size,
                                    BufferKind Mode) {
-  assert(((Mode == Unbuffered && !BufferStart && Size == 0) ||
-          (Mode != Unbuffered && BufferStart && Size != 0)) &&
+  assert(((Mode == Unbuffered && BufferStart == 0 && Size == 0) ||
+          (Mode != Unbuffered && BufferStart && Size)) &&
          "stream must be unbuffered or have at least one byte");
   // Make sure the current buffer is free of content (we can't flush here; the
   // child buffer management logic will be in write_impl).
@@ -227,17 +227,11 @@ raw_ostream &raw_ostream::operator<<(double N) {
   // On MSVCRT and compatible, output of %e is incompatible to Posix
   // by default. Number of exponent digits should be at least 2. "%+03d"
   // FIXME: Implement our formatter to here or Support/Format.h!
-#if __cplusplus >= 201103L && defined(__MINGW32__)
-  // FIXME: It should be generic to C++11.
-  if (N == 0.0 && std::signbit(N))
-    return *this << "-0.000000e+00";
-#else
   int fpcl = _fpclass(N);
 
   // negative zero
   if (fpcl == _FPCLASS_NZ)
     return *this << "-0.000000e+00";
-#endif
 
   char buf[16];
   unsigned len;
@@ -433,7 +427,7 @@ void format_object_base::home() {
 raw_fd_ostream::raw_fd_ostream(const char *Filename, std::string &ErrorInfo,
                                sys::fs::OpenFlags Flags)
     : Error(false), UseAtomicWrites(false), pos(0) {
-  assert(Filename && "Filename is null");
+  assert(Filename != 0 && "Filename is null");
   ErrorInfo.clear();
 
   // Handle "-" as stdout. Note that when we do this, we consider ourself
@@ -443,18 +437,17 @@ raw_fd_ostream::raw_fd_ostream(const char *Filename, std::string &ErrorInfo,
     FD = STDOUT_FILENO;
     // If user requested binary then put stdout into binary mode if
     // possible.
-    if (!(Flags & sys::fs::F_Text))
+    if (Flags & sys::fs::F_Binary)
       sys::ChangeStdoutToBinary();
     // Close stdout when we're done, to detect any output errors.
     ShouldClose = true;
     return;
   }
 
-  std::error_code EC = sys::fs::openFileForWrite(Filename, FD, Flags);
+  error_code EC = sys::fs::openFileForWrite(Filename, FD, Flags);
 
   if (EC) {
-    ErrorInfo = "Error opening output file '" + std::string(Filename) + "': " +
-                EC.message();
+    ErrorInfo = "Error opening output file '" + std::string(Filename) + "'";
     ShouldClose = false;
     return;
   }
@@ -469,10 +462,9 @@ raw_fd_ostream::raw_fd_ostream(int fd, bool shouldClose, bool unbuffered)
   : raw_ostream(unbuffered), FD(fd),
     ShouldClose(shouldClose), Error(false), UseAtomicWrites(false) {
 #ifdef O_BINARY
-  // Setting STDOUT to binary mode is necessary in Win32
+  // Setting STDOUT and STDERR to binary mode is necessary in Win32
   // to avoid undesirable linefeed conversion.
-  // Don't touch STDERR, or w*printf() (in assert()) would barf wide chars.
-  if (fd == STDOUT_FILENO)
+  if (fd == STDOUT_FILENO || fd == STDERR_FILENO)
     setmode(fd, O_BINARY);
 #endif
 

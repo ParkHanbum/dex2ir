@@ -1,4 +1,5 @@
-; RUN: llc -mtriple=arm-eabi -mattr=vfp2 %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=vfp2 | not grep fmdrr
+; RUN: llc < %s -march=arm -mattr=vfp2 | not grep fmrrd
 
 ; naive codegen for this is:
 ; _i:
@@ -10,8 +11,3 @@ define i64 @test(double %X) {
         %Y = bitcast double %X to i64
         ret i64 %Y
 }
-
-; CHECK-LABEL: test:
-; CHECK-NOT: fmdrr
-; CHECK-NOT: fmrrd
-

@@ -13,19 +13,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "NVPTX.h"
-#include "MCTargetDesc/NVPTXBaseInfo.h"
 #include "NVPTXUtilities.h"
-#include "llvm/CodeGen/MachineFunctionAnalysis.h"
-#include "llvm/CodeGen/ValueTypes.h"
+#include "MCTargetDesc/NVPTXBaseInfo.h"
+
+#include "llvm/PassManager.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/IR/ValueMap.h"
-#include "llvm/PassManager.h"
+#include "llvm/ADT/ValueMap.h"
+#include "llvm/CodeGen/MachineFunctionAnalysis.h"
+#include "llvm/CodeGen/ValueTypes.h"
+#include "llvm/IR/IRBuilder.h"
 
 using namespace llvm;
 
@@ -40,9 +41,10 @@ public:
 
   GenericToNVVM() : ModulePass(ID) {}
 
-  bool runOnModule(Module &M) override;
+  virtual bool runOnModule(Module &M);
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {}
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+  }
 
 private:
   Value *getOrInsertCVTA(Module *M, Function *F, GlobalVariable *GV,
@@ -62,7 +64,7 @@ private:
   GVMapTy GVMap;
   ConstantToValueMapTy ConstantToValueMap;
 };
-} // end namespace
+}
 
 char GenericToNVVM::ID = 0;
 
@@ -84,11 +86,10 @@ bool GenericToNVVM::runOnModule(Module &M) {
     GlobalVariable *GV = I++;
     if (GV->getType()->getAddressSpace() == llvm::ADDRESS_SPACE_GENERIC &&
         !llvm::isTexture(*GV) && !llvm::isSurface(*GV) &&
-        !llvm::isSampler(*GV) && !GV->getName().startswith("llvm.")) {
+        !GV->getName().startswith("llvm.")) {
       GlobalVariable *NewGV = new GlobalVariable(
           M, GV->getType()->getElementType(), GV->isConstant(),
-          GV->getLinkage(),
-          GV->hasInitializer() ? GV->getInitializer() : nullptr,
+          GV->getLinkage(), GV->hasInitializer() ? GV->getInitializer() : NULL,
           "", GV, GV->getThreadLocalMode(), llvm::ADDRESS_SPACE_GLOBAL);
       NewGV->copyAttributesFrom(GV);
       GVMap[GV] = NewGV;
@@ -141,13 +142,15 @@ bool GenericToNVVM::runOnModule(Module &M) {
     GlobalVariable *GV = I->first;
     GlobalVariable *NewGV = I->second;
     ++I;
-    Constant *BitCastNewGV = ConstantExpr::getPointerCast(NewGV, GV->getType());
+    Constant *BitCastNewGV = ConstantExpr::getBitCast(NewGV, GV->getType());
     // At this point, the remaining uses of GV should be found only in global
     // variable initializers, as other uses have been already been removed
     // while walking through the instructions in function definitions.
     for (Value::use_iterator UI = GV->use_begin(), UE = GV->use_end();
-         UI != UE;)
-      (UI++)->set(BitCastNewGV);
+         UI != UE;) {
+      Use &U = (UI++).getUse();
+      U.set(BitCastNewGV);
+    }
     std::string Name = GV->getName();
     GV->removeDeadConstantUsers();
     GV->eraseFromParent();
@@ -162,7 +165,7 @@ Value *GenericToNVVM::getOrInsertCVTA(Module *M, Function *F,
                                       GlobalVariable *GV,
                                       IRBuilder<> &Builder) {
   PointerType *GVType = GV->getType();
-  Value *CVTA = nullptr;
+  Value *CVTA = NULL;
 
   // See if the address space conversion requires the operand to be bitcast
   // to i8 addrspace(n)* first.

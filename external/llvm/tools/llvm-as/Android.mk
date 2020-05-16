@@ -15,6 +15,9 @@ else
 LOCAL_LDLIBS += -lpthread -ldl
 endif
 
+REQUIRES_EH := 1
+REQUIRES_RTTI := 1
+
 LOCAL_STATIC_LIBRARIES := \
   libLLVMAsmParser \
   libLLVMBitWriter \

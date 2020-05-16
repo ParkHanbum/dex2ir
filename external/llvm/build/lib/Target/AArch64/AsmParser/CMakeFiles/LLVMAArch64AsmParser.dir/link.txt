@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMAArch64AsmParser.a  CMakeFiles/LLVMAArch64AsmParser.dir/AArch64AsmParser.cpp.o
+/usr/bin/ranlib ../../../libLLVMAArch64AsmParser.a

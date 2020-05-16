@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMMSP430AsmPrinter.a  CMakeFiles/LLVMMSP430AsmPrinter.dir/MSP430InstPrinter.cpp.o
+/usr/bin/ranlib ../../../libLLVMMSP430AsmPrinter.a

@@ -69,8 +69,6 @@ class TGParser {
   // Record tracker
   RecordKeeper &Records;
 
-  unsigned AnonCounter;
-
   // A "named boolean" indicating how to parse identifiers.  Usually
   // identifiers map to some existing object but in special cases
   // (e.g. parsing def names) no such object exists yet because we are
@@ -84,8 +82,8 @@ class TGParser {
   };
 
 public:
-  TGParser(SourceMgr &SrcMgr, RecordKeeper &records)
-      : Lex(SrcMgr), CurMultiClass(nullptr), Records(records), AnonCounter(0) {}
+  TGParser(SourceMgr &SrcMgr, RecordKeeper &records) :
+    Lex(SrcMgr), CurMultiClass(0), Records(records) {}
 
   /// ParseFile - Main entrypoint for parsing a tblgen file.  These parser
   /// routines return true on error, or false on success.
@@ -114,8 +112,6 @@ private:  // Semantic analysis methods.
   bool AddSubMultiClass(MultiClass *CurMC,
                         SubMultiClassReference &SubMultiClass);
 
-  std::string GetNewAnonymousName();
-
   // IterRecord: Map an iterator name to a value.
   struct IterRecord {
     VarInit *IterVar;
@@ -131,13 +127,13 @@ private:  // Semantic analysis methods.
   bool ProcessForeachDefs(Record *CurRec, SMLoc Loc, IterSet &IterVals);
 
 private:  // Parser methods.
-  bool ParseObjectList(MultiClass *MC = nullptr);
+  bool ParseObjectList(MultiClass *MC = 0);
   bool ParseObject(MultiClass *MC);
   bool ParseClass();
   bool ParseMultiClass();
   Record *InstantiateMulticlassDef(MultiClass &MC,
                                    Record *DefProto,
-                                   Init *&DefmPrefix,
+                                   Init *DefmPrefix,
                                    SMRange DefmPrefixRange);
   bool ResolveMulticlassDefArgs(MultiClass &MC,
                                 Record *DefProto,
@@ -167,21 +163,22 @@ private:  // Parser methods.
   SubClassReference ParseSubClassReference(Record *CurRec, bool isDefm);
   SubMultiClassReference ParseSubMultiClassReference(MultiClass *CurMC);
 
+  Init *ParseIDValue(Record *CurRec, IDParseMode Mode = ParseValueMode);
   Init *ParseIDValue(Record *CurRec, const std::string &Name, SMLoc NameLoc,
                      IDParseMode Mode = ParseValueMode);
-  Init *ParseSimpleValue(Record *CurRec, RecTy *ItemType = nullptr,
+  Init *ParseSimpleValue(Record *CurRec, RecTy *ItemType = 0,
                          IDParseMode Mode = ParseValueMode);
-  Init *ParseValue(Record *CurRec, RecTy *ItemType = nullptr,
+  Init *ParseValue(Record *CurRec, RecTy *ItemType = 0,
                    IDParseMode Mode = ParseValueMode);
-  std::vector<Init*> ParseValueList(Record *CurRec, Record *ArgsRec = nullptr,
-                                    RecTy *EltTy = nullptr);
+  std::vector<Init*> ParseValueList(Record *CurRec, Record *ArgsRec = 0,
+                                    RecTy *EltTy = 0);
   std::vector<std::pair<llvm::Init*, std::string> > ParseDagArgList(Record *);
   bool ParseOptionalRangeList(std::vector<unsigned> &Ranges);
   bool ParseOptionalBitList(std::vector<unsigned> &Ranges);
   std::vector<unsigned> ParseRangeList();
   bool ParseRangePiece(std::vector<unsigned> &Ranges);
   RecTy *ParseType();
-  Init *ParseOperation(Record *CurRec, RecTy *ItemType);
+  Init *ParseOperation(Record *CurRec);
   RecTy *ParseOperatorType();
   Init *ParseObjectName(MultiClass *CurMultiClass);
   Record *ParseClassID();

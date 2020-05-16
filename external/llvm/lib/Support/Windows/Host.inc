@@ -11,12 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "WindowsSupport.h"
+#include "Windows.h"
 #include <cstdio>
 #include <string>
 
 using namespace llvm;
 
 std::string sys::getDefaultTargetTriple() {
-  return Triple::normalize(LLVM_DEFAULT_TARGET_TRIPLE);
+  return LLVM_DEFAULT_TARGET_TRIPLE;
 }

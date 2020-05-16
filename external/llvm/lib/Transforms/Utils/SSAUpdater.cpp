@@ -11,14 +11,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "ssaupdater"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Support/AlignOf.h"
+#include "llvm/Support/Allocator.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -27,22 +30,20 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "ssaupdater"
-
 typedef DenseMap<BasicBlock*, Value*> AvailableValsTy;
 static AvailableValsTy &getAvailableVals(void *AV) {
   return *static_cast<AvailableValsTy*>(AV);
 }
 
 SSAUpdater::SSAUpdater(SmallVectorImpl<PHINode*> *NewPHI)
-  : AV(nullptr), ProtoType(nullptr), ProtoName(), InsertedPHIs(NewPHI) {}
+  : AV(0), ProtoType(0), ProtoName(), InsertedPHIs(NewPHI) {}
 
 SSAUpdater::~SSAUpdater() {
   delete static_cast<AvailableValsTy*>(AV);
 }
 
 void SSAUpdater::Initialize(Type *Ty, StringRef Name) {
-  if (!AV)
+  if (AV == 0)
     AV = new AvailableValsTy();
   else
     getAvailableVals(AV).clear();
@@ -55,14 +56,14 @@ bool SSAUpdater::HasValueForBlock(BasicBlock *BB) const {
 }
 
 void SSAUpdater::AddAvailableValue(BasicBlock *BB, Value *V) {
-  assert(ProtoType && "Need to initialize SSAUpdater");
+  assert(ProtoType != 0 && "Need to initialize SSAUpdater");
   assert(ProtoType == V->getType() &&
          "All rewritten values must have the same type");
   getAvailableVals(AV)[BB] = V;
 }
 
 static bool IsEquivalentPHI(PHINode *PHI,
-                          SmallDenseMap<BasicBlock*, Value*, 8> &ValueMapping) {
+                            DenseMap<BasicBlock*, Value*> &ValueMapping) {
   unsigned PHINumValues = PHI->getNumIncomingValues();
   if (PHINumValues != ValueMapping.size())
     return false;
@@ -91,7 +92,7 @@ Value *SSAUpdater::GetValueInMiddleOfBlock(BasicBlock *BB) {
   // Otherwise, we have the hard case.  Get the live-in values for each
   // predecessor.
   SmallVector<std::pair<BasicBlock*, Value*>, 8> PredValues;
-  Value *SingularValue = nullptr;
+  Value *SingularValue = 0;
 
   // We can get our predecessor info by walking the pred_iterator list, but it
   // is relatively slow.  If we already have PHI nodes in this block, walk one
@@ -106,7 +107,7 @@ Value *SSAUpdater::GetValueInMiddleOfBlock(BasicBlock *BB) {
       if (i == 0)
         SingularValue = PredVal;
       else if (PredVal != SingularValue)
-        SingularValue = nullptr;
+        SingularValue = 0;
     }
   } else {
     bool isFirstPred = true;
@@ -120,7 +121,7 @@ Value *SSAUpdater::GetValueInMiddleOfBlock(BasicBlock *BB) {
         SingularValue = PredVal;
         isFirstPred = false;
       } else if (PredVal != SingularValue)
-        SingularValue = nullptr;
+        SingularValue = 0;
     }
   }
 
@@ -129,14 +130,14 @@ Value *SSAUpdater::GetValueInMiddleOfBlock(BasicBlock *BB) {
     return UndefValue::get(ProtoType);
 
   // Otherwise, if all the merged values are the same, just use it.
-  if (SingularValue)
+  if (SingularValue != 0)
     return SingularValue;
 
   // Otherwise, we do need a PHI: check to see if we already have one available
   // in this block that produces the right value.
   if (isa<PHINode>(BB->begin())) {
-    SmallDenseMap<BasicBlock*, Value*, 8> ValueMapping(PredValues.begin(),
-                                                       PredValues.end());
+    DenseMap<BasicBlock*, Value*> ValueMapping(PredValues.begin(),
+                                               PredValues.end());
     PHINode *SomePHI;
     for (BasicBlock::iterator It = BB->begin();
          (SomePHI = dyn_cast<PHINode>(It)); ++It) {
@@ -292,7 +293,7 @@ public:
     PHINode *PHI = ValueIsPHI(Val, Updater);
     if (PHI && PHI->getNumIncomingValues() == 0)
       return PHI;
-    return nullptr;
+    return 0;
   }
 
   /// GetPHIValue - For the specified PHI instruction, return the value
@@ -402,7 +403,7 @@ run(const SmallVectorImpl<Instruction*> &Insts) const {
     // the order of these instructions in the block.  If the first use in the
     // block is a load, then it uses the live in value.  The last store defines
     // the live out value.  We handle this by doing a linear scan of the block.
-    Value *StoredValue = nullptr;
+    Value *StoredValue = 0;
     for (BasicBlock::iterator II = BB->begin(), E = BB->end(); II != E; ++II) {
       if (LoadInst *L = dyn_cast<LoadInst>(II)) {
         // If this is a load from an unrelated pointer, ignore it.

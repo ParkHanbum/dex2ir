@@ -26,6 +26,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "xfer"
 #include "Hexagon.h"
 #include "HexagonMachineFunctionInfo.h"
 #include "HexagonSubtarget.h"
@@ -48,8 +49,6 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "xfer"
-
 namespace llvm {
   void initializeHexagonSplitTFRCondSetsPass(PassRegistry&);
 }
@@ -68,10 +67,10 @@ class HexagonSplitTFRCondSets : public MachineFunctionPass {
       initializeHexagonSplitTFRCondSetsPass(*PassRegistry::getPassRegistry());
     }
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Hexagon Split TFRCondSets";
     }
-    bool runOnMachineFunction(MachineFunction &Fn) override;
+    bool runOnMachineFunction(MachineFunction &Fn);
 };
 
 
@@ -222,8 +221,7 @@ bool HexagonSplitTFRCondSets::runOnMachineFunction(MachineFunction &Fn) {
 static void initializePassOnce(PassRegistry &Registry) {
   const char *Name = "Hexagon Split TFRCondSets";
   PassInfo *PI = new PassInfo(Name, "hexagon-split-tfr",
-                              &HexagonSplitTFRCondSets::ID, nullptr, false,
-                              false);
+                              &HexagonSplitTFRCondSets::ID, 0, false, false);
   Registry.registerPass(*PI, true);
 }
 

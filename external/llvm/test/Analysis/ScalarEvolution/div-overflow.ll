@@ -1,6 +1,5 @@
-; RUN: opt < %s -scalar-evolution -analyze | FileCheck %s
-
-; CHECK: -->  ((-128 * %a) /u -128)
+; RUN: opt < %s -scalar-evolution -analyze \
+; RUN:  | grep "\-->  ((-128 \* %a) /u -128)"
 
 ; Don't let ScalarEvolution fold this div away.
 

@@ -33,16 +33,15 @@ namespace {
     HexagonRemoveExtendArgs() : FunctionPass(ID) {
       initializeHexagonRemoveExtendArgsPass(*PassRegistry::getPassRegistry());
     }
-    bool runOnFunction(Function &F) override;
+    virtual bool runOnFunction(Function &F);
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Remove sign extends";
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<MachineFunctionAnalysis>();
       AU.addPreserved<MachineFunctionAnalysis>();
-      AU.addPreserved("stack-protector");
       FunctionPass::getAnalysisUsage(AU);
     }
   };
@@ -60,17 +59,18 @@ bool HexagonRemoveExtendArgs::runOnFunction(Function &F) {
     if (F.getAttributes().hasAttribute(Idx, Attribute::SExt)) {
       Argument* Arg = AI;
       if (!isa<PointerType>(Arg->getType())) {
-        for (auto UI = Arg->user_begin(); UI != Arg->user_end();) {
+        for (Instruction::use_iterator UI = Arg->use_begin();
+             UI != Arg->use_end();) {
           if (isa<SExtInst>(*UI)) {
-            Instruction* I = cast<Instruction>(*UI);
-            SExtInst* SI = new SExtInst(Arg, I->getType());
+            Instruction* Use = cast<Instruction>(*UI);
+            SExtInst* SI = new SExtInst(Arg, Use->getType());
             assert (EVT::getEVT(SI->getType()) ==
-                    (EVT::getEVT(I->getType())));
+                    (EVT::getEVT(Use->getType())));
             ++UI;
-            I->replaceAllUsesWith(SI);
+            Use->replaceAllUsesWith(SI);
             Instruction* First = F.getEntryBlock().begin();
             SI->insertBefore(First);
-            I->eraseFromParent();
+            Use->eraseFromParent();
           } else {
             ++UI;
           }

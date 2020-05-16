@@ -1,4 +1,4 @@
-//=====-- AArch64MCAsmInfo.h - AArch64 asm properties ---------*- C++ -*--====//
+//==-- AArch64MCAsmInfo.h - AArch64 asm properties -------------*- C++ -*--===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,25 +11,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef AArch64TARGETASMINFO_H
-#define AArch64TARGETASMINFO_H
+#ifndef LLVM_AARCH64TARGETASMINFO_H
+#define LLVM_AARCH64TARGETASMINFO_H
 
-#include "llvm/MC/MCAsmInfoDarwin.h"
+#include "llvm/MC/MCAsmInfo.h"
 
 namespace llvm {
-class Target;
-class StringRef;
-class MCStreamer;
-struct AArch64MCAsmInfoDarwin : public MCAsmInfoDarwin {
-  explicit AArch64MCAsmInfoDarwin();
-  const MCExpr *
-  getExprForPersonalitySymbol(const MCSymbol *Sym, unsigned Encoding,
-                              MCStreamer &Streamer) const override;
-};
 
-struct AArch64MCAsmInfoELF : public MCAsmInfo {
-  explicit AArch64MCAsmInfoELF(StringRef TT);
-};
+  struct AArch64ELFMCAsmInfo : public MCAsmInfo {
+    explicit AArch64ELFMCAsmInfo();
+  };
 
 } // namespace llvm
 

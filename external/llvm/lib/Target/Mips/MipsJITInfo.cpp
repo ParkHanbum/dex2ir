@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "jit"
 #include "MipsJITInfo.h"
 #include "MipsInstrInfo.h"
 #include "MipsRelocations.h"
@@ -23,8 +24,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cstdlib>
 using namespace llvm;
-
-#define DEBUG_TYPE "jit"
 
 
 void MipsJITInfo::replaceMachineCodeForFunction(void *Old, void *New) {

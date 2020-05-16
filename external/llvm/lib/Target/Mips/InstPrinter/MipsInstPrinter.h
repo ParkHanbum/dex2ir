@@ -85,28 +85,23 @@ public:
   void printInstruction(const MCInst *MI, raw_ostream &O);
   static const char *getRegisterName(unsigned RegNo);
 
-  void printRegName(raw_ostream &OS, unsigned RegNo) const override;
-  void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot) override;
+  virtual void printRegName(raw_ostream &OS, unsigned RegNo) const;
+  virtual void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot);
 
   bool printAliasInstr(const MCInst *MI, raw_ostream &OS);
-  void printCustomAliasOperand(const MCInst *MI, unsigned OpIdx,
-                               unsigned PrintMethodIdx, raw_ostream &O);
 
 private:
   void printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printUnsignedImm(const MCInst *MI, int opNum, raw_ostream &O);
-  void printUnsignedImm8(const MCInst *MI, int opNum, raw_ostream &O);
   void printMemOperand(const MCInst *MI, int opNum, raw_ostream &O);
   void printMemOperandEA(const MCInst *MI, int opNum, raw_ostream &O);
   void printFCCOperand(const MCInst *MI, int opNum, raw_ostream &O);
-  void printSHFMask(const MCInst *MI, int opNum, raw_ostream &O);
 
   bool printAlias(const char *Str, const MCInst &MI, unsigned OpNo,
                   raw_ostream &OS);
   bool printAlias(const char *Str, const MCInst &MI, unsigned OpNo0,
                   unsigned OpNo1, raw_ostream &OS);
   bool printAlias(const MCInst &MI, raw_ostream &OS);
-  void printSaveRestore(const MCInst *MI, raw_ostream &O);
 };
 } // end namespace llvm
 

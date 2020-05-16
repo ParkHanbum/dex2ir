@@ -1,4 +1,3 @@
-; RUN: llc  < %s -march=mips64el -mcpu=mips4 -mattr=n64 | FileCheck %s
 ; RUN: llc  < %s -march=mips64el -mcpu=mips64 -mattr=n64 | FileCheck %s
 
 define double @foo1() nounwind readnone {

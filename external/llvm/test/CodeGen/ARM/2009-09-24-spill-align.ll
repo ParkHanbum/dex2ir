@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 ; pr4926
 
 define void @test_vget_lanep16() nounwind {

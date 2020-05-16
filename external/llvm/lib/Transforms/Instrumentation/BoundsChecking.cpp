@@ -12,22 +12,21 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "bounds-checking"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
-#include "llvm/Analysis/TargetFolder.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/InstIterator.h"
+#include "llvm/Support/TargetFolder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "bounds-checking"
 
 static cl::opt<bool> SingleTrapBB("bounds-checking-single-trap",
                                   cl::desc("Use one trap block per function"));
@@ -46,15 +45,15 @@ namespace {
       initializeBoundsCheckingPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnFunction(Function &F) override;
+    virtual bool runOnFunction(Function &F);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<DataLayoutPass>();
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.addRequired<DataLayout>();
       AU.addRequired<TargetLibraryInfo>();
     }
 
   private:
-    const DataLayout *DL;
+    const DataLayout *TD;
     const TargetLibraryInfo *TLI;
     ObjectSizeOffsetEvaluator *ObjSizeEval;
     BuilderTy *Builder;
@@ -62,7 +61,9 @@ namespace {
     BasicBlock *TrapBB;
 
     BasicBlock *getTrapBB();
-    void emitBranchToTrap(Value *Cmp = nullptr);
+    void emitBranchToTrap(Value *Cmp = 0);
+    bool computeAllocSize(Value *Ptr, APInt &Offset, Value* &OffsetValue,
+                          APInt &Size, Value* &SizeValue);
     bool instrument(Value *Ptr, Value *Val);
  };
 }
@@ -79,7 +80,7 @@ BasicBlock *BoundsChecking::getTrapBB() {
     return TrapBB;
 
   Function *Fn = Inst->getParent()->getParent();
-  IRBuilder<>::InsertPointGuard Guard(*Builder);
+  BasicBlock::iterator PrevInsertPoint = Builder->GetInsertPoint();
   TrapBB = BasicBlock::Create(Fn->getContext(), "trap", Fn);
   Builder->SetInsertPoint(TrapBB);
 
@@ -90,6 +91,7 @@ BasicBlock *BoundsChecking::getTrapBB() {
   TrapCall->setDebugLoc(Inst->getDebugLoc());
   Builder->CreateUnreachable();
 
+  Builder->SetInsertPoint(PrevInsertPoint);
   return TrapBB;
 }
 
@@ -104,7 +106,7 @@ void BoundsChecking::emitBranchToTrap(Value *Cmp) {
     if (!C->getZExtValue())
       return;
     else
-      Cmp = nullptr; // unconditional branch
+      Cmp = 0; // unconditional branch
   }
   ++ChecksAdded;
 
@@ -126,7 +128,7 @@ void BoundsChecking::emitBranchToTrap(Value *Cmp) {
 /// size of memory block that is touched.
 /// Returns true if any change was made to the IR, false otherwise.
 bool BoundsChecking::instrument(Value *Ptr, Value *InstVal) {
-  uint64_t NeededSize = DL->getTypeStoreSize(InstVal->getType());
+  uint64_t NeededSize = TD->getTypeStoreSize(InstVal->getType());
   DEBUG(dbgs() << "Instrument " << *Ptr << " for " << Twine(NeededSize)
               << " bytes\n");
 
@@ -141,7 +143,7 @@ bool BoundsChecking::instrument(Value *Ptr, Value *InstVal) {
   Value *Offset = SizeOffset.second;
   ConstantInt *SizeCI = dyn_cast<ConstantInt>(Size);
 
-  Type *IntTy = DL->getIntPtrType(Ptr->getType());
+  Type *IntTy = TD->getIntPtrType(Ptr->getType());
   Value *NeededSizeVal = ConstantInt::get(IntTy, NeededSize);
 
   // three checks are required to ensure safety:
@@ -165,14 +167,13 @@ bool BoundsChecking::instrument(Value *Ptr, Value *InstVal) {
 }
 
 bool BoundsChecking::runOnFunction(Function &F) {
-  DL = &getAnalysis<DataLayoutPass>().getDataLayout();
+  TD = &getAnalysis<DataLayout>();
   TLI = &getAnalysis<TargetLibraryInfo>();
 
-  TrapBB = nullptr;
-  BuilderTy TheBuilder(F.getContext(), TargetFolder(DL));
+  TrapBB = 0;
+  BuilderTy TheBuilder(F.getContext(), TargetFolder(TD));
   Builder = &TheBuilder;
-  ObjectSizeOffsetEvaluator TheObjSizeEval(DL, TLI, F.getContext(),
-                                           /*RoundToAlign=*/true);
+  ObjectSizeOffsetEvaluator TheObjSizeEval(TD, TLI, F.getContext());
   ObjSizeEval = &TheObjSizeEval;
 
   // check HANDLE_MEMORY_INST in include/llvm/Instruction.def for memory

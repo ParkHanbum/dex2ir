@@ -13,13 +13,10 @@
 
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/ScoreboardHazardRecognizer.h"
-#include "llvm/CodeGen/StackMaps.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include "llvm/Support/CommandLine.h"
@@ -43,7 +40,7 @@ TargetInstrInfo::getRegClass(const MCInstrDesc &MCID, unsigned OpNum,
                              const TargetRegisterInfo *TRI,
                              const MachineFunction &MF) const {
   if (OpNum >= MCID.getNumOperands())
-    return nullptr;
+    return 0;
 
   short RegClass = MCID.OpInfo[OpNum].RegClass;
   if (MCID.OpInfo[OpNum].isLookupPtrRegClass())
@@ -51,7 +48,7 @@ TargetInstrInfo::getRegClass(const MCInstrDesc &MCID, unsigned OpNum,
 
   // Instructions like INSERT_SUBREG do not have fixed register classes.
   if (RegClass < 0)
-    return nullptr;
+    return 0;
 
   // Otherwise just look it up normally.
   return TRI->getRegClass(RegClass);
@@ -111,7 +108,7 @@ TargetInstrInfo::ReplaceTailWithBranchTo(MachineBasicBlock::iterator Tail,
 
   // If MBB isn't immediately before MBB, insert a branch to it.
   if (++MachineFunction::iterator(MBB) != MachineFunction::iterator(NewDest))
-    InsertBranch(*MBB, NewDest, nullptr, SmallVector<MachineOperand, 0>(),
+    InsertBranch(*MBB, NewDest, 0, SmallVector<MachineOperand, 0>(),
                  Tail->getDebugLoc());
   MBB->addSuccessor(NewDest);
 }
@@ -124,11 +121,13 @@ MachineInstr *TargetInstrInfo::commuteInstruction(MachineInstr *MI,
   bool HasDef = MCID.getNumDefs();
   if (HasDef && !MI->getOperand(0).isReg())
     // No idea how to commute this instruction. Target should implement its own.
-    return nullptr;
+    return 0;
   unsigned Idx1, Idx2;
   if (!findCommutedOpIndices(MI, Idx1, Idx2)) {
-    assert(MI->isCommutable() && "Precondition violation: MI must be commutable.");
-    return nullptr;
+    std::string msg;
+    raw_string_ostream Msg(msg);
+    Msg << "Don't know how to commute: " << *MI;
+    report_fatal_error(Msg.str());
   }
 
   assert(MI->getOperand(Idx1).isReg() && MI->getOperand(Idx2).isReg() &&
@@ -248,15 +247,13 @@ bool TargetInstrInfo::hasLoadFromStackSlot(const MachineInstr *MI,
          oe = MI->memoperands_end();
        o != oe;
        ++o) {
-    if ((*o)->isLoad()) {
+    if ((*o)->isLoad() && (*o)->getValue())
       if (const FixedStackPseudoSourceValue *Value =
-          dyn_cast_or_null<FixedStackPseudoSourceValue>(
-              (*o)->getPseudoValue())) {
+          dyn_cast<const FixedStackPseudoSourceValue>((*o)->getValue())) {
         FrameIndex = Value->getFrameIndex();
         MMO = *o;
         return true;
       }
-    }
   }
   return false;
 }
@@ -268,47 +265,15 @@ bool TargetInstrInfo::hasStoreToStackSlot(const MachineInstr *MI,
          oe = MI->memoperands_end();
        o != oe;
        ++o) {
-    if ((*o)->isStore()) {
+    if ((*o)->isStore() && (*o)->getValue())
       if (const FixedStackPseudoSourceValue *Value =
-          dyn_cast_or_null<FixedStackPseudoSourceValue>(
-              (*o)->getPseudoValue())) {
+          dyn_cast<const FixedStackPseudoSourceValue>((*o)->getValue())) {
         FrameIndex = Value->getFrameIndex();
         MMO = *o;
         return true;
       }
-    }
   }
   return false;
-}
-
-bool TargetInstrInfo::getStackSlotRange(const TargetRegisterClass *RC,
-                                        unsigned SubIdx, unsigned &Size,
-                                        unsigned &Offset,
-                                        const TargetMachine *TM) const {
-  if (!SubIdx) {
-    Size = RC->getSize();
-    Offset = 0;
-    return true;
-  }
-  unsigned BitSize = TM->getRegisterInfo()->getSubRegIdxSize(SubIdx);
-  // Convert bit size to byte size to be consistent with
-  // MCRegisterClass::getSize().
-  if (BitSize % 8)
-    return false;
-
-  int BitOffset = TM->getRegisterInfo()->getSubRegIdxOffset(SubIdx);
-  if (BitOffset < 0 || BitOffset % 8)
-    return false;
-
-  Size = BitSize /= 8;
-  Offset = (unsigned)BitOffset / 8;
-
-  assert(RC->getSize() >= (Offset + Size) && "bad subregister range");
-
-  if (!TM->getDataLayout()->isLittleEndian()) {
-    Offset = RC->getSize() - (Offset + Size);
-  }
-  return true;
 }
 
 void TargetInstrInfo::reMaterialize(MachineBasicBlock &MBB,
@@ -342,14 +307,14 @@ static const TargetRegisterClass *canFoldCopy(const MachineInstr *MI,
                                               unsigned FoldIdx) {
   assert(MI->isCopy() && "MI must be a COPY instruction");
   if (MI->getNumOperands() != 2)
-    return nullptr;
+    return 0;
   assert(FoldIdx<2 && "FoldIdx refers no nonexistent operand");
 
   const MachineOperand &FoldOp = MI->getOperand(FoldIdx);
   const MachineOperand &LiveOp = MI->getOperand(1-FoldIdx);
 
   if (FoldOp.getSubReg() || LiveOp.getSubReg())
-    return nullptr;
+    return 0;
 
   unsigned FoldReg = FoldOp.getReg();
   unsigned LiveReg = LiveOp.getReg();
@@ -361,78 +326,19 @@ static const TargetRegisterClass *canFoldCopy(const MachineInstr *MI,
   const TargetRegisterClass *RC = MRI.getRegClass(FoldReg);
 
   if (TargetRegisterInfo::isPhysicalRegister(LiveOp.getReg()))
-    return RC->contains(LiveOp.getReg()) ? RC : nullptr;
+    return RC->contains(LiveOp.getReg()) ? RC : 0;
 
   if (RC->hasSubClassEq(MRI.getRegClass(LiveReg)))
     return RC;
 
   // FIXME: Allow folding when register classes are memory compatible.
-  return nullptr;
+  return 0;
 }
 
 bool TargetInstrInfo::
 canFoldMemoryOperand(const MachineInstr *MI,
                      const SmallVectorImpl<unsigned> &Ops) const {
   return MI->isCopy() && Ops.size() == 1 && canFoldCopy(MI, Ops[0]);
-}
-
-static MachineInstr* foldPatchpoint(MachineFunction &MF,
-                                    MachineInstr *MI,
-                                    const SmallVectorImpl<unsigned> &Ops,
-                                    int FrameIndex,
-                                    const TargetInstrInfo &TII) {
-  unsigned StartIdx = 0;
-  switch (MI->getOpcode()) {
-  case TargetOpcode::STACKMAP:
-    StartIdx = 2; // Skip ID, nShadowBytes.
-    break;
-  case TargetOpcode::PATCHPOINT: {
-    // For PatchPoint, the call args are not foldable.
-    PatchPointOpers opers(MI);
-    StartIdx = opers.getVarIdx();
-    break;
-  }
-  default:
-    llvm_unreachable("unexpected stackmap opcode");
-  }
-
-  // Return false if any operands requested for folding are not foldable (not
-  // part of the stackmap's live values).
-  for (SmallVectorImpl<unsigned>::const_iterator I = Ops.begin(), E = Ops.end();
-       I != E; ++I) {
-    if (*I < StartIdx)
-      return nullptr;
-  }
-
-  MachineInstr *NewMI =
-    MF.CreateMachineInstr(TII.get(MI->getOpcode()), MI->getDebugLoc(), true);
-  MachineInstrBuilder MIB(MF, NewMI);
-
-  // No need to fold return, the meta data, and function arguments
-  for (unsigned i = 0; i < StartIdx; ++i)
-    MIB.addOperand(MI->getOperand(i));
-
-  for (unsigned i = StartIdx; i < MI->getNumOperands(); ++i) {
-    MachineOperand &MO = MI->getOperand(i);
-    if (std::find(Ops.begin(), Ops.end(), i) != Ops.end()) {
-      unsigned SpillSize;
-      unsigned SpillOffset;
-      // Compute the spill slot size and offset.
-      const TargetRegisterClass *RC =
-        MF.getRegInfo().getRegClass(MO.getReg());
-      bool Valid = TII.getStackSlotRange(RC, MO.getSubReg(), SpillSize,
-                                         SpillOffset, &MF.getTarget());
-      if (!Valid)
-        report_fatal_error("cannot spill patchpoint subregister operand");
-      MIB.addImm(StackMaps::IndirectMemRefOp);
-      MIB.addImm(SpillSize);
-      MIB.addFrameIndex(FrameIndex);
-      MIB.addImm(SpillOffset);
-    }
-    else
-      MIB.addOperand(MO);
-  }
-  return NewMI;
 }
 
 /// foldMemoryOperand - Attempt to fold a load or store of the specified stack
@@ -456,19 +362,8 @@ TargetInstrInfo::foldMemoryOperand(MachineBasicBlock::iterator MI,
   assert(MBB && "foldMemoryOperand needs an inserted instruction");
   MachineFunction &MF = *MBB->getParent();
 
-  MachineInstr *NewMI = nullptr;
-
-  if (MI->getOpcode() == TargetOpcode::STACKMAP ||
-      MI->getOpcode() == TargetOpcode::PATCHPOINT) {
-    // Fold stackmap/patchpoint.
-    NewMI = foldPatchpoint(MF, MI, Ops, FI, *this);
-  } else {
-    // Ask the target to do the actual folding.
-    NewMI =foldMemoryOperandImpl(MF, MI, Ops, FI);
-  }
- 
-  if (NewMI) {
-    NewMI->setMemRefs(MI->memoperands_begin(), MI->memoperands_end());
+  // Ask the target to do the actual folding.
+  if (MachineInstr *NewMI = foldMemoryOperandImpl(MF, MI, Ops, FI)) {
     // Add a memory operand, foldMemoryOperandImpl doesn't do that.
     assert((!(Flags & MachineMemOperand::MOStore) ||
             NewMI->mayStore()) &&
@@ -490,11 +385,11 @@ TargetInstrInfo::foldMemoryOperand(MachineBasicBlock::iterator MI,
 
   // Straight COPY may fold as load/store.
   if (!MI->isCopy() || Ops.size() != 1)
-    return nullptr;
+    return 0;
 
   const TargetRegisterClass *RC = canFoldCopy(MI, Ops[0]);
   if (!RC)
-    return nullptr;
+    return 0;
 
   const MachineOperand &MO = MI->getOperand(1-Ops[0]);
   MachineBasicBlock::iterator Pos = MI;
@@ -523,37 +418,15 @@ TargetInstrInfo::foldMemoryOperand(MachineBasicBlock::iterator MI,
   MachineFunction &MF = *MBB.getParent();
 
   // Ask the target to do the actual folding.
-  MachineInstr *NewMI = nullptr;
-  int FrameIndex = 0;
-
-  if ((MI->getOpcode() == TargetOpcode::STACKMAP ||
-       MI->getOpcode() == TargetOpcode::PATCHPOINT) &&
-      isLoadFromStackSlot(LoadMI, FrameIndex)) {
-    // Fold stackmap/patchpoint.
-    NewMI = foldPatchpoint(MF, MI, Ops, FrameIndex, *this);
-  } else {
-    // Ask the target to do the actual folding.
-    NewMI = foldMemoryOperandImpl(MF, MI, Ops, LoadMI);
-  }
-
-  if (!NewMI) return nullptr;
+  MachineInstr *NewMI = foldMemoryOperandImpl(MF, MI, Ops, LoadMI);
+  if (!NewMI) return 0;
 
   NewMI = MBB.insert(MI, NewMI);
 
   // Copy the memoperands from the load to the folded instruction.
-  if (MI->memoperands_empty()) {
-    NewMI->setMemRefs(LoadMI->memoperands_begin(),
-                      LoadMI->memoperands_end());
-  }
-  else {
-    // Handle the rare case of folding multiple loads.
-    NewMI->setMemRefs(MI->memoperands_begin(),
-                      MI->memoperands_end());
-    for (MachineInstr::mmo_iterator I = LoadMI->memoperands_begin(),
-           E = LoadMI->memoperands_end(); I != E; ++I) {
-      NewMI->addMemOperand(MF, *I);
-    }
-  }
+  NewMI->setMemRefs(LoadMI->memoperands_begin(),
+                    LoadMI->memoperands_end());
+
   return NewMI;
 }
 
@@ -647,7 +520,7 @@ bool TargetInstrInfo::isSchedulingBoundary(const MachineInstr *MI,
                                            const MachineBasicBlock *MBB,
                                            const MachineFunction &MF) const {
   // Terminators and labels can't be scheduled around.
-  if (MI->isTerminator() || MI->isPosition())
+  if (MI->isTerminator() || MI->isLabel())
     return true;
 
   // Don't attempt to schedule around any instruction that defines
@@ -671,7 +544,7 @@ bool TargetInstrInfo::usePreRAHazardRecognizer() const {
 
 // Default implementation of CreateTargetRAHazardRecognizer.
 ScheduleHazardRecognizer *TargetInstrInfo::
-CreateTargetHazardRecognizer(const TargetSubtargetInfo *STI,
+CreateTargetHazardRecognizer(const TargetMachine *TM,
                              const ScheduleDAG *DAG) const {
   // Dummy hazard recognizer allows all instructions to issue.
   return new ScheduleHazardRecognizer();
@@ -755,10 +628,6 @@ unsigned TargetInstrInfo::defaultDefLatency(const MCSchedModel *SchedModel,
   if (isHighLatencyDef(DefMI->getOpcode()))
     return SchedModel->HighLatency;
   return 1;
-}
-
-unsigned TargetInstrInfo::getPredicationCost(const MachineInstr *) const {
-  return 0;
 }
 
 unsigned TargetInstrInfo::

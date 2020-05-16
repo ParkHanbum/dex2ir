@@ -63,7 +63,6 @@ private:
   AsmToken LexSingleQuote();
   AsmToken LexQuote();
   AsmToken LexFloatLiteral();
-  AsmToken LexHexFloatLiteral(bool NoIntDigits);
 };
 
 } // end namespace llvm

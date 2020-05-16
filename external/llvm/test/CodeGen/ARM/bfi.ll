@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm -mattr=+v6t2 %s -o - | FileCheck %s
+; RUN: llc -march=arm -mattr=+v6t2 < %s | FileCheck %s
 
 %struct.F = type { [3 x i8], i8 }
 

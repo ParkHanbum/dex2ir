@@ -14,27 +14,11 @@
 
 namespace llvm {
 
-static const unsigned CodeModelLargeSize = 256;
-
   class XCoreTargetObjectFile : public TargetLoweringObjectFileELF {
-   const MCSection *BSSSectionLarge;
-   const MCSection *DataSectionLarge;
-   const MCSection *ReadOnlySectionLarge;
-   const MCSection *DataRelROSectionLarge;
   public:
-    void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
+    void Initialize(MCContext &Ctx, const TargetMachine &TM);
 
-    const MCSection *
-      getExplicitSectionGlobal(const GlobalValue *GV,
-                               SectionKind Kind, Mangler &Mang,
-                               const TargetMachine &TM) const override;
-
-    const MCSection *
-      SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                             Mangler &Mang,
-                             const TargetMachine &TM) const override;
-
-    const MCSection *getSectionForConstant(SectionKind Kind) const override;
+    // TODO: Classify globals as xcore wishes.
   };
 } // end namespace llvm
 

@@ -35,9 +35,6 @@
  *	@(#)utils.h	8.3 (Berkeley) 3/20/94
  */
 
-#ifndef LLVM_SUPPORT_REGUTILS_H
-#define LLVM_SUPPORT_REGUTILS_H
-
 /* utility definitions */
 #define	NC		(CHAR_MAX - CHAR_MIN + 1)
 typedef unsigned char uch;
@@ -53,6 +50,4 @@ typedef unsigned char uch;
 /* for old systems with bcopy() but no memmove() */
 #ifdef USEBCOPY
 #define	memmove(d, s, c)	bcopy(s, d, c)
-#endif
-
 #endif

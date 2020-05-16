@@ -32,12 +32,12 @@ namespace {
   public:
     explicit Printer(raw_ostream &OS) : FunctionPass(ID), OS(OS) {}
 
-
-    const char *getPassName() const override;
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
-
-    bool runOnFunction(Function &F) override;
-    bool doFinalization(Module &M) override;
+    
+    const char *getPassName() const;
+    void getAnalysisUsage(AnalysisUsage &AU) const;
+    
+    bool runOnFunction(Function &F);
+    bool doFinalization(Module &M);
   };
 
 }
@@ -61,6 +61,10 @@ GCModuleInfo::GCModuleInfo()
   initializeGCModuleInfoPass(*PassRegistry::getPassRegistry());
 }
 
+GCModuleInfo::~GCModuleInfo() {
+  clear();
+}
+
 GCStrategy *GCModuleInfo::getOrCreateStrategy(const Module *M,
                                               const std::string &Name) {
   strategy_map_type::iterator NMI = StrategyMap.find(Name);
@@ -70,17 +74,17 @@ GCStrategy *GCModuleInfo::getOrCreateStrategy(const Module *M,
   for (GCRegistry::iterator I = GCRegistry::begin(),
                             E = GCRegistry::end(); I != E; ++I) {
     if (Name == I->getName()) {
-      std::unique_ptr<GCStrategy> S = I->instantiate();
+      GCStrategy *S = I->instantiate();
       S->M = M;
       S->Name = Name;
-      StrategyMap.GetOrCreateValue(Name).setValue(S.get());
-      StrategyList.push_back(std::move(S));
-      return StrategyList.back().get();
+      StrategyMap.GetOrCreateValue(Name).setValue(S);
+      StrategyList.push_back(S);
+      return S;
     }
   }
  
   dbgs() << "unsupported GC: " << Name << "\n";
-  llvm_unreachable(nullptr);
+  llvm_unreachable(0);
 }
 
 GCFunctionInfo &GCModuleInfo::getFunctionInfo(const Function &F) {
@@ -100,6 +104,9 @@ GCFunctionInfo &GCModuleInfo::getFunctionInfo(const Function &F) {
 void GCModuleInfo::clear() {
   FInfoMap.clear();
   StrategyMap.clear();
+  
+  for (iterator I = begin(), E = end(); I != E; ++I)
+    delete *I;
   StrategyList.clear();
 }
 

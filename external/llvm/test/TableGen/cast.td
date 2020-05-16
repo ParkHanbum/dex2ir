@@ -1,10 +1,4 @@
-// RUN: llvm-tblgen %s | FileCheck %s
-// XFAIL: vg_leak
-
-// CHECK: add_ps
-// CHECK: add_ps
-// CHECK: add_ps
-// CHECK-NOT: add_ps
+// RUN: llvm-tblgen %s | grep "add_ps" | count 3
 
 class ValueType<int size, int value> {
   int Size = size;

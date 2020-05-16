@@ -12,14 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Linker/Linker.h"
+#include "llvm/Linker.h"
+#include "llvm/Analysis/Verifier.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -51,10 +50,6 @@ Verbose("v", cl::desc("Print information about actions taken"));
 static cl::opt<bool>
 DumpAsm("d", cl::desc("Print assembly as linked"), cl::Hidden);
 
-static cl::opt<bool>
-SuppressWarnings("suppress-warnings", cl::desc("Suppress all linking warnings"),
-                 cl::init(false));
-
 // LoadFile - Read the specified bitcode file in and return it.  This routine
 // searches the link path for the specified file to try to find it...
 //
@@ -62,20 +57,20 @@ static inline Module *LoadFile(const char *argv0, const std::string &FN,
                                LLVMContext& Context) {
   SMDiagnostic Err;
   if (Verbose) errs() << "Loading '" << FN << "'\n";
-  Module* Result = nullptr;
+  Module* Result = 0;
 
   Result = ParseIRFile(FN, Err, Context);
   if (Result) return Result;   // Load successful!
 
   Err.print(argv0, errs());
-  return nullptr;
+  return NULL;
 }
 
 int main(int argc, char **argv) {
   // Print a stack trace if we signal out.
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
-
+  
   LLVMContext &Context = getGlobalContext();
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
   cl::ParseCommandLineOptions(argc, argv, "llvm linker\n");
@@ -83,18 +78,18 @@ int main(int argc, char **argv) {
   unsigned BaseArg = 0;
   std::string ErrorMessage;
 
-  std::unique_ptr<Module> Composite(
-      LoadFile(argv[0], InputFilenames[BaseArg], Context));
-  if (!Composite.get()) {
+  OwningPtr<Module> Composite(LoadFile(argv[0],
+                                       InputFilenames[BaseArg], Context));
+  if (Composite.get() == 0) {
     errs() << argv[0] << ": error loading file '"
            << InputFilenames[BaseArg] << "'\n";
     return 1;
   }
 
-  Linker L(Composite.get(), SuppressWarnings);
+  Linker L(Composite.get());
   for (unsigned i = BaseArg+1; i < InputFilenames.size(); ++i) {
-    std::unique_ptr<Module> M(LoadFile(argv[0], InputFilenames[i], Context));
-    if (!M.get()) {
+    OwningPtr<Module> M(LoadFile(argv[0], InputFilenames[i], Context));
+    if (M.get() == 0) {
       errs() << argv[0] << ": error loading file '" <<InputFilenames[i]<< "'\n";
       return 1;
     }
@@ -111,7 +106,7 @@ int main(int argc, char **argv) {
   if (DumpAsm) errs() << "Here's the assembly:\n" << *Composite;
 
   std::string ErrorInfo;
-  tool_output_file Out(OutputFilename.c_str(), ErrorInfo, sys::fs::F_None);
+  tool_output_file Out(OutputFilename.c_str(), ErrorInfo, sys::fs::F_Binary);
   if (!ErrorInfo.empty()) {
     errs() << ErrorInfo << '\n';
     return 1;

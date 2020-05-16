@@ -29,8 +29,6 @@
 #include "llvm/Transforms/Utils/SSAUpdaterImpl.h"
 using namespace llvm;
 
-#define DEBUG_TYPE "machine-ssaupdater"
-
 typedef DenseMap<MachineBasicBlock*, unsigned> AvailableValsTy;
 static AvailableValsTy &getAvailableVals(void *AV) {
   return *static_cast<AvailableValsTy*>(AV);
@@ -38,7 +36,7 @@ static AvailableValsTy &getAvailableVals(void *AV) {
 
 MachineSSAUpdater::MachineSSAUpdater(MachineFunction &MF,
                                      SmallVectorImpl<MachineInstr*> *NewPHI)
-  : AV(nullptr), InsertedPHIs(NewPHI) {
+  : AV(0), InsertedPHIs(NewPHI) {
   TII = MF.getTarget().getInstrInfo();
   MRI = &MF.getRegInfo();
 }
@@ -50,7 +48,7 @@ MachineSSAUpdater::~MachineSSAUpdater() {
 /// Initialize - Reset this object to get ready for a new set of SSA
 /// updates.  ProtoValue is the value used to name PHI nodes.
 void MachineSSAUpdater::Initialize(unsigned V) {
-  if (!AV)
+  if (AV == 0)
     AV = new AvailableValsTy();
   else
     getAvailableVals(AV).clear();
@@ -232,6 +230,16 @@ void MachineSSAUpdater::RewriteUse(MachineOperand &U) {
   U.setReg(NewVR);
 }
 
+void MachineSSAUpdater::ReplaceRegWith(unsigned OldReg, unsigned NewReg) {
+  MRI->replaceRegWith(OldReg, NewReg);
+
+  AvailableValsTy &AvailableVals = getAvailableVals(AV);
+  for (DenseMap<MachineBasicBlock*, unsigned>::iterator
+         I = AvailableVals.begin(), E = AvailableVals.end(); I != E; ++I)
+    if (I->second == OldReg)
+      I->second = NewReg;
+}
+
 /// SSAUpdaterTraits<MachineSSAUpdater> - Traits for the SSAUpdaterImpl
 /// template, specialized for MachineSSAUpdater.
 namespace llvm {
@@ -315,7 +323,7 @@ public:
   static MachineInstr *InstrIsPHI(MachineInstr *I) {
     if (I && I->isPHI())
       return I;
-    return nullptr;
+    return 0;
   }
 
   /// ValueIsPHI - Check if the instruction that defines the specified register
@@ -330,7 +338,7 @@ public:
     MachineInstr *PHI = ValueIsPHI(Val, Updater);
     if (PHI && PHI->getNumOperands() <= 1)
       return PHI;
-    return nullptr;
+    return 0;
   }
 
   /// GetPHIValue - For the specified PHI instruction, return the register

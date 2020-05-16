@@ -85,10 +85,10 @@ void RuntimeSupportBuilder::EmitStoreToThreadOffset(int64_t offset, ::llvm::Valu
 ::llvm::Value* RuntimeSupportBuilder::EmitPushShadowFrame(::llvm::Value* new_shadow_frame,
                                                         ::llvm::Value* method,
                                                         uint32_t num_vregs) {
-  Value* old_shadow_frame = EmitLoadFromThreadOffset(Thread::TopShadowFrameOffset().Int32Value(),
+  Value* old_shadow_frame = EmitLoadFromThreadOffset(Thread::TopShadowFrameOffset<8>().Int32Value(),
                                                      irb_.getArtFrameTy()->getPointerTo(),
                                                      kTBAARuntimeInfo);
-  EmitStoreToThreadOffset(Thread::TopShadowFrameOffset().Int32Value(),
+  EmitStoreToThreadOffset(Thread::TopShadowFrameOffset<8>().Int32Value(),
                           new_shadow_frame,
                           kTBAARuntimeInfo);
 
@@ -130,7 +130,7 @@ RuntimeSupportBuilder::EmitPushShadowFrameNoInline(::llvm::Value* new_shadow_fra
 
 void RuntimeSupportBuilder::EmitPopShadowFrame(::llvm::Value* old_shadow_frame) {
   // Store old shadow frame to TopShadowFrame
-  EmitStoreToThreadOffset(Thread::TopShadowFrameOffset().Int32Value(),
+  EmitStoreToThreadOffset(Thread::TopShadowFrameOffset<8>().Int32Value(),
                           old_shadow_frame,
                           kTBAARuntimeInfo);
 }
@@ -144,7 +144,7 @@ void RuntimeSupportBuilder::EmitPopShadowFrame(::llvm::Value* old_shadow_frame) 
 }
 
 ::llvm::Value* RuntimeSupportBuilder::EmitIsExceptionPending() {
-  Value* exception = EmitLoadFromThreadOffset(Thread::ExceptionOffset().Int32Value(),
+  Value* exception = EmitLoadFromThreadOffset(Thread::ExceptionOffset<8>().Int32Value(),
                                               irb_.getJObjectTy(),
                                               kTBAARuntimeInfo);
   // If exception not null
@@ -183,7 +183,7 @@ void RuntimeSupportBuilder::EmitMarkGCCard(::llvm::Value* value, ::llvm::Value* 
   irb_.CreateCondBr(not_null, bb_mark_gc_card, bb_cont);
 
   irb_.SetInsertPoint(bb_mark_gc_card);
-  Value* card_table = EmitLoadFromThreadOffset(Thread::CardTableOffset().Int32Value(),
+  Value* card_table = EmitLoadFromThreadOffset(Thread::CardTableOffset<8>().Int32Value(),
                                                irb_.getInt8Ty()->getPointerTo(),
                                                kTBAAConstJObject);
   Value* target_addr_int = irb_.CreatePtrToInt(target_addr, irb_.getPtrEquivIntTy());

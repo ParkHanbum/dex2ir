@@ -54,59 +54,6 @@ namespace llvm {
           FloatABIType(FloatABI::Default), AllowFPOpFusion(FPOpFusion::Standard)
     {}
 
-    TargetOptions(const TargetOptions& rhs)
-        : PrintMachineCode(rhs.PrintMachineCode),
-          NoFramePointerElim(rhs.NoFramePointerElim),
-          LessPreciseFPMADOption(rhs.LessPreciseFPMADOption),
-          UnsafeFPMath(rhs.UnsafeFPMath),
-          NoInfsFPMath(rhs.NoInfsFPMath),
-          NoNaNsFPMath(rhs.NoNaNsFPMath),
-          HonorSignDependentRoundingFPMathOption(rhs.HonorSignDependentRoundingFPMathOption),
-          UseSoftFloat(rhs.UseSoftFloat),
-          NoZerosInBSS(rhs.NoZerosInBSS),
-          JITEmitDebugInfo(rhs.JITEmitDebugInfo),
-          JITEmitDebugInfoToDisk(rhs.JITEmitDebugInfoToDisk),
-          GuaranteedTailCallOpt(rhs.GuaranteedTailCallOpt),
-          DisableTailCalls(rhs.DisableTailCalls),
-          StackAlignmentOverride(rhs.StackAlignmentOverride),
-          EnableFastISel(rhs.EnableFastISel),
-          PositionIndependentExecutable(rhs.PositionIndependentExecutable),
-          EnableSegmentedStacks(rhs.EnableSegmentedStacks),
-          UseInitArray(rhs.UseInitArray),
-          TrapFuncName(rhs.TrapFuncName),
-          FloatABIType(rhs.FloatABIType),
-          AllowFPOpFusion(rhs.AllowFPOpFusion)
-    {}
-
-    TargetOptions& operator =(const TargetOptions& rhs)
-    {
-        if (&rhs == this)
-            return *this;
-
-        PrintMachineCode = rhs.PrintMachineCode;
-        NoFramePointerElim = rhs.NoFramePointerElim;
-        LessPreciseFPMADOption = rhs.LessPreciseFPMADOption;
-        UnsafeFPMath = rhs.UnsafeFPMath;
-        NoInfsFPMath = rhs.NoInfsFPMath;
-        NoNaNsFPMath = rhs.NoNaNsFPMath;
-        HonorSignDependentRoundingFPMathOption = rhs.HonorSignDependentRoundingFPMathOption;
-        UseSoftFloat = rhs.UseSoftFloat;
-        NoZerosInBSS = rhs.NoZerosInBSS;
-        JITEmitDebugInfo = rhs.JITEmitDebugInfo;
-        JITEmitDebugInfoToDisk = rhs.JITEmitDebugInfoToDisk;
-        GuaranteedTailCallOpt = rhs.GuaranteedTailCallOpt;
-        DisableTailCalls = rhs.DisableTailCalls;
-        StackAlignmentOverride = rhs.StackAlignmentOverride;
-        EnableFastISel = rhs.EnableFastISel;
-        PositionIndependentExecutable = rhs.PositionIndependentExecutable;
-        EnableSegmentedStacks = rhs.EnableSegmentedStacks;
-        UseInitArray = rhs.UseInitArray;
-        TrapFuncName = rhs.TrapFuncName;
-        FloatABIType = rhs.FloatABIType;
-        AllowFPOpFusion = rhs.AllowFPOpFusion;
-        return *this;
-    }
-
     /// PrintMachineCode - This flag is enabled when the -print-machineinstrs
     /// option is specified on the command line, and should enable debugging
     /// output from the code generator.

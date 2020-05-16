@@ -15,18 +15,16 @@
 #ifndef TARGET_X86_H
 #define TARGET_X86_H
 
-#include "llvm/Support/CodeGen.h"
+#include "MCTargetDesc/X86BaseInfo.h"
+#include "MCTargetDesc/X86MCTargetDesc.h"
+#include "llvm/Support/DataTypes.h"
+#include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
 
 class FunctionPass;
-class ImmutablePass;
 class JITCodeEmitter;
 class X86TargetMachine;
-
-/// createX86AtomicExpandPass - This pass expands atomic operations that cannot
-/// be handled natively in terms of a loop using cmpxchg.
-FunctionPass *createX86AtomicExpandPass(const X86TargetMachine *TM);
 
 /// createX86ISelDag - This pass converts a legalized DAG into a
 /// X86-specific DAG, ready for instruction scheduling.
@@ -34,9 +32,9 @@ FunctionPass *createX86AtomicExpandPass(const X86TargetMachine *TM);
 FunctionPass *createX86ISelDag(X86TargetMachine &TM,
                                CodeGenOpt::Level OptLevel);
 
-/// createX86GlobalBaseRegPass - This pass initializes a global base
+/// createGlobalBaseRegPass - This pass initializes a global base
 /// register for PIC on x86-32.
-FunctionPass* createX86GlobalBaseRegPass();
+FunctionPass* createGlobalBaseRegPass();
 
 /// createCleanupLocalDynamicTLSPass() - This pass combines multiple accesses
 /// to local-dynamic TLS variables so that the TLS base address for the module

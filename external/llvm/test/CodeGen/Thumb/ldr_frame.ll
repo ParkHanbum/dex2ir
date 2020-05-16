@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=thumb-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=thumb | FileCheck %s
 
 define i32 @f1() {
 ; CHECK-LABEL: f1:

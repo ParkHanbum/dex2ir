@@ -24,30 +24,36 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "a15-sd-optimizer"
 #include "ARM.h"
 #include "ARMBaseInstrInfo.h"
-#include "ARMBaseRegisterInfo.h"
+#include "ARMSubtarget.h"
+#include "ARMISelLowering.h"
+#include "ARMTargetMachine.h"
+
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+
 #include <set>
 
 using namespace llvm;
-
-#define DEBUG_TYPE "a15-sd-optimizer"
 
 namespace {
   struct A15SDOptimizer : public MachineFunctionPass {
     static char ID;
     A15SDOptimizer() : MachineFunctionPass(ID) {}
 
-    bool runOnMachineFunction(MachineFunction &Fn) override;
+    virtual bool runOnMachineFunction(MachineFunction &Fn);
 
-    const char *getPassName() const override {
+    virtual const char *getPassName() const {
       return "ARM A15 S->D optimizer";
     }
 
@@ -91,7 +97,7 @@ namespace {
     unsigned createImplicitDef(MachineBasicBlock &MBB,
                                MachineBasicBlock::iterator InsertBefore,
                                DebugLoc DL);
-
+    
     //
     // Various property checkers
     //
@@ -159,7 +165,7 @@ unsigned A15SDOptimizer::getPrefSPRLane(unsigned SReg) {
   if (!MI) return ARM::ssub_0;
   MachineOperand *MO = MI->findRegisterDefOperand(SReg);
 
-  assert(MO->isReg() && "Non-register operand found!");
+  assert(MO->isReg() && "Non register operand found!");
   if (!MO) return ARM::ssub_0;
 
   if (MI->isCopy() && usesRegClass(MI->getOperand(1),
@@ -221,9 +227,9 @@ void A15SDOptimizer::eraseInstrWithNoUses(MachineInstr *MI) {
           IsDead = false;
           break;
         }
-        for (MachineRegisterInfo::use_instr_iterator
-             II = MRI->use_instr_begin(Reg), EE = MRI->use_instr_end();
-             II != EE; ++II) {
+        for (MachineRegisterInfo::use_iterator II = MRI->use_begin(Reg),
+                            EE = MRI->use_end();
+                            II != EE; ++II) {
           // We don't care about self references.
           if (&*II == Def)
             continue;
@@ -260,7 +266,7 @@ unsigned A15SDOptimizer::optimizeSDPattern(MachineInstr *MI) {
       if (DPRMI && SPRMI) {
         // See if the first operand of this insert_subreg is IMPLICIT_DEF
         MachineInstr *ECDef = elideCopies(DPRMI);
-        if (ECDef && ECDef->isImplicitDef()) {
+        if (ECDef != 0 && ECDef->isImplicitDef()) {
           // Another corner case - if we're inserting something that is purely
           // a subreg copy of a DPR, just use that DPR.
 
@@ -321,7 +327,8 @@ unsigned A15SDOptimizer::optimizeSDPattern(MachineInstr *MI) {
       return optimizeAllLanesPattern(MI, MI->getOperand(0).getReg());
   }
 
-  llvm_unreachable("Unhandled update pattern!");
+  assert(0 && "Unhandled update pattern!");
+  return 0;
 }
 
 // Return true if this MachineInstr inserts a scalar (SPR) value into
@@ -348,10 +355,10 @@ MachineInstr *A15SDOptimizer::elideCopies(MachineInstr *MI) {
   if (!MI->isFullCopy())
     return MI;
   if (!TRI->isVirtualRegister(MI->getOperand(1).getReg()))
-    return nullptr;
+    return NULL;
   MachineInstr *Def = MRI->getVRegDef(MI->getOperand(1).getReg());
   if (!Def)
-    return nullptr;
+    return NULL;
   return elideCopies(Def);
 }
 
@@ -411,8 +418,7 @@ SmallVector<unsigned, 8> A15SDOptimizer::getReadDPRs(MachineInstr *MI) {
     if (!MO.isReg() || !MO.isUse())
       continue;
     if (!usesRegClass(MO, &ARM::DPRRegClass) &&
-        !usesRegClass(MO, &ARM::QPRRegClass) &&
-        !usesRegClass(MO, &ARM::DPairRegClass)) // Treat DPair as QPR
+        !usesRegClass(MO, &ARM::QPRRegClass))
       continue;
 
     Defs.push_back(MO.getReg());
@@ -435,7 +441,7 @@ A15SDOptimizer::createDupLane(MachineBasicBlock &MBB,
                          Out)
                    .addReg(Reg)
                    .addImm(Lane));
-
+ 
   return Out;
 }
 
@@ -532,10 +538,7 @@ A15SDOptimizer::optimizeAllLanesPattern(MachineInstr *MI, unsigned Reg) {
   InsertPt++;
   unsigned Out;
 
-  // DPair has the same length as QPR and also has two DPRs as subreg.
-  // Treat DPair as QPR.
-  if (MRI->getRegClass(Reg)->hasSuperClassEq(&ARM::QPRRegClass) ||
-      MRI->getRegClass(Reg)->hasSuperClassEq(&ARM::DPairRegClass)) {
+  if (MRI->getRegClass(Reg)->hasSuperClassEq(&ARM::QPRRegClass)) {
     unsigned DSub0 = createExtractSubreg(MBB, InsertPt, DL, Reg,
                                          ARM::dsub_0, &ARM::DPRRegClass);
     unsigned DSub1 = createExtractSubreg(MBB, InsertPt, DL, Reg,
@@ -568,9 +571,7 @@ A15SDOptimizer::optimizeAllLanesPattern(MachineInstr *MI, unsigned Reg) {
       default: llvm_unreachable("Unknown preferred lane!");
     }
 
-    // Treat DPair as QPR
-    bool UsesQPR = usesRegClass(MI->getOperand(0), &ARM::QPRRegClass) ||
-                   usesRegClass(MI->getOperand(0), &ARM::DPairRegClass);
+    bool UsesQPR = usesRegClass(MI->getOperand(0), &ARM::QPRRegClass);
 
     Out = createImplicitDef(MBB, InsertPt, DL);
     Out = createInsertSubreg(MBB, InsertPt, DL, Out, PrefLane, Reg);
@@ -601,7 +602,7 @@ bool A15SDOptimizer::runOnInstruction(MachineInstr *MI) {
   //   * INSERT_SUBREG: * If the SPR value was originally in another DPR/QPR
   //                      lane, and the other lane(s) of the DPR/QPR register
   //                      that we are inserting in are undefined, use the
-  //                      original DPR/QPR value.
+  //                      original DPR/QPR value. 
   //                    * Otherwise, fall back on the same stategy as COPY.
   //
   //   * REG_SEQUENCE:  * If all except one of the input operands are
@@ -647,7 +648,7 @@ bool A15SDOptimizer::runOnInstruction(MachineInstr *MI) {
       unsigned DPRDefReg = MI->getOperand(0).getReg();
       for (MachineRegisterInfo::use_iterator I = MRI->use_begin(DPRDefReg),
              E = MRI->use_end(); I != E; ++I)
-        Uses.push_back(&*I);
+        Uses.push_back(&I.getOperand());
 
       // We can optimize this.
       unsigned NewReg = optimizeSDPattern(MI);
@@ -656,13 +657,6 @@ bool A15SDOptimizer::runOnInstruction(MachineInstr *MI) {
         Modified = true;
         for (SmallVectorImpl<MachineOperand *>::const_iterator I = Uses.begin(),
                E = Uses.end(); I != E; ++I) {
-          // Make sure to constrain the register class of the new register to
-          // match what we're replacing. Otherwise we can optimize a DPR_VFP2
-          // reference into a plain DPR, and that will end poorly. NewReg is
-          // always virtual here, so there will always be a matching subclass
-          // to find.
-          MRI->constrainRegClass(NewReg, MRI->getRegClass((*I)->getReg()));
-
           DEBUG(dbgs() << "Replacing operand "
                        << **I << " with "
                        << PrintReg(NewReg) << "\n");
@@ -693,7 +687,7 @@ bool A15SDOptimizer::runOnMachineFunction(MachineFunction &Fn) {
       MI != ME;) {
       Modified |= runOnInstruction(MI++);
     }
-
+ 
   }
 
   for (std::set<MachineInstr *>::iterator I = DeadInstr.begin(),

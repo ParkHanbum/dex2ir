@@ -1,4 +1,4 @@
-; RUN: opt < %s -basicaa -globalopt -instcombine -loop-rotate -licm -instcombine -indvars -loop-deletion -constmerge -S | FileCheck %s
+; RUN: opt < %s -basicaa -globalopt -instcombine -loop-rotate -licm -instcombine -indvars -loop-deletion -constmerge -S
 ; PR11882: ComputeLoadConstantCompareExitLimit crash.
 ;
 ; for.body is deleted leaving a loop-invariant load.

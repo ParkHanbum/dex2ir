@@ -658,7 +658,7 @@ for each library name referenced.
 MODULE_CODE_GLOBALVAR Record
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``[GLOBALVAR, pointer type, isconst, initid, linkage, alignment, section, visibility, threadlocal, unnamed_addr, dllstorageclass]``
+``[GLOBALVAR, pointer type, isconst, initid, linkage, alignment, section, visibility, threadlocal, unnamed_addr]``
 
 The ``GLOBALVAR`` record (code 7) marks the declaration or definition of a
 global variable. The operand fields are:
@@ -688,8 +688,7 @@ global variable. The operand fields are:
   * ``weak_odr``: code 10
   * ``linkonce_odr``: code 11
   * ``available_externally``: code 12
-  * deprecated : code 13
-  * deprecated : code 14
+  * ``linker_private``: code 13
 
 * alignment*: The logarithm base 2 of the variable's requested alignment, plus 1
 
@@ -714,20 +713,12 @@ global variable. The operand fields are:
 * *unnamed_addr*: If present and non-zero, indicates that the variable has
   ``unnamed_addr``
 
-.. _dllstorageclass:
-
-* *dllstorageclass*: If present, an encoding of the DLL storage class of this variable:
-
-  * ``default``: code 0
-  * ``dllimport``: code 1
-  * ``dllexport``: code 2
-
 .. _FUNCTION:
 
 MODULE_CODE_FUNCTION Record
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``[FUNCTION, type, callingconv, isproto, linkage, paramattr, alignment, section, visibility, gc, prefix, dllstorageclass]``
+``[FUNCTION, type, callingconv, isproto, linkage, paramattr, alignment, section, visibility, gc]``
 
 The ``FUNCTION`` record (code 8) marks the declaration or definition of a
 function. The operand fields are:
@@ -738,10 +729,6 @@ function. The operand fields are:
   * ``ccc``: code 0
   * ``fastcc``: code 8
   * ``coldcc``: code 9
-  * ``webkit_jscc``: code 12
-  * ``anyregcc``: code 13
-  * ``preserve_mostcc``: code 14
-  * ``preserve_allcc``: code 15
   * ``x86_stdcallcc``: code 64
   * ``x86_fastcallcc``: code 65
   * ``arm_apcscc``: code 66
@@ -770,15 +757,10 @@ function. The operand fields are:
 * *unnamed_addr*: If present and non-zero, indicates that the function has
   ``unnamed_addr``
 
-* *prefix*: If non-zero, the value index of the prefix data for this function,
-  plus 1.
-
-* *dllstorageclass*: An encoding of the `dllstorageclass`_ of this function
-
 MODULE_CODE_ALIAS Record
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-``[ALIAS, alias type, aliasee val#, linkage, visibility, dllstorageclass]``
+``[ALIAS, alias type, aliasee val#, linkage, visibility]``
 
 The ``ALIAS`` record (code 9) marks the definition of an alias. The operand
 fields are
@@ -790,8 +772,6 @@ fields are
 * *linkage*: An encoding of the `linkage type`_ for this alias
 
 * *visibility*: If present, an encoding of the `visibility`_ of the alias
-
-* *dllstorageclass*: If present, an encoding of the `dllstorageclass`_ of the alias
 
 MODULE_CODE_PURGEVALS Record
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1093,7 +1073,7 @@ named type.
 VALUE_SYMTAB_BLOCK Contents
 ---------------------------
 
-The ``VALUE_SYMTAB_BLOCK`` block (id 14) ...
+The ``VALUE_SYMTAB_BLOCK`` block (id 14) ... 
 
 .. _METADATA_BLOCK:
 

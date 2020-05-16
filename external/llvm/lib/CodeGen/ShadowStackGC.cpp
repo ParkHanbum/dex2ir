@@ -25,17 +25,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "shadowstackgc"
 #include "llvm/CodeGen/GCs.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/CodeGen/GCStrategy.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/CallSite.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "shadowstackgc"
 
 namespace {
 
@@ -56,8 +55,8 @@ namespace {
   public:
     ShadowStackGC();
 
-    bool initializeCustomLowering(Module &M) override;
-    bool performCustomLowering(Function &F) override;
+    bool initializeCustomLowering(Module &M);
+    bool performCustomLowering(Function &F);
 
   private:
     bool IsNullValue(Value *V);
@@ -102,7 +101,7 @@ namespace {
     IRBuilder<> *Next() {
       switch (State) {
       default:
-        return nullptr;
+        return 0;
 
       case 0:
         StateBB = F.begin();
@@ -138,7 +137,7 @@ namespace {
                 Calls.push_back(CI);
 
         if (Calls.empty())
-          return nullptr;
+          return 0;
 
         // Create a cleanup block.
         LLVMContext &C = F.getContext();
@@ -195,7 +194,7 @@ namespace {
 
 void llvm::linkShadowStackGC() { }
 
-ShadowStackGC::ShadowStackGC() : Head(nullptr), StackEntryTy(nullptr) {
+ShadowStackGC::ShadowStackGC() : Head(0), StackEntryTy(0) {
   InitRoots = true;
   CustomRoots = true;
 }
@@ -391,8 +390,8 @@ bool ShadowStackGC::performCustomLowering(Function &F) {
   BasicBlock::iterator IP = F.getEntryBlock().begin();
   IRBuilder<> AtEntry(IP->getParent(), IP);
 
-  Instruction *StackEntry = AtEntry.CreateAlloca(ConcreteStackEntryTy, nullptr,
-                                                 "gc_frame");
+  Instruction *StackEntry   = AtEntry.CreateAlloca(ConcreteStackEntryTy, 0,
+                                                   "gc_frame");
 
   while (isa<AllocaInst>(IP)) ++IP;
   AtEntry.SetInsertPoint(IP->getParent(), IP);

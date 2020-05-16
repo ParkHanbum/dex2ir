@@ -1,35 +1,27 @@
-; RUN: llc < %s -march=r600 -mcpu=redwood | FileCheck --check-prefix=EG-CHECK %s
-; RUN: llc < %s -march=r600 -mcpu=verde -verify-machineinstrs | FileCheck --check-prefix=SI-CHECK %s
+; RUN: llc < %s -march=r600 -mcpu=redwood | FileCheck %s
 
-@local_memory_two_objects.local_mem0 = internal unnamed_addr addrspace(3) global [4 x i32] zeroinitializer, align 4
-@local_memory_two_objects.local_mem1 = internal unnamed_addr addrspace(3) global [4 x i32] zeroinitializer, align 4
+; TODO: Add RUN and CHECK lines for SI once this test works there
 
-; EG-CHECK: @local_memory_two_objects
+@local_memory_two_objects.local_mem0 = internal addrspace(3) unnamed_addr global [4 x i32] zeroinitializer, align 4
+@local_memory_two_objects.local_mem1 = internal addrspace(3) unnamed_addr global [4 x i32] zeroinitializer, align 4
+
+; CHECK: @local_memory_two_objects
 
 ; Check that the LDS size emitted correctly
-; EG-CHECK: .long 166120
-; EG-CHECK-NEXT: .long 8
-; SI-CHECK: .long 47180
-; SI-CHECK-NEXT: .long 32768
+; CHECK: .long 166120
+; CHECK-NEXT: .long 8
 
-; We would like to check the the lds writes are using different
-; addresses, but due to variations in the scheduler, we can't do
-; this consistently on evergreen GPUs.
-; EG-CHECK: LDS_WRITE
-; EG-CHECK: LDS_WRITE
-; SI-CHECK: DS_WRITE_B32 {{v[0-9]*}}, v[[ADDRW:[0-9]*]]
-; SI-CHECK-NOT: DS_WRITE_B32 {{v[0-9]*}}, v[[ADDRW]]
+; Make sure the lds writes are using different addresses.
+; CHECK: LDS_WRITE {{[*]*}} {{PV|T}}[[ADDRW:[0-9]*\.[XYZW]]]
+; CHECK-NOT: LDS_WRITE {{[*]*}} T[[ADDRW]]
 
 ; GROUP_BARRIER must be the last instruction in a clause
-; EG-CHECK: GROUP_BARRIER
-; EG-CHECK-NEXT: ALU clause
+; CHECK: GROUP_BARRIER
+; CHECK-NEXT: ALU clause
 
-; Make sure the lds reads are using different addresses, at different
-; constant offsets.
-; EG-CHECK: LDS_READ_RET {{[*]*}} OQAP, {{PV|T}}[[ADDRR:[0-9]*\.[XYZW]]]
-; EG-CHECK-NOT: LDS_READ_RET {{[*]*}} OQAP, T[[ADDRR]]
-; SI-CHECK: DS_READ_B32 {{v[0-9]+}}, [[ADDRR:v[0-9]+]], 0x10
-; SI-CHECK: DS_READ_B32 {{v[0-9]+}}, [[ADDRR]], 0x0,
+; Make sure the lds reads are using different addresses.
+; CHECK: LDS_READ_RET {{[*]*}} OQAP, {{PV|T}}[[ADDRR:[0-9]*\.[XYZW]]]
+; CHECK-NOT: LDS_READ_RET {{[*]*}} OQAP, T[[ADDRR]]
 
 define void @local_memory_two_objects(i32 addrspace(1)* %out) {
 entry:

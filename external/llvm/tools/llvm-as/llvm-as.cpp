@@ -16,12 +16,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/AsmParser/Parser.h"
+#include "llvm/Analysis/Verifier.h"
+#include "llvm/Assembly/Parser.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -70,8 +69,8 @@ static void WriteOutputFile(const Module *M) {
   }
 
   std::string ErrorInfo;
-  std::unique_ptr<tool_output_file> Out(
-      new tool_output_file(OutputFilename.c_str(), ErrorInfo, sys::fs::F_None));
+  OwningPtr<tool_output_file> Out(new tool_output_file(
+      OutputFilename.c_str(), ErrorInfo, sys::fs::F_Binary));
   if (!ErrorInfo.empty()) {
     errs() << ErrorInfo << '\n';
     exit(1);
@@ -94,19 +93,18 @@ int main(int argc, char **argv) {
 
   // Parse the file now...
   SMDiagnostic Err;
-  std::unique_ptr<Module> M(ParseAssemblyFile(InputFilename, Err, Context));
-  if (!M.get()) {
+  OwningPtr<Module> M(ParseAssemblyFile(InputFilename, Err, Context));
+  if (M.get() == 0) {
     Err.print(argv[0], errs());
     return 1;
   }
 
   if (!DisableVerify) {
-    std::string ErrorStr;
-    raw_string_ostream OS(ErrorStr);
-    if (verifyModule(*M.get(), &OS)) {
+    std::string Err;
+    if (verifyModule(*M.get(), ReturnStatusAction, &Err)) {
       errs() << argv[0]
              << ": assembly parsed, but does not verify as correct!\n";
-      errs() << OS.str();
+      errs() << Err;
       return 1;
     }
   }

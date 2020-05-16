@@ -6,7 +6,6 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 x86_asm_parser_SRC_FILES :=	\
-	X86AsmInstrumentation.cpp \
 	X86AsmParser.cpp
 
 x86_asm_parser_TBLGEN_TABLES :=	\
@@ -42,7 +41,6 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 #===---------------------------------------------------------------===
 # libX86AsmParser (target)
 #===---------------------------------------------------------------===
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
@@ -56,4 +54,3 @@ TBLGEN_TD_DIR := $(x86_asm_parser_TBLGEN_TD_DIR)
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_STATIC_LIBRARY)
-endif

@@ -1,5 +1,5 @@
 ; RUN: llc < %s -march=arm -mtriple=arm-linux-gnueabi | \
-; RUN:     grep "i(TPOFF)"
+; RUN:     grep "i(tpoff)"
 ; RUN: llc < %s -march=arm -mtriple=arm-linux-gnueabi | \
 ; RUN:     grep "__aeabi_read_tp"
 ; RUN: llc < %s -march=arm -mtriple=arm-linux-gnueabi \

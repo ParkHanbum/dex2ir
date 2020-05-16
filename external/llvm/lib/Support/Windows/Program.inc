@@ -11,7 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "WindowsSupport.h"
+#include "Windows.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/FileSystem.h"
 #include <cstdio>
 #include <fcntl.h>
@@ -23,10 +24,15 @@
 //===          and must not be UNIX code
 //===----------------------------------------------------------------------===//
 
+namespace {
+  struct Win32ProcessInfo {
+    HANDLE hProcess;
+    DWORD  dwProcessId;
+  };
+}
+
 namespace llvm {
 using namespace sys;
-
-ProcessInfo::ProcessInfo() : ProcessHandle(0), Pid(0), ReturnCode(0) {}
 
 // This function just uses the PATH environment variable to find the program.
 std::string sys::FindProgramByName(const std::string &progName) {
@@ -41,39 +47,42 @@ std::string sys::FindProgramByName(const std::string &progName) {
 
   // At this point, the file name is valid and does not contain slashes.
   // Let Windows search for it.
-  SmallVector<wchar_t, MAX_PATH> progNameUnicode;
-  if (windows::UTF8ToUTF16(progName, progNameUnicode))
+  std::string buffer;
+  buffer.resize(MAX_PATH);
+  char *dummy = NULL;
+  DWORD len = SearchPath(NULL, progName.c_str(), ".exe", MAX_PATH,
+                         &buffer[0], &dummy);
+
+  // See if it wasn't found.
+  if (len == 0)
     return "";
 
-  SmallVector<wchar_t, MAX_PATH> buffer;
-  DWORD len = MAX_PATH;
-  do {
-    buffer.reserve(len);
-    len = ::SearchPathW(NULL, progNameUnicode.data(), L".exe",
-                        buffer.capacity(), buffer.data(), NULL);
+  // See if we got the entire path.
+  if (len < MAX_PATH)
+    return buffer;
 
-    // See if it wasn't found.
-    if (len == 0)
+  // Buffer was too small; grow and retry.
+  while (true) {
+    buffer.resize(len+1);
+    DWORD len2 = SearchPath(NULL, progName.c_str(), ".exe", len+1, &buffer[0], &dummy);
+
+    // It is unlikely the search failed, but it's always possible some file
+    // was added or removed since the last search, so be paranoid...
+    if (len2 == 0)
       return "";
+    else if (len2 <= len)
+      return buffer;
 
-    // Buffer was too small; grow and retry.
-  } while (len > buffer.capacity());
-
-  buffer.set_size(len);
-  SmallVector<char, MAX_PATH> result;
-  if (windows::UTF16ToUTF8(buffer.begin(), buffer.size(), result))
-    return "";
-
-  return std::string(result.data(), result.size());
+    len = len2;
+  }
 }
 
 static HANDLE RedirectIO(const StringRef *path, int fd, std::string* ErrMsg) {
   HANDLE h;
   if (path == 0) {
-    if (!DuplicateHandle(GetCurrentProcess(), (HANDLE)_get_osfhandle(fd),
-                         GetCurrentProcess(), &h,
-                         0, TRUE, DUPLICATE_SAME_ACCESS))
-      return INVALID_HANDLE_VALUE;
+    DuplicateHandle(GetCurrentProcess(), (HANDLE)_get_osfhandle(fd),
+                    GetCurrentProcess(), &h,
+                    0, TRUE, DUPLICATE_SAME_ACCESS);
     return h;
   }
 
@@ -88,13 +97,9 @@ static HANDLE RedirectIO(const StringRef *path, int fd, std::string* ErrMsg) {
   sa.lpSecurityDescriptor = 0;
   sa.bInheritHandle = TRUE;
 
-  SmallVector<wchar_t, 128> fnameUnicode;
-  if (windows::UTF8ToUTF16(fname, fnameUnicode))
-    return INVALID_HANDLE_VALUE;
-
-  h = CreateFileW(fnameUnicode.data(), fd ? GENERIC_WRITE : GENERIC_READ,
-                  FILE_SHARE_READ, &sa, fd == 0 ? OPEN_EXISTING : CREATE_ALWAYS,
-                  FILE_ATTRIBUTE_NORMAL, NULL);
+  h = CreateFile(fname.c_str(), fd ? GENERIC_WRITE : GENERIC_READ,
+                 FILE_SHARE_READ, &sa, fd == 0 ? OPEN_EXISTING : CREATE_ALWAYS,
+                 FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE) {
     MakeErrMsg(ErrMsg, std::string(fname) + ": Can't open file for " +
         (fd ? "input: " : "output: "));
@@ -166,9 +171,13 @@ static unsigned int ArgLenWithQuotes(const char *Str) {
 
 }
 
-static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
-                    const char **envp, const StringRef **redirects,
-                    unsigned memoryLimit, std::string *ErrMsg) {
+static bool Execute(void **Data,
+                    StringRef Program,
+                    const char** args,
+                    const char** envp,
+                    const StringRef** redirects,
+                    unsigned memoryLimit,
+                    std::string* ErrMsg) {
   if (!sys::fs::can_execute(Program)) {
     if (ErrMsg)
       *ErrMsg = "program not executable";
@@ -186,7 +195,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
   }
 
   // Now build the command line.
-  std::unique_ptr<char[]> command(new char[len+1]);
+  OwningArrayPtr<char> command(new char[len+1]);
   char *p = command.get();
 
   for (unsigned i = 0; args[i]; i++) {
@@ -218,28 +227,34 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
   *p = 0;
 
   // The pointer to the environment block for the new process.
-  std::vector<wchar_t> EnvBlock;
+  OwningArrayPtr<char> envblock;
 
   if (envp) {
     // An environment block consists of a null-terminated block of
     // null-terminated strings. Convert the array of environment variables to
     // an environment block by concatenating them.
-    for (unsigned i = 0; envp[i]; ++i) {
-      SmallVector<wchar_t, MAX_PATH> EnvString;
-      if (std::error_code ec = windows::UTF8ToUTF16(envp[i], EnvString)) {
-        SetLastError(ec.value());
-        MakeErrMsg(ErrMsg, "Unable to convert environment variable to UTF-16");
-        return false;
-      }
 
-      EnvBlock.insert(EnvBlock.end(), EnvString.begin(), EnvString.end());
-      EnvBlock.push_back(0);
+    // First, determine the length of the environment block.
+    len = 0;
+    for (unsigned i = 0; envp[i]; i++)
+      len += strlen(envp[i]) + 1;
+
+    // Now build the environment block.
+    envblock.reset(new char[len+1]);
+    p = envblock.get();
+
+    for (unsigned i = 0; envp[i]; i++) {
+      const char *ev = envp[i];
+      size_t len = strlen(ev) + 1;
+      memcpy(p, ev, len);
+      p += len;
     }
-    EnvBlock.push_back(0);
+
+    *p = 0;
   }
 
   // Create a child process.
-  STARTUPINFOW si;
+  STARTUPINFO si;
   memset(&si, 0, sizeof(si));
   si.cb = sizeof(si);
   si.hStdInput = INVALID_HANDLE_VALUE;
@@ -263,14 +278,9 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     if (redirects[1] && redirects[2] && *(redirects[1]) == *(redirects[2])) {
       // If stdout and stderr should go to the same place, redirect stderr
       // to the handle already open for stdout.
-      if (!DuplicateHandle(GetCurrentProcess(), si.hStdOutput,
-                           GetCurrentProcess(), &si.hStdError,
-                           0, TRUE, DUPLICATE_SAME_ACCESS)) {
-        CloseHandle(si.hStdInput);
-        CloseHandle(si.hStdOutput);
-        MakeErrMsg(ErrMsg, "can't dup stderr to stdout");
-        return false;
-      }
+      DuplicateHandle(GetCurrentProcess(), si.hStdOutput,
+                      GetCurrentProcess(), &si.hStdError,
+                      0, TRUE, DUPLICATE_SAME_ACCESS);
     } else {
       // Just redirect stderr
       si.hStdError = RedirectIO(redirects[2], 2, ErrMsg);
@@ -288,27 +298,9 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
 
   fflush(stdout);
   fflush(stderr);
-
-  SmallVector<wchar_t, MAX_PATH> ProgramUtf16;
-  if (std::error_code ec = windows::UTF8ToUTF16(Program, ProgramUtf16)) {
-    SetLastError(ec.value());
-    MakeErrMsg(ErrMsg,
-               std::string("Unable to convert application name to UTF-16"));
-    return false;
-  }
-
-  SmallVector<wchar_t, MAX_PATH> CommandUtf16;
-  if (std::error_code ec = windows::UTF8ToUTF16(command.get(), CommandUtf16)) {
-    SetLastError(ec.value());
-    MakeErrMsg(ErrMsg,
-               std::string("Unable to convert command-line to UTF-16"));
-    return false;
-  }
-
-  BOOL rc = CreateProcessW(ProgramUtf16.data(), CommandUtf16.data(), 0, 0,
-                           TRUE, CREATE_UNICODE_ENVIRONMENT,
-                           EnvBlock.empty() ? 0 : EnvBlock.data(), 0, &si,
-                           &pi);
+  std::string ProgramStr = Program;
+  BOOL rc = CreateProcess(ProgramStr.c_str(), command.get(), NULL, NULL, TRUE,
+                          0, envblock.get(), NULL, &si, &pi);
   DWORD err = GetLastError();
 
   // Regardless of whether the process got created or not, we are done with
@@ -321,12 +313,15 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
   if (!rc) {
     SetLastError(err);
     MakeErrMsg(ErrMsg, std::string("Couldn't execute program '") +
-               Program.str() + "'");
+               ProgramStr + "'");
     return false;
   }
-
-  PI.Pid = pi.dwProcessId;
-  PI.ProcessHandle = pi.hProcess;
+  if (Data) {
+    Win32ProcessInfo* wpi = new Win32ProcessInfo;
+    wpi->hProcess = pi.hProcess;
+    wpi->dwProcessId = pi.dwProcessId;
+    *Data = wpi;
+  }
 
   // Make sure these get closed no matter what.
   ScopedCommonHandle hThread(pi.hThread);
@@ -334,7 +329,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
   // Assign the process to a job if a memory limit is defined.
   ScopedJobHandle hJob;
   if (memoryLimit != 0) {
-    hJob = CreateJobObjectW(0, 0);
+    hJob = CreateJobObject(0, 0);
     bool success = false;
     if (hJob) {
       JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
@@ -356,84 +351,87 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     }
   }
 
+  // Don't leak the handle if the caller doesn't want it.
+  if (!Data)
+    CloseHandle(pi.hProcess);
+
   return true;
 }
 
-namespace llvm {
-ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
-                      bool WaitUntilChildTerminates, std::string *ErrMsg) {
-  assert(PI.Pid && "invalid pid to wait on, process not started?");
-  assert(PI.ProcessHandle &&
-         "invalid process handle to wait on, process not started?");
-  DWORD milliSecondsToWait = 0;
-  if (WaitUntilChildTerminates)
-    milliSecondsToWait = INFINITE;
-  else if (SecondsToWait > 0)
-    milliSecondsToWait = SecondsToWait * 1000;
+static int WaitAux(Win32ProcessInfo *wpi, unsigned secondsToWait,
+                   std::string *ErrMsg) {
+  // Wait for the process to terminate.
+  HANDLE hProcess = wpi->hProcess;
+  DWORD millisecondsToWait = INFINITE;
+  if (secondsToWait > 0)
+    millisecondsToWait = secondsToWait * 1000;
 
-  ProcessInfo WaitResult = PI;
-  DWORD WaitStatus = WaitForSingleObject(PI.ProcessHandle, milliSecondsToWait);
-  if (WaitStatus == WAIT_TIMEOUT) {
-    if (SecondsToWait) {
-      if (!TerminateProcess(PI.ProcessHandle, 1)) {
-        if (ErrMsg)
-          MakeErrMsg(ErrMsg, "Failed to terminate timed-out program.");
-
-        // -2 indicates a crash or timeout as opposed to failure to execute.
-        WaitResult.ReturnCode = -2;
-        CloseHandle(PI.ProcessHandle);
-        return WaitResult;
-      }
-      WaitForSingleObject(PI.ProcessHandle, INFINITE);
-      CloseHandle(PI.ProcessHandle);
-    } else {
-      // Non-blocking wait.
-      return ProcessInfo();
+  if (WaitForSingleObject(hProcess, millisecondsToWait) == WAIT_TIMEOUT) {
+    if (!TerminateProcess(hProcess, 1)) {
+      MakeErrMsg(ErrMsg, "Failed to terminate timed-out program.");
+      // -2 indicates a crash or timeout as opposed to failure to execute.
+      return -2;
     }
+    WaitForSingleObject(hProcess, INFINITE);
   }
 
   // Get its exit status.
   DWORD status;
-  BOOL rc = GetExitCodeProcess(PI.ProcessHandle, &status);
+  BOOL rc = GetExitCodeProcess(hProcess, &status);
   DWORD err = GetLastError();
-  CloseHandle(PI.ProcessHandle);
 
   if (!rc) {
     SetLastError(err);
-    if (ErrMsg)
-      MakeErrMsg(ErrMsg, "Failed getting status for program.");
-
+    MakeErrMsg(ErrMsg, "Failed getting status for program.");
     // -2 indicates a crash or timeout as opposed to failure to execute.
-    WaitResult.ReturnCode = -2;
-    return WaitResult;
+    return -2;
   }
 
   if (!status)
-    return WaitResult;
+    return 0;
 
   // Pass 10(Warning) and 11(Error) to the callee as negative value.
   if ((status & 0xBFFF0000U) == 0x80000000U)
-    WaitResult.ReturnCode = static_cast<int>(status);
-  else if (status & 0xFF)
-    WaitResult.ReturnCode = status & 0x7FFFFFFF;
-  else
-    WaitResult.ReturnCode = 1;
+    return (int)status;
 
-  return WaitResult;
+  if (status & 0xFF)
+    return status & 0x7FFFFFFF;
+
+  return 1;
 }
 
-  std::error_code sys::ChangeStdinToBinary(){
+static int Wait(void *&Data, StringRef Program, unsigned secondsToWait,
+                std::string *ErrMsg) {
+  Win32ProcessInfo *wpi = reinterpret_cast<Win32ProcessInfo *>(Data);
+  int Ret = WaitAux(wpi, secondsToWait, ErrMsg);
+
+  CloseHandle(wpi->hProcess);
+  delete wpi;
+  Data = 0;
+
+  return Ret;
+}
+
+namespace llvm {
+error_code sys::ChangeStdinToBinary(){
   int result = _setmode( _fileno(stdin), _O_BINARY );
   if (result == -1)
-    return std::error_code(errno, std::generic_category());
-  return std::error_code();
+    return error_code(errno, generic_category());
+  return make_error_code(errc::success);
 }
 
-  std::error_code sys::ChangeStdoutToBinary(){
+error_code sys::ChangeStdoutToBinary(){
   int result = _setmode( _fileno(stdout), _O_BINARY );
   if (result == -1)
-    return std::error_code(errno, std::generic_category());
-  return std::error_code();
+    return error_code(errno, generic_category());
+  return make_error_code(errc::success);
+}
+
+error_code sys::ChangeStderrToBinary(){
+  int result = _setmode( _fileno(stderr), _O_BINARY );
+  if (result == -1)
+    return error_code(errno, generic_category());
+  return make_error_code(errc::success);
 }
 
 bool llvm::sys::argumentsFitWithinSystemLimits(ArrayRef<const char*> Args) {
@@ -451,4 +449,5 @@ bool llvm::sys::argumentsFitWithinSystemLimits(ArrayRef<const char*> Args) {
   }
   return true;
 }
+
 }

@@ -1,4 +1,5 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | grep strb
+; RUN: llc < %s -march=arm | grep strh
 
 define void @f1() {
 entry:
@@ -6,13 +7,8 @@ entry:
         ret void
 }
 
-; CHECK: strb
-
 define void @f2() {
 entry:
         store i16 0, i16* null
         ret void
 }
-
-; CHECK: strh
-

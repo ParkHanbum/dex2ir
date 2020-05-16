@@ -84,7 +84,9 @@ public:
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
-  /// Definitions have initializers, declarations don't.
+  /// hasInitializer - Unless a global variable isExternal(), it has an
+  /// initializer.  The initializer for the global variable/constant is held by
+  /// Initializer if an initializer is specified.
   ///
   inline bool hasInitializer() const { return !isDeclaration(); }
 

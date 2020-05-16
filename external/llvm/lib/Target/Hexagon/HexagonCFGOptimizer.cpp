@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "hexagon_cfg"
 #include "Hexagon.h"
 #include "HexagonMachineFunctionInfo.h"
 #include "HexagonSubtarget.h"
@@ -24,8 +25,6 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "hexagon_cfg"
 
 namespace llvm {
   void initializeHexagonCFGOptimizerPass(PassRegistry&);
@@ -49,10 +48,10 @@ private:
     initializeHexagonCFGOptimizerPass(*PassRegistry::getPassRegistry());
   }
 
-  const char *getPassName() const override {
+  const char *getPassName() const {
     return "Hexagon CFG Optimizer";
   }
-  bool runOnMachineFunction(MachineFunction &Fn) override;
+  bool runOnMachineFunction(MachineFunction &Fn);
 };
 
 
@@ -147,8 +146,8 @@ bool HexagonCFGOptimizer::runOnMachineFunction(MachineFunction &Fn) {
         MachineBasicBlock::succ_iterator SI = MBB->succ_begin();
         MachineBasicBlock* FirstSucc = *SI;
         MachineBasicBlock* SecondSucc = *(++SI);
-        MachineBasicBlock* LayoutSucc = nullptr;
-        MachineBasicBlock* JumpAroundTarget = nullptr;
+        MachineBasicBlock* LayoutSucc = NULL;
+        MachineBasicBlock* JumpAroundTarget = NULL;
 
         if (MBB->isLayoutSuccessor(FirstSucc)) {
           LayoutSucc = FirstSucc;
@@ -162,7 +161,7 @@ bool HexagonCFGOptimizer::runOnMachineFunction(MachineFunction &Fn) {
 
         // The target of the unconditional branch must be JumpAroundTarget.
         // TODO: If not, we should not invert the unconditional branch.
-        MachineBasicBlock* CondBranchTarget = nullptr;
+        MachineBasicBlock* CondBranchTarget = NULL;
         if ((MI->getOpcode() == Hexagon::JMP_t) ||
             (MI->getOpcode() == Hexagon::JMP_f)) {
           CondBranchTarget = MI->getOperand(1).getMBB();
@@ -240,7 +239,7 @@ bool HexagonCFGOptimizer::runOnMachineFunction(MachineFunction &Fn) {
 
 static void initializePassOnce(PassRegistry &Registry) {
   PassInfo *PI = new PassInfo("Hexagon CFG Optimizer", "hexagon-cfg",
-                              &HexagonCFGOptimizer::ID, nullptr, false, false);
+                              &HexagonCFGOptimizer::ID, 0, false, false);
   Registry.registerPass(*PI, true);
 }
 

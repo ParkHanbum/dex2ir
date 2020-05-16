@@ -1,10 +1,6 @@
-; RUN: llc -mtriple=arm-apple-darwin %s -o - | FileCheck %s
-
-; RUN: llc -mtriple=arm-eabi -mattr=+vfp2 %s -o - \
-; RUN:	| FileCheck %s --check-prefix=CHECK-VFP
-
-; RUN: llc -mtriple=thumbv7-apple-darwin -mattr=+neon,+thumb2 %s -o - \
-; RUN:	| FileCheck %s --check-prefix=CHECK-NEON
+; RUN: llc < %s -mtriple=arm-apple-darwin | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+vfp2 | FileCheck %s --check-prefix=CHECK-VFP
+; RUN: llc < %s -mattr=+neon,+thumb2 -mtriple=thumbv7-apple-darwin | FileCheck %s --check-prefix=CHECK-NEON
 
 define i32 @f1(i32 %a.s) {
 ;CHECK-LABEL: f1:
@@ -63,7 +59,7 @@ entry:
 define double @f7(double %a, double %b) {
 ;CHECK-LABEL: f7:
 ;CHECK: movlt
-;CHECK: movge
+;CHECK: movlt
 ;CHECK-VFP-LABEL: f7:
 ;CHECK-VFP: vmovmi
     %tmp = fcmp olt double %a, 1.234e+00
@@ -79,7 +75,7 @@ define double @f7(double %a, double %b) {
 ; into the constant pool based on the value of the "icmp". If we have one "it"
 ; block generated, odds are good that we have close to the ideal code for this:
 ;
-; CHECK-NEON-LABEL: f8:
+; CHECK-NEON:      _f8:
 ; CHECK-NEON:      movw    [[R3:r[0-9]+]], #1123
 ; CHECK-NEON:      adr     [[R2:r[0-9]+]], LCPI7_0
 ; CHECK-NEON-NEXT: cmp     r0, [[R3]]
@@ -117,7 +113,7 @@ entry:
   ret void
 }
 
-; CHECK-LABEL: f10:
+; CHECK: f10
 define float @f10(i32 %a, i32 %b) nounwind uwtable readnone ssp {
 ; CHECK-NOT: floatsisf
   %1 = icmp eq i32 %a, %b
@@ -126,7 +122,7 @@ define float @f10(i32 %a, i32 %b) nounwind uwtable readnone ssp {
   ret float %3
 }
 
-; CHECK-LABEL: f11:
+; CHECK: f11
 define float @f11(i32 %a, i32 %b) nounwind uwtable readnone ssp {
 ; CHECK-NOT: floatsisf
   %1 = icmp eq i32 %a, %b
@@ -134,7 +130,7 @@ define float @f11(i32 %a, i32 %b) nounwind uwtable readnone ssp {
   ret float %2
 }
 
-; CHECK-LABEL: f12:
+; CHECK: f12
 define float @f12(i32 %a, i32 %b) nounwind uwtable readnone ssp {
 ; CHECK-NOT: floatunsisf
   %1 = icmp eq i32 %a, %b

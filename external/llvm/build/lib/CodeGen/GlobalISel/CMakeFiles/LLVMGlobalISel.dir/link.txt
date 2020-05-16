@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../libLLVMGlobalISel.a  CMakeFiles/LLVMGlobalISel.dir/GlobalISel.cpp.o
+/usr/bin/ranlib ../../libLLVMGlobalISel.a

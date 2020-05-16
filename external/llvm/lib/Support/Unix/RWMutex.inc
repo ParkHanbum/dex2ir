@@ -16,36 +16,28 @@
 //===          is guaranteed to work on *all* UNIX variants.
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/Mutex.h"
-
 namespace llvm {
 
 using namespace sys;
 
-// This naive implementation treats readers the same as writers.  This
-// will therefore deadlock if a thread tries to acquire a read lock
-// multiple times.
+RWMutexImpl::RWMutexImpl() { }
 
-RWMutexImpl::RWMutexImpl() : data_(new Mutex(false)) { }
-
-RWMutexImpl::~RWMutexImpl() {
-  delete static_cast<Mutex *>(data_);
-}
+RWMutexImpl::~RWMutexImpl() { }
 
 bool RWMutexImpl::reader_acquire() {
-  return static_cast<Mutex *>(data_)->acquire();
+  return true;
 }
 
 bool RWMutexImpl::reader_release() {
-  return static_cast<Mutex *>(data_)->release();
+  return true;
 }
 
 bool RWMutexImpl::writer_acquire() {
-  return static_cast<Mutex *>(data_)->acquire();
+  return true;
 }
 
 bool RWMutexImpl::writer_release() {
-  return static_cast<Mutex *>(data_)->release();
+  return true;
 }
 
 }

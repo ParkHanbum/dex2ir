@@ -14,8 +14,7 @@ x86_mc_desc_SRC_FILES := \
   X86MCCodeEmitter.cpp \
   X86MachORelocationInfo.cpp \
   X86MachObjectWriter.cpp \
-  X86WinCOFFObjectWriter.cpp \
-  X86WinCOFFStreamer.cpp
+  X86WinCOFFObjectWriter.cpp
 
 # For the host
 # =====================================================
@@ -37,7 +36,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
+ifeq ($(TARGET_ARCH),x86)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 

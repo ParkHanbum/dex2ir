@@ -14,10 +14,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "loop-extract"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
@@ -28,8 +29,6 @@
 #include <fstream>
 #include <set>
 using namespace llvm;
-
-#define DEBUG_TYPE "loop-extract"
 
 STATISTIC(NumExtracted, "Number of loops extracted");
 
@@ -43,12 +42,12 @@ namespace {
         initializeLoopExtractorPass(*PassRegistry::getPassRegistry());
       }
 
-    bool runOnLoop(Loop *L, LPPassManager &LPM) override;
+    virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequiredID(BreakCriticalEdgesID);
       AU.addRequiredID(LoopSimplifyID);
-      AU.addRequired<DominatorTreeWrapperPass>();
+      AU.addRequired<DominatorTree>();
     }
   };
 }
@@ -58,7 +57,7 @@ INITIALIZE_PASS_BEGIN(LoopExtractor, "loop-extract",
                       "Extract loops into new functions", false, false)
 INITIALIZE_PASS_DEPENDENCY(BreakCriticalEdges)
 INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
-INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(LoopExtractor, "loop-extract",
                     "Extract loops into new functions", false, false)
 
@@ -80,9 +79,6 @@ INITIALIZE_PASS(SingleLoopExtractor, "loop-extract-single",
 Pass *llvm::createLoopExtractorPass() { return new LoopExtractor(); }
 
 bool LoopExtractor::runOnLoop(Loop *L, LPPassManager &LPM) {
-  if (skipOptnoneFunction(L))
-    return false;
-
   // Only visit top-level loops.
   if (L->getParentLoop())
     return false;
@@ -91,7 +87,7 @@ bool LoopExtractor::runOnLoop(Loop *L, LPPassManager &LPM) {
   if (!L->isLoopSimplifyForm())
     return false;
 
-  DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+  DominatorTree &DT = getAnalysis<DominatorTree>();
   bool Changed = false;
 
   // If there is more than one top-level loop in this function, extract all of
@@ -137,7 +133,7 @@ bool LoopExtractor::runOnLoop(Loop *L, LPPassManager &LPM) {
     if (NumLoops == 0) return Changed;
     --NumLoops;
     CodeExtractor Extractor(DT, *L);
-    if (Extractor.extractCodeRegion() != nullptr) {
+    if (Extractor.extractCodeRegion() != 0) {
       Changed = true;
       // After extraction, the loop is replaced by a function call, so
       // we shouldn't try to run any more loop passes on it.
@@ -181,7 +177,7 @@ namespace {
         LoadFile(BlockFile.c_str());
     }
 
-    bool runOnModule(Module &M) override;
+    bool runOnModule(Module &M);
   };
 }
 
@@ -242,7 +238,7 @@ void BlockExtractorPass::SplitLandingPadPreds(Function *F) {
     if (!Split) continue;
 
     SmallVector<BasicBlock*, 2> NewBBs;
-    SplitLandingPadPredecessors(LPad, Parent, ".1", ".2", nullptr, NewBBs);
+    SplitLandingPadPredecessors(LPad, Parent, ".1", ".2", 0, NewBBs);
   }
 }
 

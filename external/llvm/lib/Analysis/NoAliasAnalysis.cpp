@@ -15,7 +15,6 @@
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/Pass.h"
 using namespace llvm;
 
@@ -31,54 +30,48 @@ namespace {
       initializeNoAAPass(*PassRegistry::getPassRegistry());
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {}
-
-    void initializePass() override {
-      // Note: NoAA does not call InitializeAliasAnalysis because it's
-      // special and does not support chaining.
-      DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
-      DL = DLP ? &DLP->getDataLayout() : nullptr;
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     }
 
-    AliasResult alias(const Location &LocA, const Location &LocB) override {
+    virtual void initializePass() {
+      // Note: NoAA does not call InitializeAliasAnalysis because it's
+      // special and does not support chaining.
+      TD = getAnalysisIfAvailable<DataLayout>();
+    }
+
+    virtual AliasResult alias(const Location &LocA, const Location &LocB) {
       return MayAlias;
     }
 
-    ModRefBehavior getModRefBehavior(ImmutableCallSite CS) override {
+    virtual ModRefBehavior getModRefBehavior(ImmutableCallSite CS) {
       return UnknownModRefBehavior;
     }
-    ModRefBehavior getModRefBehavior(const Function *F) override {
+    virtual ModRefBehavior getModRefBehavior(const Function *F) {
       return UnknownModRefBehavior;
     }
 
-    bool pointsToConstantMemory(const Location &Loc, bool OrLocal) override {
+    virtual bool pointsToConstantMemory(const Location &Loc,
+                                        bool OrLocal) {
       return false;
     }
-    Location getArgLocation(ImmutableCallSite CS, unsigned ArgIdx,
-                            ModRefResult &Mask) override {
-      Mask = ModRef;
-      return Location(CS.getArgument(ArgIdx), UnknownSize,
-                      CS.getInstruction()->getMetadata(LLVMContext::MD_tbaa));
-    }
-
-    ModRefResult getModRefInfo(ImmutableCallSite CS,
-                               const Location &Loc) override {
+    virtual ModRefResult getModRefInfo(ImmutableCallSite CS,
+                                       const Location &Loc) {
       return ModRef;
     }
-    ModRefResult getModRefInfo(ImmutableCallSite CS1,
-                               ImmutableCallSite CS2) override {
+    virtual ModRefResult getModRefInfo(ImmutableCallSite CS1,
+                                       ImmutableCallSite CS2) {
       return ModRef;
     }
 
-    void deleteValue(Value *V) override {}
-    void copyValue(Value *From, Value *To) override {}
-    void addEscapingUse(Use &U) override {}
-
+    virtual void deleteValue(Value *V) {}
+    virtual void copyValue(Value *From, Value *To) {}
+    virtual void addEscapingUse(Use &U) {}
+    
     /// getAdjustedAnalysisPointer - This method is used when a pass implements
     /// an analysis interface through multiple inheritance.  If needed, it
     /// should override this to adjust the this pointer as needed for the
     /// specified pass info.
-    void *getAdjustedAnalysisPointer(const void *ID) override {
+    virtual void *getAdjustedAnalysisPointer(const void *ID) {
       if (ID == &AliasAnalysis::ID)
         return (AliasAnalysis*)this;
       return this;

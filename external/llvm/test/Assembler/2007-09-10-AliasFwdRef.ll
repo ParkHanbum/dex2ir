@@ -6,6 +6,4 @@
 
 
 
-define weak i32 @pthread_cancel(i32) {
-  ret i32 0
-}
+declare extern_weak i32 @pthread_cancel(i32)

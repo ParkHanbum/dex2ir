@@ -5,5 +5,5 @@
 # CHECK: a = 0
 # CHECK: TESTB:
 TESTA:  
-	.include       "directive\137set.s"   # "\137" is underscore "_"
+	.include       "directive_set.s"
 TESTB:

@@ -564,8 +564,6 @@ public:
                                   unsigned SubReg = 0,
                                   bool isDebug = false,
                                   bool isInternalRead = false) {
-    assert(!(isDead && !isDef) && "Dead flag on non-def");
-    assert(!(isKill && isDef) && "Kill flag on def");
     MachineOperand Op(MachineOperand::MO_Register);
     Op.IsDef = isDef;
     Op.IsImp = isImp;

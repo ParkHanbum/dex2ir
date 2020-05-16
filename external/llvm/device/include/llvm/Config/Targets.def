@@ -27,18 +27,10 @@
   LLVM_TARGET(ARM)
 #elif defined(__mips__)
   LLVM_TARGET(Mips)
-#elif defined(__i386__) || defined(__x86_64__)
+#elif defined(__i386__)
   LLVM_TARGET(X86)
-
-#if defined(FORCE_BUILD_ARM)
-  LLVM_TARGET(ARM)
-#endif
-
-#elif defined(__aarch64__)
-  LLVM_TARGET(ARM)
-  LLVM_TARGET(AArch64)
 #else
-#  error Unsupported TARGET_ARCH for LLVM_TARGET
+#  error Unsupported TARGET_ARCH for LLVM_ASM_PRINTER
 #endif
 
 #undef LLVM_TARGET

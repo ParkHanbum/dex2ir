@@ -43,16 +43,14 @@ enum PropertyAnnotation {
   PROPERTY_ISSAMPLER,
   PROPERTY_ISREADONLY_IMAGE_PARAM,
   PROPERTY_ISWRITEONLY_IMAGE_PARAM,
-  PROPERTY_ISREADWRITE_IMAGE_PARAM,
   PROPERTY_ISKERNEL_FUNCTION,
   PROPERTY_ALIGN,
-  PROPERTY_MANAGED,
 
   // last property
   PROPERTY_LAST
 };
 
-const unsigned AnnotationNameLen = 9; // length of each annotation name
+const unsigned AnnotationNameLen = 8; // length of each annotation name
 const char PropertyAnnotationNames[PROPERTY_LAST + 1][AnnotationNameLen + 1] = {
   "maxntidx",                         // PROPERTY_MAXNTID_X
   "maxntidy",                         // PROPERTY_MAXNTID_Y
@@ -66,10 +64,8 @@ const char PropertyAnnotationNames[PROPERTY_LAST + 1][AnnotationNameLen + 1] = {
   "sampler",                          // PROPERTY_ISSAMPLER
   "rdoimage",                         // PROPERTY_ISREADONLY_IMAGE_PARAM
   "wroimage",                         // PROPERTY_ISWRITEONLY_IMAGE_PARAM
-  "rdwrimage",                        // PROPERTY_ISREADWRITE_IMAGE_PARAM
   "kernel",                           // PROPERTY_ISKERNEL_FUNCTION
   "align",                            // PROPERTY_ALIGN
-  "managed",                          // PROPERTY_MANAGED
 
               // last property
   "proplast", // PROPERTY_LAST

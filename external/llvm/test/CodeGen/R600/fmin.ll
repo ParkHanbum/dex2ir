@@ -2,16 +2,15 @@
 
 ;CHECK: MIN * T{{[0-9]+\.[XYZW], T[0-9]+\.[XYZW], T[0-9]+\.[XYZW]}}
 
-define void @test(<4 x float> inreg %reg0) #0 {
-   %r0 = extractelement <4 x float> %reg0, i32 0
-   %r1 = extractelement <4 x float> %reg0, i32 1
+define void @test() {
+   %r0 = call float @llvm.R600.load.input(i32 0)
+   %r1 = call float @llvm.R600.load.input(i32 1)
    %r2 = fcmp uge float %r0, %r1
    %r3 = select i1 %r2, float %r1, float %r0
-   %vec = insertelement <4 x float> undef, float %r3, i32 0
-   call void @llvm.R600.store.swizzle(<4 x float> %vec, i32 0, i32 0)
+   call void @llvm.AMDGPU.store.output(float %r3, i32 0)
    ret void
 }
 
-declare void @llvm.R600.store.swizzle(<4 x float>, i32, i32)
+declare float @llvm.R600.load.input(i32) readnone
 
-attributes #0 = { "ShaderType"="0" }
+declare void @llvm.AMDGPU.store.output(float, i32)

@@ -6,8 +6,9 @@ entry:
   ret void
 }
 
-; CHECK: 	.set	mips16
+; CHECK: 	.set	mips16                  # @foo
 ; CHECK:	.ent	foo
-; CHECK:	jrc $ra
+; CHECK:	save	{{.+}}
+; CHECK:	restore	{{.+}} 
 ; CHECK:	.end	foo
-attributes #0 = { nounwind "less-precise-fpmad"="false" "mips16" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #0 = { nounwind "less-precise-fpmad"="false" "mips16" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }

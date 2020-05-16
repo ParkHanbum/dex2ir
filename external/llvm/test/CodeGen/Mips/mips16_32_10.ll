@@ -4,7 +4,7 @@ define void @foo() #0 {
 entry:
   ret void
 }
-; 16: 	.set	nomips16
+; 16: 	.set	nomips16                  # @foo
 ; 16: 	.ent	foo
 ; 16:	.set	noreorder
 ; 16:	.set	nomacro
@@ -21,10 +21,11 @@ entry:
   ret void
 }
 
-; 16: 	.set	mips16
+; 16: 	.set	mips16                  # @nofoo
 ; 16: 	.ent	nofoo
 
-; 16:	jrc $ra
+; 16:	save	{{.+}}
+; 16:	restore	{{.+}} 
 ; 16:	.end	nofoo
 
 define i32 @main() #2 {
@@ -32,7 +33,7 @@ entry:
   ret i32 0
 }
 
-; 16: 	.set	nomips16
+; 16: 	.set	nomips16                  # @main
 ; 16: 	.ent	main
 ; 16:	.set	noreorder
 ; 16:	.set	nomacro
@@ -53,6 +54,6 @@ entry:
 
 
 
-attributes #0 = { nounwind "less-precise-fpmad"="false" "nomips16" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
-attributes #1 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf" "no-infs-fp-math"="false" "no-nans-fp-math"="false"  "unsafe-fp-math"="false" "use-soft-float"="false" }
-attributes #2 = { nounwind "less-precise-fpmad"="false" "nomips16" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #0 = { nounwind "less-precise-fpmad"="false" "nomips16" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #1 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false"  "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #2 = { nounwind "less-precise-fpmad"="false" "nomips16" "no-frame-pointer-elim"="false" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }

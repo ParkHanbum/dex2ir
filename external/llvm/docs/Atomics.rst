@@ -110,7 +110,8 @@ where threads and signals are involved.
 
 ``cmpxchg`` and ``atomicrmw`` are essentially like an atomic load followed by an
 atomic store (where the store is conditional for ``cmpxchg``), but no other
-memory operation can happen on any thread between the load and store.
+memory operation can happen on any thread between the load and store.  Note that
+LLVM's cmpxchg does not provide quite as many options as the C++0x version.
 
 A ``fence`` provides Acquire and/or Release ordering which is not part of
 another operation; it is normally used along with Monotonic memory operations.
@@ -429,9 +430,10 @@ other ``atomicrmw`` operations generate a loop with ``LOCK CMPXCHG``.  Depending
 on the users of the result, some ``atomicrmw`` operations can be translated into
 operations like ``LOCK AND``, but that does not work in general.
 
-On ARM (before v8), MIPS, and many other RISC architectures, Acquire, Release,
-and SequentiallyConsistent semantics require barrier instructions for every such
+On ARM, MIPS, and many other RISC architectures, Acquire, Release, and
+SequentiallyConsistent semantics require barrier instructions for every such
 operation. Loads and stores generate normal instructions.  ``cmpxchg`` and
 ``atomicrmw`` can be represented using a loop with LL/SC-style instructions
 which take some sort of exclusive lock on a cache line (``LDREX`` and ``STREX``
-on ARM, etc.).
+on ARM, etc.). At the moment, the IR does not provide any way to represent a
+weak ``cmpxchg`` which would not require a loop.

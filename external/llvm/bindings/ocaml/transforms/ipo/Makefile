@@ -13,6 +13,7 @@
 
 LEVEL := ../../../..
 LIBRARYNAME := llvm_ipo
+DONT_BUILD_RELINKED := 1
 UsedComponents := ipo
 UsedOcamlInterfaces := llvm
 

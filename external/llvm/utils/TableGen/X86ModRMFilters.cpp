@@ -17,6 +17,10 @@ void DumbFilter::anchor() { }
 
 void ModFilter::anchor() { }
 
+void EscapeFilter::anchor() { }
+
+void AddRegEscapeFilter::anchor() { }
+
 void ExtendedFilter::anchor() { }
 
 void ExactFilter::anchor() { }

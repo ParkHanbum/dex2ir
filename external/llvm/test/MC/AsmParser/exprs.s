@@ -1,4 +1,4 @@
-// RUN: llvm-mc -triple i386-apple-darwin %s
+// RUN: llvm-mc -triple i386-unknown-unknown %s > %t
 
 .macro check_expr
   .if ($0) != ($1)

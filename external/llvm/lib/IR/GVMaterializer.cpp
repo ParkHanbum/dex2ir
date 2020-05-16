@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/IR/GVMaterializer.h"
+#include "llvm/GVMaterializer.h"
 using namespace llvm;
 
 GVMaterializer::~GVMaterializer() {}

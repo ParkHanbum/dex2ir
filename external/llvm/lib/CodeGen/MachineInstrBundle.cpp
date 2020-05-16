@@ -26,7 +26,7 @@ namespace {
       initializeUnpackMachineBundlesPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
   };
 } // end anonymous namespace
 
@@ -77,7 +77,7 @@ namespace {
       initializeFinalizeMachineBundlesPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
   };
 } // end anonymous namespace
 
@@ -211,7 +211,7 @@ MachineBasicBlock::instr_iterator
 llvm::finalizeBundle(MachineBasicBlock &MBB,
                      MachineBasicBlock::instr_iterator FirstMI) {
   MachineBasicBlock::instr_iterator E = MBB.instr_end();
-  MachineBasicBlock::instr_iterator LastMI = std::next(FirstMI);
+  MachineBasicBlock::instr_iterator LastMI = llvm::next(FirstMI);
   while (LastMI != E && LastMI->isInsideBundle())
     ++LastMI;
   finalizeBundle(MBB, FirstMI, LastMI);
@@ -235,7 +235,7 @@ bool llvm::finalizeBundles(MachineFunction &MF) {
       if (!MII->isInsideBundle())
         ++MII;
       else {
-        MII = finalizeBundle(MBB, std::prev(MII));
+        MII = finalizeBundle(MBB, llvm::prior(MII));
         Changed = true;
       }
     }

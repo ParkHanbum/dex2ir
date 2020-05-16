@@ -17,16 +17,14 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Bitcode/BitstreamReader.h"
 #include "llvm/Bitcode/LLVMBitCodes.h"
+#include "llvm/GVMaterializer.h"
 #include "llvm/IR/Attributes.h"
-#include "llvm/IR/GVMaterializer.h"
 #include "llvm/IR/OperandTraits.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/ValueHandle.h"
-#include <system_error>
+#include "llvm/Support/ValueHandle.h"
 #include <vector>
 
 namespace llvm {
-  class Comdat;
   class MemoryBuffer;
   class LLVMContext;
 
@@ -126,25 +124,24 @@ public:
 class BitcodeReader : public GVMaterializer {
   LLVMContext &Context;
   Module *TheModule;
-  std::unique_ptr<MemoryBuffer> Buffer;
-  std::unique_ptr<BitstreamReader> StreamFile;
+  MemoryBuffer *Buffer;
+  bool BufferOwned;
+  OwningPtr<BitstreamReader> StreamFile;
   BitstreamCursor Stream;
   DataStreamer *LazyStreamer;
   uint64_t NextUnreadBit;
   bool SeenValueSymbolTable;
 
+  const char *ErrorString;
+
   std::vector<Type*> TypeList;
   BitcodeReaderValueList ValueList;
   BitcodeReaderMDValueList MDValueList;
-  std::vector<Comdat *> ComdatList;
   SmallVector<Instruction *, 64> InstructionList;
   SmallVector<SmallVector<uint64_t, 64>, 64> UseListRecords;
 
   std::vector<std::pair<GlobalVariable*, unsigned> > GlobalInits;
   std::vector<std::pair<GlobalAlias*, unsigned> > AliasInits;
-  std::vector<std::pair<Function*, unsigned> > FunctionPrefixes;
-
-  SmallVector<Instruction*, 64> InstsWithTBAATag;
 
   /// MAttributes - The set of attributes by index.  Index zero in the
   /// file is for null, and is thus not represented here.  As such all indices
@@ -194,65 +191,50 @@ class BitcodeReader : public GVMaterializer {
   /// not need this flag.
   bool UseRelativeIDs;
 
-  static const std::error_category &BitcodeErrorCategory();
-
 public:
-  enum ErrorType {
-    BitcodeStreamInvalidSize,
-    ConflictingMETADATA_KINDRecords,
-    CouldNotFindFunctionInStream,
-    ExpectedConstant,
-    InsufficientFunctionProtos,
-    InvalidBitcodeSignature,
-    InvalidBitcodeWrapperHeader,
-    InvalidConstantReference,
-    InvalidID, // A read identifier is not found in the table it should be in.
-    InvalidInstructionWithNoBB,
-    InvalidRecord, // A read record doesn't have the expected size or structure
-    InvalidTypeForValue, // Type read OK, but is invalid for its use
-    InvalidTYPETable,
-    InvalidType, // We were unable to read a type
-    MalformedBlock, // We are unable to advance in the stream.
-    MalformedGlobalInitializerSet,
-    InvalidMultipleBlocks, // We found multiple blocks of a kind that should
-                           // have only one
-    NeverResolvedValueFoundInFunction,
-    InvalidValue // Invalid version, inst number, attr number, etc
-  };
-
-  std::error_code Error(ErrorType E) {
-    return std::error_code(E, BitcodeErrorCategory());
-  }
-
   explicit BitcodeReader(MemoryBuffer *buffer, LLVMContext &C)
-      : Context(C), TheModule(nullptr), Buffer(buffer), LazyStreamer(nullptr),
-        NextUnreadBit(0), SeenValueSymbolTable(false), ValueList(C),
-        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false) {}
+    : Context(C), TheModule(0), Buffer(buffer), BufferOwned(false),
+      LazyStreamer(0), NextUnreadBit(0), SeenValueSymbolTable(false),
+      ErrorString(0), ValueList(C), MDValueList(C),
+      SeenFirstFunctionBody(false), UseRelativeIDs(false) {
+  }
   explicit BitcodeReader(DataStreamer *streamer, LLVMContext &C)
-      : Context(C), TheModule(nullptr), Buffer(nullptr), LazyStreamer(streamer),
-        NextUnreadBit(0), SeenValueSymbolTable(false), ValueList(C),
-        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false) {}
-  ~BitcodeReader() { FreeState(); }
+    : Context(C), TheModule(0), Buffer(0), BufferOwned(false),
+      LazyStreamer(streamer), NextUnreadBit(0), SeenValueSymbolTable(false),
+      ErrorString(0), ValueList(C), MDValueList(C),
+      SeenFirstFunctionBody(false), UseRelativeIDs(false) {
+  }
+  ~BitcodeReader() {
+    FreeState();
+  }
 
   void materializeForwardReferencedFunctions();
 
   void FreeState();
 
-  void releaseBuffer() override;
+  /// setBufferOwned - If this is true, the reader will destroy the MemoryBuffer
+  /// when the reader is destroyed.
+  void setBufferOwned(bool Owned) { BufferOwned = Owned; }
 
-  bool isMaterializable(const GlobalValue *GV) const override;
-  bool isDematerializable(const GlobalValue *GV) const override;
-  std::error_code Materialize(GlobalValue *GV) override;
-  std::error_code MaterializeModule(Module *M) override;
-  void Dematerialize(GlobalValue *GV) override;
+  virtual bool isMaterializable(const GlobalValue *GV) const;
+  virtual bool isDematerializable(const GlobalValue *GV) const;
+  virtual bool Materialize(GlobalValue *GV, std::string *ErrInfo = 0);
+  virtual bool MaterializeModule(Module *M, std::string *ErrInfo = 0);
+  virtual void Dematerialize(GlobalValue *GV);
+
+  bool Error(const char *Str) {
+    ErrorString = Str;
+    return true;
+  }
+  const char *getErrorString() const { return ErrorString; }
 
   /// @brief Main interface to parsing a bitcode buffer.
   /// @returns true if an error occurred.
-  std::error_code ParseBitcodeInto(Module *M);
+  bool ParseBitcodeInto(Module *M);
 
   /// @brief Cheap mechanism to just extract module triple
   /// @returns true if an error occurred.
-  ErrorOr<std::string> parseTriple();
+  bool ParseTriple(std::string &Triple);
 
   static uint64_t decodeSignRotatedValue(uint64_t V);
 
@@ -264,7 +246,7 @@ private:
     return ValueList.getValueFwdRef(ID, Ty);
   }
   BasicBlock *getBasicBlock(unsigned ID) const {
-    if (ID >= FunctionBBs.size()) return nullptr; // Invalid ID
+    if (ID >= FunctionBBs.size()) return 0; // Invalid ID
     return FunctionBBs[ID];
   }
   AttributeSet getAttributes(unsigned i) const {
@@ -286,15 +268,15 @@ private:
     if (ValNo < InstNum) {
       // If this is not a forward reference, just return the value we already
       // have.
-      ResVal = getFnValueByID(ValNo, nullptr);
-      return ResVal == nullptr;
+      ResVal = getFnValueByID(ValNo, 0);
+      return ResVal == 0;
     } else if (Slot == Record.size()) {
       return true;
     }
 
     unsigned TypeNo = (unsigned)Record[Slot++];
     ResVal = getFnValueByID(ValNo, getTypeByID(TypeNo));
-    return ResVal == nullptr;
+    return ResVal == 0;
   }
 
   /// popValue - Read a value out of the specified record from slot 'Slot'.
@@ -313,14 +295,14 @@ private:
   bool getValue(SmallVectorImpl<uint64_t> &Record, unsigned Slot,
                 unsigned InstNum, Type *Ty, Value *&ResVal) {
     ResVal = getValue(Record, Slot, InstNum, Ty);
-    return ResVal == nullptr;
+    return ResVal == 0;
   }
 
   /// getValue -- Version of getValue that returns ResVal directly,
   /// or 0 if there is an error.
   Value *getValue(SmallVectorImpl<uint64_t> &Record, unsigned Slot,
                   unsigned InstNum, Type *Ty) {
-    if (Slot == Record.size()) return nullptr;
+    if (Slot == Record.size()) return 0;
     unsigned ValNo = (unsigned)Record[Slot];
     // Adjust the ValNo, if it was encoded relative to the InstNum.
     if (UseRelativeIDs)
@@ -331,7 +313,7 @@ private:
   /// getValueSigned -- Like getValue, but decodes signed VBRs.
   Value *getValueSigned(SmallVectorImpl<uint64_t> &Record, unsigned Slot,
                         unsigned InstNum, Type *Ty) {
-    if (Slot == Record.size()) return nullptr;
+    if (Slot == Record.size()) return 0;
     unsigned ValNo = (unsigned)decodeSignRotatedValue(Record[Slot]);
     // Adjust the ValNo, if it was encoded relative to the InstNum.
     if (UseRelativeIDs)
@@ -339,29 +321,28 @@ private:
     return getFnValueByID(ValNo, Ty);
   }
 
-  std::error_code ParseAttrKind(uint64_t Code, Attribute::AttrKind *Kind);
-  std::error_code ParseModule(bool Resume);
-  std::error_code ParseAttributeBlock();
-  std::error_code ParseAttributeGroupBlock();
-  std::error_code ParseTypeTable();
-  std::error_code ParseTypeTableBody();
+  bool ParseAttrKind(uint64_t Code, Attribute::AttrKind *Kind);
+  bool ParseModule(bool Resume);
+  bool ParseAttributeBlock();
+  bool ParseAttributeGroupBlock();
+  bool ParseTypeTable();
+  bool ParseTypeTableBody();
 
-  std::error_code ParseValueSymbolTable();
-  std::error_code ParseConstants();
-  std::error_code RememberAndSkipFunctionBody();
-  std::error_code ParseFunctionBody(Function *F);
-  std::error_code GlobalCleanup();
-  std::error_code ResolveGlobalAndAliasInits();
-  std::error_code ParseMetadata();
-  std::error_code ParseMetadataAttachment();
-  ErrorOr<std::string> parseModuleTriple();
-  std::error_code ParseUseLists();
-  std::error_code InitStream();
-  std::error_code InitStreamFromBuffer();
-  std::error_code InitLazyStream();
-  std::error_code FindFunctionInStream(
-      Function *F,
-      DenseMap<Function *, uint64_t>::iterator DeferredFunctionInfoIterator);
+  bool ParseValueSymbolTable();
+  bool ParseConstants();
+  bool RememberAndSkipFunctionBody();
+  bool ParseFunctionBody(Function *F);
+  bool GlobalCleanup();
+  bool ResolveGlobalAndAliasInits();
+  bool ParseMetadata();
+  bool ParseMetadataAttachment();
+  bool ParseModuleTriple(std::string &Triple);
+  bool ParseUseLists();
+  bool InitStream();
+  bool InitStreamFromBuffer();
+  bool InitLazyStream();
+  bool FindFunctionInStream(Function *F,
+         DenseMap<Function*, uint64_t>::iterator DeferredFunctionInfoIterator);
 };
 
 } // End llvm namespace

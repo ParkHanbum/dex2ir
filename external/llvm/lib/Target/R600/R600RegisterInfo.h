@@ -16,32 +16,39 @@
 #define R600REGISTERINFO_H_
 
 #include "AMDGPURegisterInfo.h"
+#include "AMDGPUTargetMachine.h"
 
 namespace llvm {
 
-class AMDGPUSubtarget;
+class R600TargetMachine;
 
 struct R600RegisterInfo : public AMDGPURegisterInfo {
+  AMDGPUTargetMachine &TM;
   RegClassWeight RCW;
 
-  R600RegisterInfo(const AMDGPUSubtarget &st);
+  R600RegisterInfo(AMDGPUTargetMachine &tm);
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
+  virtual BitVector getReservedRegs(const MachineFunction &MF) const;
+
+  /// \param RC is an AMDIL reg class.
+  ///
+  /// \returns the R600 reg class that is equivalent to \p RC.
+  virtual const TargetRegisterClass *getISARegClass(
+    const TargetRegisterClass *RC) const;
 
   /// \brief get the HW encoding for a register's channel.
   unsigned getHWRegChan(unsigned reg) const;
 
-  unsigned getHWRegIndex(unsigned Reg) const override;
-
   /// \brief get the register class of the specified type to use in the
   /// CFGStructurizer
-  const TargetRegisterClass * getCFGStructurizerRegClass(MVT VT) const override;
+  virtual const TargetRegisterClass * getCFGStructurizerRegClass(MVT VT) const;
 
-  const RegClassWeight &
-    getRegClassWeight(const TargetRegisterClass *RC) const override;
+  /// \returns the sub reg enum value for the given \p Channel
+  /// (e.g. getSubRegFromChannel(0) -> AMDGPU::sel_x)
+  unsigned getSubRegFromChannel(unsigned Channel) const;
 
-  // \returns true if \p Reg can be defined in one ALU caluse and used in another.
-  bool isPhysRegLiveAcrossClauses(unsigned Reg) const;
+  virtual const RegClassWeight &getRegClassWeight(const TargetRegisterClass *RC) const;
+
 };
 
 } // End namespace llvm

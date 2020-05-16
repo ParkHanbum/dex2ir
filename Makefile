@@ -126,7 +126,7 @@ $(LIBARTC_ARCHIVE):
 	@$(MAKE) -C $(LIBARTC_BASE)
 
 $(DEX2IR_OBJS):
-	$(CXX) -c $(@:.op=.cc) -o $@ $(DEXIR_CFLAGS)
+	$(CXX) -c $(@:.op=.cc) -o $@ $(DEXIR_CFLAGS) $(CXXFLAGS)
 
 dex2ir: $(DEX2IR_OBJS) $(LIBRUNTIME_ARCHIVE) $(LIBARTC_ARCHIVE)
 	$(QUIET_CXX)$(CXX) -o $@ $^ $(LDFLAGS)

@@ -15,20 +15,14 @@
 #include "XCore.h"
 #include "XCoreMachineFunctionInfo.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/CodeGen/MachineMemOperand.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/Function.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
 
-using namespace llvm;
-
-#define GET_INSTRINFO_CTOR_DTOR
+#define GET_INSTRINFO_CTOR
 #include "XCoreGenInstrInfo.inc"
 
 namespace llvm {
@@ -43,8 +37,7 @@ namespace XCore {
 }
 }
 
-// Pin the vtable to this file.
-void XCoreInstrInfo::anchor() {}
+using namespace llvm;
 
 XCoreInstrInfo::XCoreInstrInfo()
   : XCoreGenInstrInfo(XCore::ADJCALLSTACKDOWN, XCore::ADJCALLSTACKUP),
@@ -288,7 +281,7 @@ XCoreInstrInfo::InsertBranch(MachineBasicBlock &MBB,MachineBasicBlock *TBB,
   assert((Cond.size() == 2 || Cond.size() == 0) &&
          "Unexpected number of components!");
   
-  if (!FBB) { // One way branch.
+  if (FBB == 0) { // One way branch.
     if (Cond.empty()) {
       // Unconditional branch
       BuildMI(&MBB, DL, get(XCore::BRFU_lu6)).addMBB(TBB);
@@ -373,20 +366,11 @@ void XCoreInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                          const TargetRegisterInfo *TRI) const
 {
   DebugLoc DL;
-  if (I != MBB.end() && !I->isDebugValue())
-    DL = I->getDebugLoc();
-  MachineFunction *MF = MBB.getParent();
-  const MachineFrameInfo &MFI = *MF->getFrameInfo();
-  MachineMemOperand *MMO =
-    MF->getMachineMemOperand(MachinePointerInfo::getFixedStack(FrameIndex),
-                             MachineMemOperand::MOStore,
-                             MFI.getObjectSize(FrameIndex),
-                             MFI.getObjectAlignment(FrameIndex));
+  if (I != MBB.end()) DL = I->getDebugLoc();
   BuildMI(MBB, I, DL, get(XCore::STWFI))
     .addReg(SrcReg, getKillRegState(isKill))
     .addFrameIndex(FrameIndex)
-    .addImm(0)
-    .addMemOperand(MMO);
+    .addImm(0);
 }
 
 void XCoreInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
@@ -396,19 +380,10 @@ void XCoreInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                           const TargetRegisterInfo *TRI) const
 {
   DebugLoc DL;
-  if (I != MBB.end() && !I->isDebugValue())
-    DL = I->getDebugLoc();
-  MachineFunction *MF = MBB.getParent();
-  const MachineFrameInfo &MFI = *MF->getFrameInfo();
-  MachineMemOperand *MMO =
-    MF->getMachineMemOperand(MachinePointerInfo::getFixedStack(FrameIndex),
-                             MachineMemOperand::MOLoad,
-                             MFI.getObjectSize(FrameIndex),
-                             MFI.getObjectAlignment(FrameIndex));
+  if (I != MBB.end()) DL = I->getDebugLoc();
   BuildMI(MBB, I, DL, get(XCore::LDWFI), DestReg)
     .addFrameIndex(FrameIndex)
-    .addImm(0)
-    .addMemOperand(MMO);
+    .addImm(0);
 }
 
 /// ReverseBranchCondition - Return the inverse opcode of the 
@@ -419,43 +394,4 @@ ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const {
           "Invalid XCore branch condition!");
   Cond[0].setImm(GetOppositeBranchCondition((XCore::CondCode)Cond[0].getImm()));
   return false;
-}
-
-static inline bool isImmU6(unsigned val) {
-  return val < (1 << 6);
-}
-
-static inline bool isImmU16(unsigned val) {
-  return val < (1 << 16);
-}
-
-static bool isImmMskBitp(unsigned val) {
-  if (!isMask_32(val)) {
-    return false;
-  }
-  int N = Log2_32(val) + 1;
-  return (N >= 1 && N <= 8) || N == 16 || N == 24 || N == 32;
-}
-
-MachineBasicBlock::iterator XCoreInstrInfo::loadImmediate(
-                                              MachineBasicBlock &MBB,
-                                              MachineBasicBlock::iterator MI,
-                                              unsigned Reg, uint64_t Value) const {
-  DebugLoc dl;
-  if (MI != MBB.end() && !MI->isDebugValue())
-    dl = MI->getDebugLoc();
-  if (isImmMskBitp(Value)) {
-    int N = Log2_32(Value) + 1;
-    return BuildMI(MBB, MI, dl, get(XCore::MKMSK_rus), Reg).addImm(N);
-  }
-  if (isImmU16(Value)) {
-    int Opcode = isImmU6(Value) ? XCore::LDC_ru6 : XCore::LDC_lru6;
-    return BuildMI(MBB, MI, dl, get(Opcode), Reg).addImm(Value);
-  }
-  MachineConstantPool *ConstantPool = MBB.getParent()->getConstantPool();
-  const Constant *C = ConstantInt::get(
-        Type::getInt32Ty(MBB.getParent()->getFunction()->getContext()), Value);
-  unsigned Idx = ConstantPool->getConstantPoolIndex(C, 4);
-  return BuildMI(MBB, MI, dl, get(XCore::LDWCP_lru6), Reg)
-            .addConstantPoolIndex(Idx);
 }

@@ -23,32 +23,34 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/ProfileInfo.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Target/TargetInstrInfo.h"
 using namespace llvm;
 
 namespace {
   class UnreachableBlockElim : public FunctionPass {
-    bool runOnFunction(Function &F) override;
+    virtual bool runOnFunction(Function &F);
   public:
     static char ID; // Pass identification, replacement for typeid
     UnreachableBlockElim() : FunctionPass(ID) {
       initializeUnreachableBlockElimPass(*PassRegistry::getPassRegistry());
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addPreserved<DominatorTreeWrapperPass>();
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.addPreserved<DominatorTree>();
+      AU.addPreserved<ProfileInfo>();
     }
   };
 }
@@ -85,7 +87,9 @@ bool UnreachableBlockElim::runOnFunction(Function &F) {
     }
 
   // Actually remove the blocks now.
+  ProfileInfo *PI = getAnalysisIfAvailable<ProfileInfo>();
   for (unsigned i = 0, e = DeadBlocks.size(); i != e; ++i) {
+    if (PI) PI->removeBlock(DeadBlocks[i]);
     DeadBlocks[i]->eraseFromParent();
   }
 
@@ -95,8 +99,8 @@ bool UnreachableBlockElim::runOnFunction(Function &F) {
 
 namespace {
   class UnreachableMachineBlockElim : public MachineFunctionPass {
-    bool runOnMachineFunction(MachineFunction &F) override;
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
+    virtual bool runOnMachineFunction(MachineFunction &F);
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const;
     MachineModuleInfo *MMI;
   public:
     static char ID; // Pass identification, replacement for typeid

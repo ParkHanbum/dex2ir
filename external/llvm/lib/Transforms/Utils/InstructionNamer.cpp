@@ -27,11 +27,11 @@ namespace {
       initializeInstNamerPass(*PassRegistry::getPassRegistry());
     }
     
-    void getAnalysisUsage(AnalysisUsage &Info) const override {
+    void getAnalysisUsage(AnalysisUsage &Info) const {
       Info.setPreservesAll();
     }
 
-    bool runOnFunction(Function &F) override {
+    bool runOnFunction(Function &F) {
       for (Function::arg_iterator AI = F.arg_begin(), AE = F.arg_end();
            AI != AE; ++AI)
         if (!AI->hasName() && !AI->getType()->isVoidTy())

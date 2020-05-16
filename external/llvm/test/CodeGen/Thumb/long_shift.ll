@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=thumb-eabi %s -o /dev/null
+; RUN: llc < %s -march=thumb
 
 define i64 @f0(i64 %A, i64 %B) {
         %tmp = bitcast i64 %A to i64

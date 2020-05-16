@@ -15,19 +15,19 @@
 ; been reordered with the stores. This tests the scheduler's cheap
 ; alias analysis ability (that doesn't require any AliasAnalysis pass).
 ;
-; TOPDOWN-LABEL: %for.body
+; TOPDOWN: %for.body
 ; TOPDOWN: movl %{{.*}}, (
 ; TOPDOWN: imull {{[0-9]*}}(
 ; TOPDOWN: movl %{{.*}}, 4(
 ; TOPDOWN: imull {{[0-9]*}}(
 ; TOPDOWN: movl %{{.*}}, 8(
 ; TOPDOWN: movl %{{.*}}, 12(
-; TOPDOWN-LABEL: %for.end
+; TOPDOWN: %for.end
 ;
 ; For -misched=ilpmin, verify that each expression subtree is
 ; scheduled independently, and that the imull/adds are interleaved.
 ;
-; ILPMIN-LABEL: %for.body
+; ILPMIN: %for.body
 ; ILPMIN: movl %{{.*}}, (
 ; ILPMIN: imull
 ; ILPMIN: imull
@@ -53,12 +53,12 @@
 ; ILPMIN: imull
 ; ILPMIN: addl
 ; ILPMIN: movl %{{.*}}, 12(
-; ILPMIN-LABEL: %for.end
+; ILPMIN: %for.end
 ;
 ; For -misched=ilpmax, verify that each expression subtree is
 ; scheduled independently, and that the imull/adds are clustered.
 ;
-; ILPMAX-LABEL: %for.body
+; ILPMAX: %for.body
 ; ILPMAX: movl %{{.*}}, (
 ; ILPMAX: imull
 ; ILPMAX: imull
@@ -84,7 +84,7 @@
 ; ILPMAX: addl
 ; ILPMAX: addl
 ; ILPMAX: movl %{{.*}}, 12(
-; ILPMAX-LABEL: %for.end
+; ILPMAX: %for.end
 
 define void @mmult([4 x i32]* noalias nocapture %m1, [4 x i32]* noalias nocapture %m2,
 [4 x i32]* noalias nocapture %m3) nounwind uwtable ssp {

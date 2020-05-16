@@ -78,10 +78,7 @@ Here are some examples on how to perform iteration:
 """
 
 from ctypes import c_char_p
-from ctypes import c_char
-from ctypes import POINTER
 from ctypes import c_uint64
-from ctypes import string_at
 
 from .common import CachedProperty
 from .common import LLVMObject
@@ -214,12 +211,7 @@ class Section(LLVMObject):
         if self.expired:
             raise Exception('Section instance has expired.')
 
-        siz = self.size
-
-        r = lib.LLVMGetSectionContents(self)
-        if r:
-            return string_at(r, siz)
-        return None
+        return lib.LLVMGetSectionContents(self)
 
     @CachedProperty
     def address(self):
@@ -319,6 +311,14 @@ class Symbol(LLVMObject):
         return lib.LLVMGetSymbolAddress(self)
 
     @CachedProperty
+    def file_offset(self):
+        """The offset of this symbol in the file, in long bytes."""
+        if self.expired:
+            raise Exception('Symbol instance has expired.')
+
+        return lib.LLVMGetSymbolFileOffset(self)
+
+    @CachedProperty
     def size(self):
         """The size of the symbol, in long bytes."""
         if self.expired:
@@ -345,6 +345,7 @@ class Symbol(LLVMObject):
         """Cache all cacheable properties."""
         getattr(self, 'name')
         getattr(self, 'address')
+        getattr(self, 'file_offset')
         getattr(self, 'size')
 
     def expire(self):
@@ -470,8 +471,7 @@ def register_library(library):
     library.LLVMGetSectionSize.restype = c_uint64
 
     library.LLVMGetSectionContents.argtypes = [c_object_p]
-    # Can't use c_char_p here as it isn't a NUL-terminated string.
-    library.LLVMGetSectionContents.restype = POINTER(c_char)
+    library.LLVMGetSectionContents.restype = c_char_p
 
     library.LLVMGetSectionAddress.argtypes = [c_object_p]
     library.LLVMGetSectionAddress.restype = c_uint64
@@ -494,6 +494,9 @@ def register_library(library):
 
     library.LLVMGetSymbolAddress.argtypes = [Symbol]
     library.LLVMGetSymbolAddress.restype = c_uint64
+
+    library.LLVMGetSymbolFileOffset.argtypes = [Symbol]
+    library.LLVMGetSymbolFileOffset.restype = c_uint64
 
     library.LLVMGetSymbolSize.argtypes = [Symbol]
     library.LLVMGetSymbolSize.restype = c_uint64

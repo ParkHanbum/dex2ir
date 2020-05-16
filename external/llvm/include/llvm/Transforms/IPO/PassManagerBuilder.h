@@ -18,16 +18,10 @@
 #include <vector>
 
 namespace llvm {
-class TargetLibraryInfo;
-class Pass;
-
-// The old pass manager infrastructure is hidden in a legacy namespace now.
-namespace legacy {
-class PassManagerBase;
-class FunctionPassManager;
-}
-using legacy::PassManagerBase;
-using legacy::FunctionPassManager;
+  class TargetLibraryInfo;
+  class PassManagerBase;
+  class Pass;
+  class FunctionPassManager;
 
 /// PassManagerBuilder - This class is used to set up a standard optimization
 /// sequence for languages like C and C++, allowing some APIs to customize the
@@ -112,7 +106,6 @@ public:
   bool SLPVectorize;
   bool LoopVectorize;
   bool LateVectorize;
-  bool RerollLoops;
 
 private:
   /// ExtensionList - This is list of all of the extensions that are registered.

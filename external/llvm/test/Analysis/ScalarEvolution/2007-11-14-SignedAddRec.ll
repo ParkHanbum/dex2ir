@@ -1,7 +1,5 @@
-; RUN: opt < %s -indvars -S | FileCheck %s
+; RUN: opt < %s -indvars -S | grep printd | grep 1206807378
 ; PR1798
-
-; CHECK: printd(i32 1206807378)
 
 declare void @printd(i32)
 

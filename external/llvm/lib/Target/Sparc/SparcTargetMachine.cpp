@@ -32,7 +32,11 @@ SparcTargetMachine::SparcTargetMachine(const Target &T, StringRef TT,
                                        CodeGenOpt::Level OL,
                                        bool is64bit)
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-    Subtarget(TT, CPU, FS, *this, is64bit) {
+    Subtarget(TT, CPU, FS, is64bit),
+    DL(Subtarget.getDataLayout()),
+    InstrInfo(Subtarget),
+    TLInfo(*this), TSInfo(*this),
+    FrameLowering(Subtarget) {
   initAsmInfo();
 }
 
@@ -47,8 +51,8 @@ public:
     return getTM<SparcTargetMachine>();
   }
 
-  bool addInstSelector() override;
-  bool addPreEmitPass() override;
+  virtual bool addInstSelector();
+  virtual bool addPreEmitPass();
 };
 } // namespace
 
@@ -58,13 +62,6 @@ TargetPassConfig *SparcTargetMachine::createPassConfig(PassManagerBase &PM) {
 
 bool SparcPassConfig::addInstSelector() {
   addPass(createSparcISelDag(getSparcTargetMachine()));
-  return false;
-}
-
-bool SparcTargetMachine::addCodeEmitter(PassManagerBase &PM,
-                                        JITCodeEmitter &JCE) {
-  // Machine code emitter pass for Sparc.
-  PM.add(createSparcJITCodeEmitterPass(*this, JCE));
   return false;
 }
 

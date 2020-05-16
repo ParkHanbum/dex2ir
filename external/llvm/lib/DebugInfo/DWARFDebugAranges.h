@@ -10,9 +10,9 @@
 #ifndef LLVM_DEBUGINFO_DWARFDEBUGARANGES_H
 #define LLVM_DEBUGINFO_DWARFDEBUGARANGES_H
 
+#include "DWARFDebugArangeSet.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/Support/DataExtractor.h"
-#include <vector>
+#include <list>
 
 namespace llvm {
 
@@ -20,66 +20,83 @@ class DWARFContext;
 
 class DWARFDebugAranges {
 public:
-  void generate(DWARFContext *CTX);
-  uint32_t findAddress(uint64_t Address) const;
-
-private:
-  void clear();
-  void extract(DataExtractor DebugArangesData);
-
-  // Call appendRange multiple times and then call construct.
-  void appendRange(uint32_t CUOffset, uint64_t LowPC, uint64_t HighPC);
-  void construct();
-
   struct Range {
-    explicit Range(uint64_t LowPC = -1ULL, uint64_t HighPC = -1ULL,
-                   uint32_t CUOffset = -1U)
-      : LowPC(LowPC), Length(HighPC - LowPC), CUOffset(CUOffset) {}
+    explicit Range(uint64_t lo = -1ULL, uint64_t hi = -1ULL,
+                   uint32_t off = -1U)
+      : LoPC(lo), Length(hi-lo), Offset(off) {}
 
-    void setHighPC(uint64_t HighPC) {
-      if (HighPC == -1ULL || HighPC <= LowPC)
+    void clear() {
+      LoPC = -1ULL;
+      Length = 0;
+      Offset = -1U;
+    }
+
+    void setHiPC(uint64_t HiPC) {
+      if (HiPC == -1ULL || HiPC <= LoPC)
         Length = 0;
       else
-        Length = HighPC - LowPC;
+        Length = HiPC - LoPC;
     }
-    uint64_t HighPC() const {
+    uint64_t HiPC() const {
       if (Length)
-        return LowPC + Length;
+        return LoPC + Length;
       return -1ULL;
     }
+    bool isValidRange() const { return Length > 0; }
 
-    bool containsAddress(uint64_t Address) const {
-      return LowPC <= Address && Address < HighPC();
-    }
-    bool operator<(const Range &other) const {
-      return LowPC < other.LowPC;
+    static bool SortedOverlapCheck(const Range &curr_range,
+                                   const Range &next_range, uint32_t n) {
+      if (curr_range.Offset != next_range.Offset)
+        return false;
+      return curr_range.HiPC() + n >= next_range.LoPC;
     }
 
-    uint64_t LowPC; // Start of address range.
-    uint32_t Length; // End of address range (not including this address).
-    uint32_t CUOffset; // Offset of the compile unit or die.
+    bool contains(const Range &range) const {
+      return LoPC <= range.LoPC && range.HiPC() <= HiPC();
+    }
+
+    void dump(raw_ostream &OS) const;
+    uint64_t LoPC; // Start of address range
+    uint32_t Length; // End of address range (not including this address)
+    uint32_t Offset; // Offset of the compile unit or die
   };
 
-  struct RangeEndpoint {
-    uint64_t Address;
-    uint32_t CUOffset;
-    bool IsRangeStart;
+  void clear() {
+    Aranges.clear();
+    ParsedCUOffsets.clear();
+  }
+  bool allRangesAreContiguous(uint64_t& LoPC, uint64_t& HiPC) const;
+  bool getMaxRange(uint64_t& LoPC, uint64_t& HiPC) const;
+  bool extract(DataExtractor debug_aranges_data);
+  bool generate(DWARFContext *ctx);
 
-    RangeEndpoint(uint64_t Address, uint32_t CUOffset, bool IsRangeStart)
-        : Address(Address), CUOffset(CUOffset), IsRangeStart(IsRangeStart) {}
+  // Use append range multiple times and then call sort
+  void appendRange(uint32_t cu_offset, uint64_t low_pc, uint64_t high_pc);
+  void sort(bool minimize, uint32_t n);
 
-    bool operator<(const RangeEndpoint &Other) const {
-      return Address < Other.Address;
-    }
-  };
+  const Range *rangeAtIndex(uint32_t idx) const {
+    if (idx < Aranges.size())
+      return &Aranges[idx];
+    return NULL;
+  }
+  void dump(raw_ostream &OS) const;
+  uint32_t findAddress(uint64_t address) const;
+  bool isEmpty() const { return Aranges.empty(); }
+  uint32_t getNumRanges() const { return Aranges.size(); }
 
+  uint32_t offsetAtIndex(uint32_t idx) const {
+    if (idx < Aranges.size())
+      return Aranges[idx].Offset;
+    return -1U;
+  }
 
   typedef std::vector<Range>              RangeColl;
   typedef RangeColl::const_iterator       RangeCollIterator;
+  typedef DenseSet<uint32_t>              ParsedCUOffsetColl;
 
-  std::vector<RangeEndpoint> Endpoints;
+private:
   RangeColl Aranges;
-  DenseSet<uint32_t> ParsedCUOffsets;
+  ParsedCUOffsetColl ParsedCUOffsets;
 };
 
 }

@@ -4,13 +4,11 @@ codegen_SRC_FILES := \
   AggressiveAntiDepBreaker.cpp \
   AllocationOrder.cpp \
   Analysis.cpp \
-  AtomicExpandLoadLinkedPass.cpp \
   BasicTargetTransformInfo.cpp \
   BranchFolding.cpp \
   CalcSpillWeights.cpp \
   CallingConvLower.cpp \
   CodeGen.cpp \
-  CodeGenPrepare.cpp \
   CriticalAntiDepBreaker.cpp \
   DeadMachineInstructionElim.cpp \
   DFAPacketizer.cpp \
@@ -24,20 +22,17 @@ codegen_SRC_FILES := \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
   GCStrategy.cpp \
-  GlobalMerge.cpp \
   IfConversion.cpp \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
   JITCodeEmitter.cpp \
-  JumpInstrTables.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \
   LiveIntervalAnalysis.cpp \
   LiveInterval.cpp \
   LiveIntervalUnion.cpp \
-  LivePhysRegs.cpp \
   LiveRangeCalc.cpp \
   LiveRangeEdit.cpp \
   LiveRegMatrix.cpp \
@@ -95,16 +90,16 @@ codegen_SRC_FILES := \
   ScheduleDAGPrinter.cpp \
   ScoreboardHazardRecognizer.cpp \
   ShadowStackGC.cpp \
+  ShrinkWrapping.cpp \
   SjLjEHPrepare.cpp \
   SlotIndexes.cpp \
   Spiller.cpp \
   SpillPlacement.cpp \
   SplitKit.cpp \
   StackColoring.cpp \
-  StackMapLivenessAnalysis.cpp \
-  StackMaps.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
+  StrongPHIElimination.cpp \
   TailDuplication.cpp \
   TargetFrameLoweringImpl.cpp \
   TargetInstrInfo.cpp \
@@ -132,7 +127,6 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(codegen_SRC_FILES)
@@ -143,4 +137,3 @@ LOCAL_MODULE_TAGS := optional
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
-endif

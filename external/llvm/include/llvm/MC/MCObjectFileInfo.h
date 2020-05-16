@@ -125,10 +125,6 @@ protected:
   const MCSection *DwarfStrOffDWOSection;
   const MCSection *DwarfAddrSection;
 
-  /// Sections for newer gnu pubnames and pubtypes.
-  const MCSection *DwarfGnuPubNamesSection;
-  const MCSection *DwarfGnuPubTypesSection;
-
   // Extra TLS Variable Data section.  If the target needs to put additional
   // information for a TLS variable, it'll go here.
   const MCSection *TLSExtraDataSection;
@@ -142,8 +138,6 @@ protected:
   /// ELF and MachO only.
   const MCSection *TLSBSSSection;         // Defaults to ".tbss".
 
-  /// StackMap section.
-  const MCSection *StackMapSection;
 
   /// EHFrameSection - EH frame section. It is initialized on demand so it
   /// can be overwritten (with uniquing).
@@ -229,12 +223,6 @@ public:
   const MCSection *getDwarfFrameSection() const { return DwarfFrameSection; }
   const MCSection *getDwarfPubNamesSection() const{return DwarfPubNamesSection;}
   const MCSection *getDwarfPubTypesSection() const{return DwarfPubTypesSection;}
-  const MCSection *getDwarfGnuPubNamesSection() const {
-    return DwarfGnuPubNamesSection;
-  }
-  const MCSection *getDwarfGnuPubTypesSection() const {
-    return DwarfGnuPubTypesSection;
-  }
   const MCSection *getDwarfDebugInlineSection() const {
     return DwarfDebugInlineSection;
   }
@@ -286,8 +274,6 @@ public:
   }
   const MCSection *getTLSDataSection() const { return TLSDataSection; }
   const MCSection *getTLSBSSSection() const { return TLSBSSSection; }
-
-  const MCSection *getStackMapSection() const { return StackMapSection; }
 
   /// ELF specific sections.
   ///

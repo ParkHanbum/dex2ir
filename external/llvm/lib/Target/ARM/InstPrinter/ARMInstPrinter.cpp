@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "asm-printer"
 #include "ARMInstPrinter.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "MCTargetDesc/ARMBaseInfo.h"
@@ -21,8 +22,6 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "asm-printer"
 
 #include "ARMGenAsmWriter.inc"
 
@@ -77,23 +76,14 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
                                StringRef Annot) {
   unsigned Opcode = MI->getOpcode();
 
-  switch(Opcode) {
-
   // Check for HINT instructions w/ canonical names.
-  case ARM::HINT:
-  case ARM::tHINT:
-  case ARM::t2HINT:
+  if (Opcode == ARM::HINT || Opcode == ARM::t2HINT) {
     switch (MI->getOperand(0).getImm()) {
     case 0: O << "\tnop"; break;
     case 1: O << "\tyield"; break;
     case 2: O << "\twfe"; break;
     case 3: O << "\twfi"; break;
     case 4: O << "\tsev"; break;
-    case 5:
-      if ((getAvailableFeatures() & ARM::HasV8Ops)) {
-        O << "\tsevl";
-        break;
-      } // Fallthrough for non-v8
     default:
       // Anything else should just print normally.
       printInstruction(MI, O);
@@ -105,9 +95,10 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
       O << ".w";
     printAnnotation(O, Annot);
     return;
+  }
 
   // Check for MOVs and print canonical forms, instead.
-  case ARM::MOVsr: {
+  if (Opcode == ARM::MOVsr) {
     // FIXME: Thumb variants?
     const MCOperand &Dst = MI->getOperand(0);
     const MCOperand &MO1 = MI->getOperand(1);
@@ -130,7 +121,7 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
     return;
   }
 
-  case ARM::MOVsi: {
+  if (Opcode == ARM::MOVsi) {
     // FIXME: Thumb variants?
     const MCOperand &Dst = MI->getOperand(0);
     const MCOperand &MO1 = MI->getOperand(1);
@@ -158,91 +149,81 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
     return;
   }
 
-  // A8.6.123 PUSH
-  case ARM::STMDB_UPD:
-  case ARM::t2STMDB_UPD:
-    if (MI->getOperand(0).getReg() == ARM::SP && MI->getNumOperands() > 5) {
-      // Should only print PUSH if there are at least two registers in the list.
-      O << '\t' << "push";
-      printPredicateOperand(MI, 2, O);
-      if (Opcode == ARM::t2STMDB_UPD)
-        O << ".w";
-      O << '\t';
-      printRegisterList(MI, 4, O);
-      printAnnotation(O, Annot);
-      return;
-    } else
-      break;
 
-  case ARM::STR_PRE_IMM:
-    if (MI->getOperand(2).getReg() == ARM::SP &&
-        MI->getOperand(3).getImm() == -4) {
-      O << '\t' << "push";
-      printPredicateOperand(MI, 4, O);
-      O << "\t{";
-      printRegName(O, MI->getOperand(1).getReg());
-      O << "}";
-      printAnnotation(O, Annot);
-      return;
-    } else
-      break;
+  // A8.6.123 PUSH
+  if ((Opcode == ARM::STMDB_UPD || Opcode == ARM::t2STMDB_UPD) &&
+      MI->getOperand(0).getReg() == ARM::SP &&
+      MI->getNumOperands() > 5) {
+    // Should only print PUSH if there are at least two registers in the list.
+    O << '\t' << "push";
+    printPredicateOperand(MI, 2, O);
+    if (Opcode == ARM::t2STMDB_UPD)
+      O << ".w";
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    printAnnotation(O, Annot);
+    return;
+  }
+  if (Opcode == ARM::STR_PRE_IMM && MI->getOperand(2).getReg() == ARM::SP &&
+      MI->getOperand(3).getImm() == -4) {
+    O << '\t' << "push";
+    printPredicateOperand(MI, 4, O);
+    O << "\t{";
+    printRegName(O, MI->getOperand(1).getReg());
+    O << "}";
+    printAnnotation(O, Annot);
+    return;
+  }
 
   // A8.6.122 POP
-  case ARM::LDMIA_UPD:
-  case ARM::t2LDMIA_UPD:
-    if (MI->getOperand(0).getReg() == ARM::SP && MI->getNumOperands() > 5) {
-      // Should only print POP if there are at least two registers in the list.
-      O << '\t' << "pop";
-      printPredicateOperand(MI, 2, O);
-      if (Opcode == ARM::t2LDMIA_UPD)
-        O << ".w";
-      O << '\t';
-      printRegisterList(MI, 4, O);
-      printAnnotation(O, Annot);
-      return;
-    } else
-      break;
+  if ((Opcode == ARM::LDMIA_UPD || Opcode == ARM::t2LDMIA_UPD) &&
+      MI->getOperand(0).getReg() == ARM::SP &&
+      MI->getNumOperands() > 5) {
+    // Should only print POP if there are at least two registers in the list.
+    O << '\t' << "pop";
+    printPredicateOperand(MI, 2, O);
+    if (Opcode == ARM::t2LDMIA_UPD)
+      O << ".w";
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    printAnnotation(O, Annot);
+    return;
+  }
+  if (Opcode == ARM::LDR_POST_IMM && MI->getOperand(2).getReg() == ARM::SP &&
+      MI->getOperand(4).getImm() == 4) {
+    O << '\t' << "pop";
+    printPredicateOperand(MI, 5, O);
+    O << "\t{";
+    printRegName(O, MI->getOperand(0).getReg());
+    O << "}";
+    printAnnotation(O, Annot);
+    return;
+  }
 
-  case ARM::LDR_POST_IMM:
-    if (MI->getOperand(2).getReg() == ARM::SP &&
-        MI->getOperand(4).getImm() == 4) {
-      O << '\t' << "pop";
-      printPredicateOperand(MI, 5, O);
-      O << "\t{";
-      printRegName(O, MI->getOperand(0).getReg());
-      O << "}";
-      printAnnotation(O, Annot);
-      return;
-    } else
-      break;
 
   // A8.6.355 VPUSH
-  case ARM::VSTMSDB_UPD:
-  case ARM::VSTMDDB_UPD:
-    if (MI->getOperand(0).getReg() == ARM::SP) {
-      O << '\t' << "vpush";
-      printPredicateOperand(MI, 2, O);
-      O << '\t';
-      printRegisterList(MI, 4, O);
-      printAnnotation(O, Annot);
-      return;
-    } else
-      break;
+  if ((Opcode == ARM::VSTMSDB_UPD || Opcode == ARM::VSTMDDB_UPD) &&
+      MI->getOperand(0).getReg() == ARM::SP) {
+    O << '\t' << "vpush";
+    printPredicateOperand(MI, 2, O);
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    printAnnotation(O, Annot);
+    return;
+  }
 
   // A8.6.354 VPOP
-  case ARM::VLDMSIA_UPD:
-  case ARM::VLDMDIA_UPD:
-    if (MI->getOperand(0).getReg() == ARM::SP) {
-      O << '\t' << "vpop";
-      printPredicateOperand(MI, 2, O);
-      O << '\t';
-      printRegisterList(MI, 4, O);
-      printAnnotation(O, Annot);
-      return;
-    } else
-      break;
+  if ((Opcode == ARM::VLDMSIA_UPD || Opcode == ARM::VLDMDIA_UPD) &&
+      MI->getOperand(0).getReg() == ARM::SP) {
+    O << '\t' << "vpop";
+    printPredicateOperand(MI, 2, O);
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    printAnnotation(O, Annot);
+    return;
+  }
 
-  case ARM::tLDMIA: {
+  if (Opcode == ARM::tLDMIA) {
     bool Writeback = true;
     unsigned BaseReg = MI->getOperand(0).getReg();
     for (unsigned i = 3; i < MI->getNumOperands(); ++i) {
@@ -268,10 +249,9 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
   // GPRs. However, when decoding them, the two GRPs cannot be automatically
   // expressed as a GPRPair, so we have to manually merge them.
   // FIXME: We would really like to be able to tablegen'erate this.
-  case ARM::LDREXD: case ARM::STREXD:
-  case ARM::LDAEXD: case ARM::STLEXD:
+  if (Opcode == ARM::LDREXD || Opcode == ARM::STREXD) {
     const MCRegisterClass& MRC = MRI.getRegClass(ARM::GPRRegClassID);
-    bool isStore = Opcode == ARM::STREXD || Opcode == ARM::STLEXD;
+    bool isStore = Opcode == ARM::STREXD;
     unsigned Reg = MI->getOperand(isStore ? 1 : 0).getReg();
     if (MRC.contains(Reg)) {
       MCInst NewMI;
@@ -308,30 +288,17 @@ void ARMInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
       << markup(">");
   } else {
     assert(Op.isExpr() && "unknown operand kind in printOperand");
-    const MCExpr *Expr = Op.getExpr();
-    switch (Expr->getKind()) {
-    case MCExpr::Binary:
-      O << '#' << *Expr;
-      break;
-    case MCExpr::Constant: {
-      // If a symbolic branch target was added as a constant expression then
-      // print that address in hex. And only print 32 unsigned bits for the
-      // address.
-      const MCConstantExpr *Constant = cast<MCConstantExpr>(Expr);
-      int64_t TargetAddress;
-      if (!Constant->EvaluateAsAbsolute(TargetAddress)) {
-        O << '#' << *Expr;
-      } else {
-        O << "0x";
-        O.write_hex(static_cast<uint32_t>(TargetAddress));
-      }
-      break;
+    // If a symbolic branch target was added as a constant expression then print
+    // that address in hex. And only print 32 unsigned bits for the address.
+    const MCConstantExpr *BranchTarget = dyn_cast<MCConstantExpr>(Op.getExpr());
+    int64_t Address;
+    if (BranchTarget && BranchTarget->EvaluateAsAbsolute(Address)) {
+      O << "0x";
+      O.write_hex((uint32_t)Address);
     }
-    default:
-      // FIXME: Should we always treat this as if it is a constant literal and
-      // prefix it with '#'?
-      O << *Expr;
-      break;
+    else {
+      // Otherwise, just print the expression.
+      O << *Op.getExpr();
     }
   }
 }
@@ -709,7 +676,7 @@ void ARMInstPrinter::printBitfieldInvMaskImmOperand(const MCInst *MI,
 void ARMInstPrinter::printMemBOption(const MCInst *MI, unsigned OpNum,
                                      raw_ostream &O) {
   unsigned val = MI->getOperand(OpNum).getImm();
-  O << ARM_MB::MemBOptToString(val, (getAvailableFeatures() & ARM::HasV8Ops));
+  O << ARM_MB::MemBOptToString(val);
 }
 
 void ARMInstPrinter::printInstSyncBOption(const MCInst *MI, unsigned OpNum,
@@ -1092,13 +1059,13 @@ void ARMInstPrinter::printAddrModeImm12Operand(const MCInst *MI, unsigned OpNum,
   if (isSub) {
     O << ", "
       << markup("<imm:")
-      << "#-" << formatImm(-OffImm)
+      << "#-" << -OffImm
       << markup(">");
   }
   else if (AlwaysPrintImm0 || OffImm > 0) {
     O << ", "
       << markup("<imm:")
-      << "#" << formatImm(OffImm)
+      << "#" << OffImm
       << markup(">");
   }
   O << "]" << markup(">");

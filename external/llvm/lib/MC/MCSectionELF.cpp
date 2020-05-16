@@ -32,29 +32,6 @@ bool MCSectionELF::ShouldOmitSectionDirective(StringRef Name,
   return false;
 }
 
-static void printName(raw_ostream &OS, StringRef Name) {
-  if (Name.find_first_not_of("0123456789_."
-                             "abcdefghijklmnopqrstuvwxyz"
-                             "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == Name.npos) {
-    OS << Name;
-    return;
-  }
-  OS << '"';
-  for (const char *B = Name.begin(), *E = Name.end(); B < E; ++B) {
-    if (*B == '"') // Unquoted "
-      OS << "\\\"";
-    else if (*B != '\\') // Neither " or backslash
-      OS << *B;
-    else if (B + 1 == E) // Trailing backslash
-      OS << "\\\\";
-    else {
-      OS << B[0] << B[1]; // Quoted character
-      ++B;
-    }
-  }
-  OS << '"';
-}
-
 void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
                                         raw_ostream &OS,
                                         const MCExpr *Subsection) const {
@@ -67,8 +44,27 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
     return;
   }
 
-  OS << "\t.section\t";
-  printName(OS, getSectionName());
+  StringRef name = getSectionName();
+  if (name.find_first_not_of("0123456789_."
+                             "abcdefghijklmnopqrstuvwxyz"
+                             "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == name.npos) {
+    OS << "\t.section\t" << name;
+  } else {
+    OS << "\t.section\t\"";
+    for (const char *b = name.begin(), *e = name.end(); b < e; ++b) {
+      if (*b == '"') // Unquoted "
+        OS << "\\\"";
+      else if (*b != '\\') // Neither " or backslash
+        OS << *b;
+      else if (b + 1 == e) // Trailing backslash
+        OS << "\\\\";
+      else {
+        OS << b[0] << b[1]; // Quoted character
+        ++b;
+      }
+    }
+    OS << '"';
+  }
 
   // Handle the weird solaris syntax if desired.
   if (MAI.usesSunStyleELFSectionSwitchSyntax() &&
@@ -79,8 +75,6 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
       OS << ",#execinstr";
     if (Flags & ELF::SHF_WRITE)
       OS << ",#write";
-    if (Flags & ELF::SHF_EXCLUDE)
-      OS << ",#exclude";
     if (Flags & ELF::SHF_TLS)
       OS << ",#tls";
     OS << '\n';
@@ -90,8 +84,6 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
   OS << ",\"";
   if (Flags & ELF::SHF_ALLOC)
     OS << 'a';
-  if (Flags & ELF::SHF_EXCLUDE)
-    OS << 'e';
   if (Flags & ELF::SHF_EXECINSTR)
     OS << 'x';
   if (Flags & ELF::SHF_GROUP)
@@ -139,11 +131,8 @@ void MCSectionELF::PrintSwitchToSection(const MCAsmInfo &MAI,
     OS << "," << EntrySize;
   }
 
-  if (Flags & ELF::SHF_GROUP) {
-    OS << ",";
-    printName(OS, Group->getName());
-    OS << ",comdat";
-  }
+  if (Flags & ELF::SHF_GROUP)
+    OS << "," << Group->getName() << ",comdat";
   OS << '\n';
 
   if (Subsection)

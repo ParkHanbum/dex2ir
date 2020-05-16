@@ -86,7 +86,6 @@
 // the given platform; otherwise undefined):
 //   GTEST_OS_AIX      - IBM AIX
 //   GTEST_OS_CYGWIN   - Cygwin
-//   GTEST_OS_FREEBSD  - FreeBSD
 //   GTEST_OS_HAIKU    - Haiku
 //   GTEST_OS_HPUX     - HP-UX
 //   GTEST_OS_LINUX    - Linux
@@ -229,8 +228,6 @@
 # endif  // _WIN32_WCE
 #elif defined __APPLE__
 # define GTEST_OS_MAC 1
-#elif defined __FreeBSD__
-# define GTEST_OS_FREEBSD 1
 #elif defined __linux__
 # define GTEST_OS_LINUX 1
 # if defined(ANDROID) || defined(__ANDROID__)
@@ -424,8 +421,7 @@
 //
 // To disable threading support in Google Test, add -DGTEST_HAS_PTHREAD=0
 // to your compiler flags.
-# define GTEST_HAS_PTHREAD (GTEST_OS_LINUX || GTEST_OS_MAC || \
-          GTEST_OS_HPUX || GTEST_OS_FREEBSD)
+# define GTEST_HAS_PTHREAD (GTEST_OS_LINUX || GTEST_OS_MAC || GTEST_OS_HPUX)
 #endif  // GTEST_HAS_PTHREAD
 
 #if GTEST_HAS_PTHREAD
@@ -549,8 +545,7 @@
 // pops up a dialog window that cannot be suppressed programmatically.
 #if (GTEST_OS_LINUX || GTEST_OS_MAC || GTEST_OS_CYGWIN || GTEST_OS_SOLARIS || \
      (GTEST_OS_WINDOWS_DESKTOP && _MSC_VER >= 1400) || \
-     GTEST_OS_WINDOWS_MINGW || GTEST_OS_AIX || \
-     GTEST_OS_HPUX || GTEST_OS_FREEBSD)
+     GTEST_OS_WINDOWS_MINGW || GTEST_OS_AIX || GTEST_OS_HPUX)
 # define GTEST_HAS_DEATH_TEST 1
 # include <vector>  // NOLINT
 #endif
@@ -1121,7 +1116,7 @@ class Notification {
 // problem.
 class ThreadWithParamBase {
  public:
-  virtual ~ThreadWithParamBase();
+  virtual ~ThreadWithParamBase() {}
   virtual void Run() = 0;
 };
 
@@ -1295,7 +1290,7 @@ typedef GTestMutexLock MutexLock;
 // ThreadLocalValueHolderBase.
 class ThreadLocalValueHolderBase {
  public:
-  virtual ~ThreadLocalValueHolderBase();
+  virtual ~ThreadLocalValueHolderBase() {}
 };
 
 // Called by pthread to delete thread-local data stored by

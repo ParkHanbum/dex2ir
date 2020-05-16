@@ -20,24 +20,24 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/CaptureTracking.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/CallSite.h"
 
 using namespace llvm;
 
 CaptureTracker::~CaptureTracker() {}
 
-bool CaptureTracker::shouldExplore(const Use *U) { return true; }
+bool CaptureTracker::shouldExplore(Use *U) { return true; }
 
 namespace {
   struct SimpleCaptureTracker : public CaptureTracker {
     explicit SimpleCaptureTracker(bool ReturnCaptures)
       : ReturnCaptures(ReturnCaptures), Captured(false) {}
 
-    void tooManyUses() override { Captured = true; }
+    void tooManyUses() { Captured = true; }
 
-    bool captured(const Use *U) override {
+    bool captured(Use *U) {
       if (isa<ReturnInst>(U->getUser()) && !ReturnCaptures)
         return false;
 
@@ -81,23 +81,25 @@ static int const Threshold = 20;
 
 void llvm::PointerMayBeCaptured(const Value *V, CaptureTracker *Tracker) {
   assert(V->getType()->isPointerTy() && "Capture is for pointers only!");
-  SmallVector<const Use *, Threshold> Worklist;
-  SmallSet<const Use *, Threshold> Visited;
+  SmallVector<Use*, Threshold> Worklist;
+  SmallSet<Use*, Threshold> Visited;
   int Count = 0;
 
-  for (const Use &U : V->uses()) {
+  for (Value::const_use_iterator UI = V->use_begin(), UE = V->use_end();
+       UI != UE; ++UI) {
     // If there are lots of uses, conservatively say that the value
     // is captured to avoid taking too much compile time.
     if (Count++ >= Threshold)
       return Tracker->tooManyUses();
 
-    if (!Tracker->shouldExplore(&U)) continue;
-    Visited.insert(&U);
-    Worklist.push_back(&U);
+    Use *U = &UI.getUse();
+    if (!Tracker->shouldExplore(U)) continue;
+    Visited.insert(U);
+    Worklist.push_back(U);
   }
 
   while (!Worklist.empty()) {
-    const Use *U = Worklist.pop_back_val();
+    Use *U = Worklist.pop_back_val();
     Instruction *I = cast<Instruction>(U->getUser());
     V = U->get();
 
@@ -143,18 +145,13 @@ void llvm::PointerMayBeCaptured(const Value *V, CaptureTracker *Tracker) {
     case Instruction::GetElementPtr:
     case Instruction::PHI:
     case Instruction::Select:
-    case Instruction::AddrSpaceCast:
       // The original value is not captured via this if the new value isn't.
-      Count = 0;
-      for (Use &UU : I->uses()) {
-        // If there are lots of uses, conservatively say that the value
-        // is captured to avoid taking too much compile time.
-        if (Count++ >= Threshold)
-          return Tracker->tooManyUses();
-
-        if (Visited.insert(&UU))
-          if (Tracker->shouldExplore(&UU))
-            Worklist.push_back(&UU);
+      for (Instruction::use_iterator UI = I->use_begin(), UE = I->use_end();
+           UI != UE; ++UI) {
+        Use *U = &UI.getUse();
+        if (Visited.insert(U))
+          if (Tracker->shouldExplore(U))
+            Worklist.push_back(U);
       }
       break;
     case Instruction::ICmp:

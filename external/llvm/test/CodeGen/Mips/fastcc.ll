@@ -1,7 +1,4 @@
 ; RUN: llc  < %s -march=mipsel | FileCheck %s 
-; RUN: llc  < %s -mtriple=mipsel-none-nacl-gnu \
-; RUN:  | FileCheck %s -check-prefix=CHECK-NACL
-
 
 @gi0 = external global i32
 @gi1 = external global i32
@@ -98,11 +95,6 @@ entry:
 ; CHECK: lw  $5
 ; CHECK: lw  $4
 
-; t6, t7 and t8 are reserved in NaCl and cannot be used for fastcc.
-; CHECK-NACL-NOT: lw  $14
-; CHECK-NACL-NOT: lw  $15
-; CHECK-NACL-NOT: lw  $24
-
   %0 = load i32* @gi0, align 4
   %1 = load i32* @gi1, align 4
   %2 = load i32* @gi2, align 4
@@ -141,11 +133,6 @@ entry:
 ; CHECK: sw  $15
 ; CHECK: sw  $24
 ; CHECK: sw  $3
-
-; t6, t7 and t8 are reserved in NaCl and cannot be used for fastcc.
-; CHECK-NACL-NOT: sw  $14
-; CHECK-NACL-NOT: sw  $15
-; CHECK-NACL-NOT: sw  $24
 
   store i32 %a0, i32* @g0, align 4
   store i32 %a1, i32* @g1, align 4

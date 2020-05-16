@@ -15,8 +15,8 @@
 #ifndef POWERPC32_REGISTERINFO_H
 #define POWERPC32_REGISTERINFO_H
 
-#include "PPC.h"
 #include "llvm/ADT/DenseMap.h"
+#include "PPC.h"
 
 #define GET_REGINFO_HEADER
 #include "PPCGenRegisterInfo.inc"
@@ -34,37 +34,33 @@ public:
   
   /// getPointerRegClass - Return the register class to use to hold pointers.
   /// This is used for addressing modes.
-  const TargetRegisterClass *
-  getPointerRegClass(const MachineFunction &MF, unsigned Kind=0) const override;
+  virtual const TargetRegisterClass *
+  getPointerRegClass(const MachineFunction &MF, unsigned Kind=0) const;
 
   unsigned getRegPressureLimit(const TargetRegisterClass *RC,
-                               MachineFunction &MF) const override;
-
-  const TargetRegisterClass*
-  getLargestLegalSuperClass(const TargetRegisterClass *RC) const override;
+                               MachineFunction &MF) const;
 
   /// Code Generation virtual methods...
-  const MCPhysReg *
-  getCalleeSavedRegs(const MachineFunction* MF =nullptr) const override;
-  const uint32_t *getCallPreservedMask(CallingConv::ID CC) const override;
+  const uint16_t *getCalleeSavedRegs(const MachineFunction* MF = 0) const;
+  const uint32_t *getCallPreservedMask(CallingConv::ID CC) const;
   const uint32_t *getNoPreservedMask() const;
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
+  BitVector getReservedRegs(const MachineFunction &MF) const;
 
   /// We require the register scavenger.
-  bool requiresRegisterScavenging(const MachineFunction &MF) const override {
+  bool requiresRegisterScavenging(const MachineFunction &MF) const {
     return true;
   }
 
-  bool requiresFrameIndexScavenging(const MachineFunction &MF) const override {
+  bool requiresFrameIndexScavenging(const MachineFunction &MF) const {
     return true;
   }
 
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override {
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
     return true;
   }
 
-  bool requiresVirtualBaseRegisters(const MachineFunction &MF) const override {
+  virtual bool requiresVirtualBaseRegisters(const MachineFunction &MF) const {
     return true;
   }
 
@@ -73,39 +69,38 @@ public:
                        unsigned FrameIndex) const;
   void lowerCRRestore(MachineBasicBlock::iterator II,
                       unsigned FrameIndex) const;
-  void lowerCRBitSpilling(MachineBasicBlock::iterator II,
-                          unsigned FrameIndex) const;
-  void lowerCRBitRestore(MachineBasicBlock::iterator II,
-                         unsigned FrameIndex) const;
   void lowerVRSAVESpilling(MachineBasicBlock::iterator II,
                            unsigned FrameIndex) const;
   void lowerVRSAVERestore(MachineBasicBlock::iterator II,
                           unsigned FrameIndex) const;
 
   bool hasReservedSpillSlot(const MachineFunction &MF, unsigned Reg,
-			    int &FrameIdx) const override;
+			    int &FrameIdx) const;
   void eliminateFrameIndex(MachineBasicBlock::iterator II,
                            int SPAdj, unsigned FIOperandNum,
-                           RegScavenger *RS = nullptr) const override;
+                           RegScavenger *RS = NULL) const;
 
   // Support for virtual base registers.
-  bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const override;
+  bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const;
   void materializeFrameBaseRegister(MachineBasicBlock *MBB,
                                     unsigned BaseReg, int FrameIdx,
-                                    int64_t Offset) const override;
-  void resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
-                         int64_t Offset) const override;
-  bool isFrameOffsetLegal(const MachineInstr *MI,
-                          int64_t Offset) const override;
+                                    int64_t Offset) const;
+  void resolveFrameIndex(MachineBasicBlock::iterator I,
+                         unsigned BaseReg, int64_t Offset) const;
+  bool isFrameOffsetLegal(const MachineInstr *MI, int64_t Offset) const;
 
   // Debug information queries.
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  unsigned getFrameRegister(const MachineFunction &MF) const;
 
   // Base pointer (stack realignment) support.
   unsigned getBaseRegister(const MachineFunction &MF) const;
   bool hasBasePointer(const MachineFunction &MF) const;
   bool canRealignStack(const MachineFunction &MF) const;
-  bool needsStackRealignment(const MachineFunction &MF) const override;
+  bool needsStackRealignment(const MachineFunction &MF) const;
+
+  // Exception handling queries.
+  unsigned getEHExceptionRegister() const;
+  unsigned getEHHandlerRegister() const;
 };
 
 } // end namespace llvm

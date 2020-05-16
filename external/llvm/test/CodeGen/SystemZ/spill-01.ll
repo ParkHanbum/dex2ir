@@ -1,7 +1,6 @@
-; Test spilling using MVC.  The tests here assume z10 register pressure,
-; without the high words being available.
+; Test spilling using MVC.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 declare void @foo()
 
@@ -400,7 +399,6 @@ define void @f10() {
 ; CHECK: stgrl [[REG]], h8
 ; CHECK: br %r14
 entry:
-  %val8 = load volatile i64 *@h8
   %val0 = load volatile i64 *@h0
   %val1 = load volatile i64 *@h1
   %val2 = load volatile i64 *@h2
@@ -409,6 +407,7 @@ entry:
   %val5 = load volatile i64 *@h5
   %val6 = load volatile i64 *@h6
   %val7 = load volatile i64 *@h7
+  %val8 = load volatile i64 *@h8
   %val9 = load volatile i64 *@h9
 
   call void @foo()

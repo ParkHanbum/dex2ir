@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+v7 %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+v7 | FileCheck %s
 
 define i32 @f(i32 %a) nounwind readnone optsize ssp {
 entry:

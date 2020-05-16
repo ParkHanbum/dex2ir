@@ -40,12 +40,3 @@ The correspondence between .rst files and man pages is
 These .rst files are also included during HTML generation so they are also
 viewable online (as noted above) at e.g.
 `http://llvm.org/docs/CommandGuide/Foo.html`.
-
-Checking links
-==============
-
-The reachibility of external links in the documentation can be checked by
-running:
-
-    cd docs/
-    make -f Makefile.sphinx linkcheck

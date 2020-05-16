@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | not grep "str.*\!"
 
 	%struct.shape_edge_t = type { %struct.shape_edge_t*, %struct.shape_edge_t*, i32, i32, i32, i32 }
 	%struct.shape_path_t = type { %struct.shape_edge_t*, %struct.shape_edge_t*, i32, i32, i32, i32, i32, i32 }
@@ -32,6 +32,3 @@ bb140:		; preds = %bb140, %cond_false
 bb174:		; preds = %bb140, %cond_false
 	ret %struct.shape_path_t* null
 }
-
-; CHECK-NOT: str{{.*}}!
-

@@ -86,7 +86,8 @@ define void @test6(<16 x i8>* %in, <16 x i16>* %out) nounwind {
   ret void
 
 ; AVX2-LABEL: test6:
-; AVX2: vpmovsxbw
+; FIXME: v16i8 -> v16i16 is scalarized.
+; AVX2-NOT: pmovsx
 }
 
 define void @test7(<2 x i16>* %in, <2 x i64>* %out) nounwind {

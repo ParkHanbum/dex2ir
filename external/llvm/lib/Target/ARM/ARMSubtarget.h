@@ -14,20 +14,8 @@
 #ifndef ARMSUBTARGET_H
 #define ARMSUBTARGET_H
 
-
-#include "ARMFrameLowering.h"
-#include "ARMISelLowering.h"
-#include "ARMInstrInfo.h"
-#include "ARMJITInfo.h"
-#include "ARMSelectionDAGInfo.h"
-#include "ARMSubtarget.h"
-#include "Thumb1FrameLowering.h"
-#include "Thumb1InstrInfo.h"
-#include "Thumb2InstrInfo.h"
-#include "ARMJITInfo.h"
 #include "MCTargetDesc/ARMMCTargetDesc.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 #include <string>
@@ -43,37 +31,29 @@ class TargetOptions;
 class ARMSubtarget : public ARMGenSubtargetInfo {
 protected:
   enum ARMProcFamilyEnum {
-    Others, CortexA5, CortexA7, CortexA8, CortexA9, CortexA12, CortexA15,
-    CortexR5, Swift, CortexA53, CortexA57, Krait
-  };
-  enum ARMProcClassEnum {
-    None, AClass, RClass, MClass
+    Others, CortexA5, CortexA8, CortexA9, CortexA15, CortexR5, Swift
   };
 
   /// ARMProcFamily - ARM processor family: Cortex-A8, Cortex-A9, and others.
   ARMProcFamilyEnum ARMProcFamily;
 
-  /// ARMProcClass - ARM processor class: None, AClass, RClass or MClass.
-  ARMProcClassEnum ARMProcClass;
-
   /// HasV4TOps, HasV5TOps, HasV5TEOps,
-  /// HasV6Ops, HasV6MOps, HasV6T2Ops, HasV7Ops, HasV8Ops -
+  /// HasV6Ops, HasV6T2Ops, HasV7Ops, HasV8Ops -
   /// Specify whether target support specific ARM ISA variants.
   bool HasV4TOps;
   bool HasV5TOps;
   bool HasV5TEOps;
   bool HasV6Ops;
-  bool HasV6MOps;
   bool HasV6T2Ops;
   bool HasV7Ops;
   bool HasV8Ops;
 
-  /// HasVFPv2, HasVFPv3, HasVFPv4, HasFPARMv8, HasNEON - Specify what
+  /// HasVFPv2, HasVFPv3, HasVFPv4, HasV8FP, HasNEON - Specify what
   /// floating point ISAs are supported.
   bool HasVFPv2;
   bool HasVFPv3;
   bool HasVFPv4;
-  bool HasFPARMv8;
+  bool HasV8FP;
   bool HasNEON;
 
   /// UseNEONForSinglePrecisionFP - if the NEONFP attribute has been
@@ -101,6 +81,10 @@ protected:
 
   /// HasThumb2 - True if Thumb2 instructions are supported.
   bool HasThumb2;
+
+  /// IsMClass - True if the subtarget belongs to the 'M' profile of CPUs -
+  /// v6m, v7m for example.
+  bool IsMClass;
 
   /// NoARM - True if subtarget does not support ARM mode execution.
   bool NoARM;
@@ -163,10 +147,6 @@ protected:
   /// extension (ARMv7 only).
   bool HasMPExtension;
 
-  /// HasVirtualization - True if the subtarget supports the Virtualization
-  /// extension.
-  bool HasVirtualization;
-
   /// FPOnlySP - If true, the floating point unit only supports single
   /// precision.
   bool FPOnlySP;
@@ -179,24 +159,10 @@ protected:
   /// HasTrustZone - if true, processor supports TrustZone security extensions
   bool HasTrustZone;
 
-  /// HasCrypto - if true, processor supports Cryptography extensions
-  bool HasCrypto;
-
-  /// HasCRC - if true, processor supports CRC instructions
-  bool HasCRC;
-
-  /// If true, the instructions "vmov.i32 d0, #0" and "vmov.i32 q0, #0" are
-  /// particularly effective at zeroing a VFP register.
-  bool HasZeroCycleZeroing;
-
   /// AllowsUnalignedMem - If true, the subtarget allows unaligned memory
   /// accesses for some types.  For details, see
   /// ARMTargetLowering::allowsUnalignedMemoryAccesses().
   bool AllowsUnalignedMem;
-
-  /// RestrictIT - If true, the subtarget disallows generation of deprecated IT
-  ///  blocks to conform to ARMv8 rule.
-  bool RestrictIT;
 
   /// Thumb2DSP - If true, the subtarget supports the v7 DSP (saturating arith
   /// and such) instructions in Thumb2 code.
@@ -204,9 +170,6 @@ protected:
 
   /// NaCl TRAP instruction is generated instead of the regular TRAP.
   bool UseNaClTrap;
-
-  /// Force long to be a 64-bit type (RenderScript-specific)
-  bool UseLong64;
 
   /// Target machine allowed unsafe FP math (such as use of NEON fp)
   bool UnsafeFPMath;
@@ -217,9 +180,6 @@ protected:
 
   /// CPUString - String name of used CPU.
   std::string CPUString;
-
-  /// IsLittle - The target is Little Endian
-  bool IsLittle;
 
   /// TargetTriple - What processor and OS we're targeting.
   Triple TargetTriple;
@@ -235,7 +195,6 @@ protected:
 
  public:
   enum {
-    ARM_ABI_UNKNOWN,
     ARM_ABI_APCS,
     ARM_ABI_AAPCS // ARM EABI
   } TargetABI;
@@ -244,45 +203,22 @@ protected:
   /// of the specified triple.
   ///
   ARMSubtarget(const std::string &TT, const std::string &CPU,
-               const std::string &FS, TargetMachine &TM, bool IsLittle,
-               const TargetOptions &Options);
+               const std::string &FS, const TargetOptions &Options);
 
   /// getMaxInlineSizeThreshold - Returns the maximum memset / memcpy size
   /// that still makes it profitable to inline the call.
   unsigned getMaxInlineSizeThreshold() const {
-    return 64;
+    // FIXME: For now, we don't lower memcpy's to loads / stores for Thumb1.
+    // Change this once Thumb1 ldmia / stmia support is added.
+    return isThumb1Only() ? 0 : 64;
   }
   /// ParseSubtargetFeatures - Parses features string setting specified
   /// subtarget options.  Definition of function is auto generated by tblgen.
   void ParseSubtargetFeatures(StringRef CPU, StringRef FS);
 
   /// \brief Reset the features for the ARM target.
-  void resetSubtargetFeatures(const MachineFunction *MF) override;
-
-  /// initializeSubtargetDependencies - Initializes using a CPU and feature string
-  /// so that we can use initializer lists for subtarget initialization.
-  ARMSubtarget &initializeSubtargetDependencies(StringRef CPU, StringRef FS);
-
-  const DataLayout *getDataLayout() const { return &DL; }
-  const ARMSelectionDAGInfo *getSelectionDAGInfo() const { return &TSInfo; }
-  ARMJITInfo *getJITInfo() { return &JITInfo; }
-  const ARMBaseInstrInfo *getInstrInfo() const { return InstrInfo.get(); }
-  const ARMTargetLowering *getTargetLowering() const { return &TLInfo; }
-  const ARMFrameLowering *getFrameLowering() const { return FrameLowering.get(); }
-  const ARMBaseRegisterInfo *getRegisterInfo() const {
-    return &InstrInfo->getRegisterInfo();
-  }
-
+  virtual void resetSubtargetFeatures(const MachineFunction *MF);
 private:
-  const DataLayout DL;
-  ARMSelectionDAGInfo TSInfo;
-  ARMJITInfo JITInfo;
-  // Either Thumb1InstrInfo or Thumb2InstrInfo.
-  std::unique_ptr<ARMBaseInstrInfo> InstrInfo;
-  ARMTargetLowering   TLInfo;
-  // Either Thumb1FrameLowering or ARMFrameLowering.
-  std::unique_ptr<ARMFrameLowering> FrameLowering;
-
   void initializeEnvironment();
   void resetSubtargetFeatures(StringRef CPU, StringRef FS);
 public:
@@ -292,32 +228,26 @@ public:
   bool hasV5TOps()  const { return HasV5TOps;  }
   bool hasV5TEOps() const { return HasV5TEOps; }
   bool hasV6Ops()   const { return HasV6Ops;   }
-  bool hasV6MOps()  const { return HasV6MOps;  }
   bool hasV6T2Ops() const { return HasV6T2Ops; }
   bool hasV7Ops()   const { return HasV7Ops;  }
   bool hasV8Ops()   const { return HasV8Ops;  }
 
   bool isCortexA5() const { return ARMProcFamily == CortexA5; }
-  bool isCortexA7() const { return ARMProcFamily == CortexA7; }
   bool isCortexA8() const { return ARMProcFamily == CortexA8; }
   bool isCortexA9() const { return ARMProcFamily == CortexA9; }
   bool isCortexA15() const { return ARMProcFamily == CortexA15; }
   bool isSwift()    const { return ARMProcFamily == Swift; }
   bool isCortexM3() const { return CPUString == "cortex-m3"; }
-  bool isLikeA9() const { return isCortexA9() || isCortexA15() || isKrait(); }
+  bool isLikeA9() const { return isCortexA9() || isCortexA15(); }
   bool isCortexR5() const { return ARMProcFamily == CortexR5; }
-  bool isKrait() const { return ARMProcFamily == Krait; }
 
   bool hasARMOps() const { return !NoARM; }
 
   bool hasVFP2() const { return HasVFPv2; }
   bool hasVFP3() const { return HasVFPv3; }
   bool hasVFP4() const { return HasVFPv4; }
-  bool hasFPARMv8() const { return HasFPARMv8; }
+  bool hasV8FP() const { return HasV8FP; }
   bool hasNEON() const { return HasNEON;  }
-  bool hasCrypto() const { return HasCrypto; }
-  bool hasCRC() const { return HasCRC; }
-  bool hasVirtualization() const { return HasVirtualization; }
   bool useNEONForSinglePrecisionFP() const {
     return hasNEON() && UseNEONForSinglePrecisionFP; }
 
@@ -325,9 +255,6 @@ public:
   bool hasDivideInARMMode() const { return HasHardwareDivideInARM; }
   bool hasT2ExtractPack() const { return HasT2ExtractPack; }
   bool hasDataBarrier() const { return HasDataBarrier; }
-  bool hasAnyDataBarrier() const {
-    return HasDataBarrier || (hasV6Ops() && !isThumb());
-  }
   bool useMulOps() const { return UseMulOps; }
   bool useFPVMLx() const { return !SlowFPVMLx; }
   bool hasVMLxForwarding() const { return HasVMLxForwarding; }
@@ -335,7 +262,6 @@ public:
   bool isFPOnlySP() const { return FPOnlySP; }
   bool hasPerfMon() const { return HasPerfMon; }
   bool hasTrustZone() const { return HasTrustZone; }
-  bool hasZeroCycleZeroing() const { return HasZeroCycleZeroing; }
   bool prefers32BitThumb() const { return Pref32BitThumb; }
   bool avoidCPSRPartialUpdate() const { return AvoidCPSRPartialUpdate; }
   bool avoidMOVsShifterOperand() const { return AvoidMOVsShifterOperand; }
@@ -349,98 +275,45 @@ public:
 
   const Triple &getTargetTriple() const { return TargetTriple; }
 
+  bool isTargetIOS() const { return TargetTriple.getOS() == Triple::IOS; }
   bool isTargetDarwin() const { return TargetTriple.isOSDarwin(); }
-  bool isTargetIOS() const { return TargetTriple.isiOS(); }
-  bool isTargetLinux() const { return TargetTriple.isOSLinux(); }
-  bool isTargetNaCl() const { return TargetTriple.isOSNaCl(); }
-  bool isTargetNetBSD() const { return TargetTriple.getOS() == Triple::NetBSD; }
-  bool isTargetWindows() const { return TargetTriple.isOSWindows(); }
-
-  bool isTargetCOFF() const { return TargetTriple.isOSBinFormatCOFF(); }
-  bool isTargetELF() const { return TargetTriple.isOSBinFormatELF(); }
-  bool isTargetMachO() const { return TargetTriple.isOSBinFormatMachO(); }
-
+  bool isTargetNaCl() const { return TargetTriple.getOS() == Triple::NaCl; }
+  bool isTargetLinux() const { return TargetTriple.getOS() == Triple::Linux; }
+  bool isTargetELF() const { return !isTargetDarwin(); }
   // ARM EABI is the bare-metal EABI described in ARM ABI documents and
   // can be accessed via -target arm-none-eabi. This is NOT GNUEABI.
   // FIXME: Add a flag for bare-metal for that target and set Triple::EABI
   // even for GNUEABI, so we can make a distinction here and still conform to
   // the EABI on GNU (and Android) mode. This requires change in Clang, too.
-  // FIXME: The Darwin exception is temporary, while we move users to
-  // "*-*-*-macho" triples as quickly as possible.
   bool isTargetAEABI() const {
-    return (TargetTriple.getEnvironment() == Triple::EABI ||
-            TargetTriple.getEnvironment() == Triple::EABIHF) &&
-           !isTargetDarwin() && !isTargetWindows();
+    return TargetTriple.getEnvironment() == Triple::EABI;
   }
 
-  // ARM Targets that support EHABI exception handling standard
-  // Darwin uses SjLj. Other targets might need more checks.
-  bool isTargetEHABICompatible() const {
-    return (TargetTriple.getEnvironment() == Triple::EABI ||
-            TargetTriple.getEnvironment() == Triple::GNUEABI ||
-            TargetTriple.getEnvironment() == Triple::EABIHF ||
-            TargetTriple.getEnvironment() == Triple::GNUEABIHF ||
-            TargetTriple.getEnvironment() == Triple::Android) &&
-           !isTargetDarwin() && !isTargetWindows();
-  }
-
-  bool isTargetHardFloat() const {
-    // FIXME: this is invalid for WindowsCE
-    return TargetTriple.getEnvironment() == Triple::GNUEABIHF ||
-           TargetTriple.getEnvironment() == Triple::EABIHF ||
-           isTargetWindows();
-  }
-  bool isTargetAndroid() const {
-    return TargetTriple.getEnvironment() == Triple::Android;
-  }
-
-  bool isAPCS_ABI() const {
-    assert(TargetABI != ARM_ABI_UNKNOWN);
-    return TargetABI == ARM_ABI_APCS;
-  }
-  bool isAAPCS_ABI() const {
-    assert(TargetABI != ARM_ABI_UNKNOWN);
-    return TargetABI == ARM_ABI_AAPCS;
-  }
+  bool isAPCS_ABI() const { return TargetABI == ARM_ABI_APCS; }
+  bool isAAPCS_ABI() const { return TargetABI == ARM_ABI_AAPCS; }
 
   bool isThumb() const { return InThumbMode; }
   bool isThumb1Only() const { return InThumbMode && !HasThumb2; }
   bool isThumb2() const { return InThumbMode && HasThumb2; }
   bool hasThumb2() const { return HasThumb2; }
-  bool isMClass() const { return ARMProcClass == MClass; }
-  bool isRClass() const { return ARMProcClass == RClass; }
-  bool isAClass() const { return ARMProcClass == AClass; }
+  bool isMClass() const { return IsMClass; }
+  bool isARClass() const { return !IsMClass; }
 
   bool isR9Reserved() const { return IsR9Reserved; }
 
-  bool useMovt(const MachineFunction &MF) const;
-
+  bool useMovt() const { return UseMovt && hasV6T2Ops(); }
   bool supportsTailCall() const { return SupportsTailCall; }
 
   bool allowsUnalignedMem() const { return AllowsUnalignedMem; }
 
-  bool restrictIT() const { return RestrictIT; }
-
   const std::string & getCPUString() const { return CPUString; }
 
-  bool isLittle() const { return IsLittle; }
-
   unsigned getMispredictionPenalty() const;
-
-  /// This function returns true if the target has sincos() routine in its
-  /// compiler runtime or math libraries.
-  bool hasSinCos() const;
-
-  /// True for some subtargets at > -O0.
-  bool enablePostMachineScheduler() const;
 
   /// enablePostRAScheduler - True at 'More' optimization.
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
                              TargetSubtargetInfo::AntiDepBreakMode& Mode,
-                             RegClassVector& CriticalPathRCs) const override;
-
-  // enableAtomicExpandLoadLinked - True if we need to expand our atomics.
-  bool enableAtomicExpandLoadLinked() const override;
+                             RegClassVector& CriticalPathRCs) const;
 
   /// getInstrItins - Return the instruction itineraies based on subtarget
   /// selection.

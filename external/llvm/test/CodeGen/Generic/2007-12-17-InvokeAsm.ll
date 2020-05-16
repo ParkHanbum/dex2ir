@@ -1,4 +1,4 @@
-; RUN: llc -no-integrated-as < %s
+; RUN: llc < %s
 
 define fastcc void @bc__support__high_resolution_time__initialize_clock_rate() {
 entry:

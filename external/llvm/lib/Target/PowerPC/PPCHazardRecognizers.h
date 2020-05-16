@@ -21,30 +21,19 @@
 
 namespace llvm {
 
-/// PPCDispatchGroupSBHazardRecognizer - This class implements a scoreboard-based
-/// hazard recognizer for PPC ooo processors with dispatch-group hazards.
-class PPCDispatchGroupSBHazardRecognizer : public ScoreboardHazardRecognizer {
+/// PPCScoreboardHazardRecognizer - This class implements a scoreboard-based
+/// hazard recognizer for generic PPC processors.
+class PPCScoreboardHazardRecognizer : public ScoreboardHazardRecognizer {
   const ScheduleDAG *DAG;
-  SmallVector<SUnit *, 7> CurGroup;
-  unsigned CurSlots, CurBranches;
-
-  bool isLoadAfterStore(SUnit *SU);
-  bool isBCTRAfterSet(SUnit *SU);
-  bool mustComeFirst(const MCInstrDesc *MCID, unsigned &NSlots);
 public:
-  PPCDispatchGroupSBHazardRecognizer(const InstrItineraryData *ItinData,
+  PPCScoreboardHazardRecognizer(const InstrItineraryData *ItinData,
                          const ScheduleDAG *DAG_) :
-    ScoreboardHazardRecognizer(ItinData, DAG_), DAG(DAG_),
-    CurSlots(0), CurBranches(0) {}
+    ScoreboardHazardRecognizer(ItinData, DAG_), DAG(DAG_) {}
 
-  HazardType getHazardType(SUnit *SU, int Stalls) override;
-  bool ShouldPreferAnother(SUnit* SU) override;
-  unsigned PreEmitNoops(SUnit *SU) override;
-  void EmitInstruction(SUnit *SU) override;
-  void AdvanceCycle() override;
-  void RecedeCycle() override;
-  void Reset() override;
-  void EmitNoop() override;
+  virtual HazardType getHazardType(SUnit *SU, int Stalls);
+  virtual void EmitInstruction(SUnit *SU);
+  virtual void AdvanceCycle();
+  virtual void Reset();
 };
 
 /// PPCHazardRecognizer970 - This class defines a finite state automata that
@@ -54,7 +43,7 @@ public:
 /// setting the CTR register then branching through it within a dispatch group),
 /// or storing then loading from the same address within a dispatch group.
 class PPCHazardRecognizer970 : public ScheduleHazardRecognizer {
-  const ScheduleDAG &DAG;
+  const TargetMachine &TM;
 
   unsigned NumIssued;  // Number of insts issued, including advanced cycles.
 
@@ -75,11 +64,11 @@ class PPCHazardRecognizer970 : public ScheduleHazardRecognizer {
   unsigned NumStores;
 
 public:
-  PPCHazardRecognizer970(const ScheduleDAG &DAG);
-  virtual HazardType getHazardType(SUnit *SU, int Stalls) override;
-  virtual void EmitInstruction(SUnit *SU) override;
-  virtual void AdvanceCycle() override;
-  virtual void Reset() override;
+  PPCHazardRecognizer970(const TargetMachine &TM);
+  virtual HazardType getHazardType(SUnit *SU, int Stalls);
+  virtual void EmitInstruction(SUnit *SU);
+  virtual void AdvanceCycle();
+  virtual void Reset();
 
 private:
   /// EndDispatchGroup - Called when we are finishing a new dispatch group.

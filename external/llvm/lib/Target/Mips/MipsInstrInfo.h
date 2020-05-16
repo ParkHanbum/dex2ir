@@ -9,10 +9,6 @@
 //
 // This file contains the Mips implementation of the TargetInstrInfo class.
 //
-// FIXME: We need to override TargetInstrInfo::getInlineAsmLength method in
-// order for MipsLongBranch pass to work correctly when the code has inline
-// assembly.  The returned value doesn't have to be the asm instruction's exact
-// size in bytes; MipsLongBranch only expects it to be the correct upper bound.
 //===----------------------------------------------------------------------===//
 
 #ifndef MIPSINSTRUCTIONINFO_H
@@ -31,7 +27,6 @@
 namespace llvm {
 
 class MipsInstrInfo : public MipsGenInstrInfo {
-  virtual void anchor();
 protected:
   MipsTargetMachine &TM;
   unsigned UncondBrOpc;
@@ -51,20 +46,20 @@ public:
   static const MipsInstrInfo *create(MipsTargetMachine &TM);
 
   /// Branch Analysis
-  bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
-                     MachineBasicBlock *&FBB,
-                     SmallVectorImpl<MachineOperand> &Cond,
-                     bool AllowModify) const override;
+  virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
+                             MachineBasicBlock *&FBB,
+                             SmallVectorImpl<MachineOperand> &Cond,
+                             bool AllowModify) const;
 
-  unsigned RemoveBranch(MachineBasicBlock &MBB) const override;
+  virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
 
-  unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                        MachineBasicBlock *FBB,
-                        const SmallVectorImpl<MachineOperand> &Cond,
-                        DebugLoc DL) const override;
+  virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+                                MachineBasicBlock *FBB,
+                                const SmallVectorImpl<MachineOperand> &Cond,
+                                DebugLoc DL) const;
 
-  bool
-  ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
+  virtual
+  bool ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const;
 
   BranchType AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                            MachineBasicBlock *&FBB,
@@ -73,8 +68,8 @@ public:
                            SmallVectorImpl<MachineInstr*> &BranchInstrs) const;
 
   /// Insert nop instruction when hazard condition is found
-  void insertNoop(MachineBasicBlock &MBB,
-                  MachineBasicBlock::iterator MI) const override;
+  virtual void insertNoop(MachineBasicBlock &MBB,
+                          MachineBasicBlock::iterator MI) const;
 
   /// getRegisterInfo - TargetInstrInfo is a superset of MRegister info.  As
   /// such, whenever a client has an instance of instruction info, it should
@@ -87,19 +82,19 @@ public:
   /// Return the number of bytes of code the specified instruction may be.
   unsigned GetInstSizeInBytes(const MachineInstr *MI) const;
 
-  void storeRegToStackSlot(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator MBBI,
-                           unsigned SrcReg, bool isKill, int FrameIndex,
-                           const TargetRegisterClass *RC,
-                           const TargetRegisterInfo *TRI) const override {
+  virtual void storeRegToStackSlot(MachineBasicBlock &MBB,
+                                   MachineBasicBlock::iterator MBBI,
+                                   unsigned SrcReg, bool isKill, int FrameIndex,
+                                   const TargetRegisterClass *RC,
+                                   const TargetRegisterInfo *TRI) const {
     storeRegToStack(MBB, MBBI, SrcReg, isKill, FrameIndex, RC, TRI, 0);
   }
 
-  void loadRegFromStackSlot(MachineBasicBlock &MBB,
-                            MachineBasicBlock::iterator MBBI,
-                            unsigned DestReg, int FrameIndex,
-                            const TargetRegisterClass *RC,
-                            const TargetRegisterInfo *TRI) const override {
+  virtual void loadRegFromStackSlot(MachineBasicBlock &MBB,
+                                    MachineBasicBlock::iterator MBBI,
+                                    unsigned DestReg, int FrameIndex,
+                                    const TargetRegisterClass *RC,
+                                    const TargetRegisterInfo *TRI) const {
     loadRegFromStack(MBB, MBBI, DestReg, FrameIndex, RC, TRI, 0);
   }
 

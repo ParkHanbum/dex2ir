@@ -30,16 +30,16 @@ LLVMBool LLVMParseBitcodeInContext(LLVMContextRef ContextRef,
                                    LLVMMemoryBufferRef MemBuf,
                                    LLVMModuleRef *OutModule,
                                    char **OutMessage) {
-  ErrorOr<Module *> ModuleOrErr =
-      parseBitcodeFile(unwrap(MemBuf), *unwrap(ContextRef));
-  if (std::error_code EC = ModuleOrErr.getError()) {
+  std::string Message;
+
+  *OutModule = wrap(ParseBitcodeFile(unwrap(MemBuf), *unwrap(ContextRef),
+                                     &Message));
+  if (!*OutModule) {
     if (OutMessage)
-      *OutMessage = strdup(EC.message().c_str());
-    *OutModule = wrap((Module*)nullptr);
+      *OutMessage = strdup(Message.c_str());
     return 1;
   }
 
-  *OutModule = wrap(ModuleOrErr.get());
   return 0;
 }
 
@@ -51,17 +51,14 @@ LLVMBool LLVMGetBitcodeModuleInContext(LLVMContextRef ContextRef,
                                        LLVMModuleRef *OutM,
                                        char **OutMessage) {
   std::string Message;
-  ErrorOr<Module *> ModuleOrErr =
-      getLazyBitcodeModule(unwrap(MemBuf), *unwrap(ContextRef));
 
-  if (std::error_code EC = ModuleOrErr.getError()) {
-    *OutM = wrap((Module *)nullptr);
+  *OutM = wrap(getLazyBitcodeModule(unwrap(MemBuf), *unwrap(ContextRef),
+                                    &Message));
+  if (!*OutM) {
     if (OutMessage)
-      *OutMessage = strdup(EC.message().c_str());
+      *OutMessage = strdup(Message.c_str());
     return 1;
   }
-
-  *OutM = wrap(ModuleOrErr.get());
 
   return 0;
 

@@ -11,76 +11,66 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/ELF.h"
 #include "llvm/Support/MathExtras.h"
 
+#include <ctype.h>
+
 namespace llvm {
+
 using namespace object;
 
-ErrorOr<ObjectFile *>
-ObjectFile::createELFObjectFile(std::unique_ptr<MemoryBuffer> &Obj) {
-  std::pair<unsigned char, unsigned char> Ident =
-      getElfArchType(Obj->getBuffer());
-  std::size_t MaxAlignment =
-    1ULL << countTrailingZeros(uintptr_t(Obj->getBufferStart()));
+// Creates an in-memory object-file by default: createELFObjectFile(Buffer)
+ObjectFile *ObjectFile::createELFObjectFile(MemoryBuffer *Object) {
+  std::pair<unsigned char, unsigned char> Ident = getElfArchType(Object);
+  error_code ec;
 
-  std::error_code EC;
-  std::unique_ptr<ObjectFile> R;
+  std::size_t MaxAlignment =
+    1ULL << countTrailingZeros(uintptr_t(Object->getBufferStart()));
+
   if (Ident.first == ELF::ELFCLASS32 && Ident.second == ELF::ELFDATA2LSB)
 #if !LLVM_IS_UNALIGNED_ACCESS_FAST
     if (MaxAlignment >= 4)
-      R.reset(new ELFObjectFile<ELFType<support::little, 4, false>>(
-          std::move(Obj), EC));
+      return new ELFObjectFile<ELFType<support::little, 4, false> >(Object, ec);
     else
 #endif
     if (MaxAlignment >= 2)
-      R.reset(new ELFObjectFile<ELFType<support::little, 2, false>>(
-          std::move(Obj), EC));
+      return new ELFObjectFile<ELFType<support::little, 2, false> >(Object, ec);
     else
-      return object_error::parse_failed;
+      llvm_unreachable("Invalid alignment for ELF file!");
   else if (Ident.first == ELF::ELFCLASS32 && Ident.second == ELF::ELFDATA2MSB)
 #if !LLVM_IS_UNALIGNED_ACCESS_FAST
     if (MaxAlignment >= 4)
-      R.reset(new ELFObjectFile<ELFType<support::big, 4, false>>(std::move(Obj),
-                                                                 EC));
+      return new ELFObjectFile<ELFType<support::big, 4, false> >(Object, ec);
     else
 #endif
     if (MaxAlignment >= 2)
-      R.reset(new ELFObjectFile<ELFType<support::big, 2, false>>(std::move(Obj),
-                                                                 EC));
+      return new ELFObjectFile<ELFType<support::big, 2, false> >(Object, ec);
     else
-      return object_error::parse_failed;
+      llvm_unreachable("Invalid alignment for ELF file!");
   else if (Ident.first == ELF::ELFCLASS64 && Ident.second == ELF::ELFDATA2MSB)
 #if !LLVM_IS_UNALIGNED_ACCESS_FAST
     if (MaxAlignment >= 8)
-      R.reset(new ELFObjectFile<ELFType<support::big, 8, true>>(std::move(Obj),
-                                                                EC));
+      return new ELFObjectFile<ELFType<support::big, 8, true> >(Object, ec);
     else
 #endif
     if (MaxAlignment >= 2)
-      R.reset(new ELFObjectFile<ELFType<support::big, 2, true>>(std::move(Obj),
-                                                                EC));
+      return new ELFObjectFile<ELFType<support::big, 2, true> >(Object, ec);
     else
-      return object_error::parse_failed;
+      llvm_unreachable("Invalid alignment for ELF file!");
   else if (Ident.first == ELF::ELFCLASS64 && Ident.second == ELF::ELFDATA2LSB) {
 #if !LLVM_IS_UNALIGNED_ACCESS_FAST
     if (MaxAlignment >= 8)
-      R.reset(new ELFObjectFile<ELFType<support::little, 8, true>>(
-          std::move(Obj), EC));
+      return new ELFObjectFile<ELFType<support::little, 8, true> >(Object, ec);
     else
 #endif
     if (MaxAlignment >= 2)
-      R.reset(new ELFObjectFile<ELFType<support::little, 2, true>>(
-          std::move(Obj), EC));
+      return new ELFObjectFile<ELFType<support::little, 2, true> >(Object, ec);
     else
-      return object_error::parse_failed;
+      llvm_unreachable("Invalid alignment for ELF file!");
   }
-  else
-    llvm_unreachable("Buffer is not an ELF object file!");
 
-  if (EC)
-    return EC;
-  return R.release();
+  report_fatal_error("Buffer is not an ELF object file!");
 }
 
 } // end namespace llvm

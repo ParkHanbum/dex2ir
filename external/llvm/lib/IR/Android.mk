@@ -5,24 +5,18 @@ vmcore_SRC_FILES := \
   Attributes.cpp \
   AutoUpgrade.cpp \
   BasicBlock.cpp \
-  Comdat.cpp \
   ConstantFold.cpp \
-  ConstantRange.cpp \
   Constants.cpp \
   Core.cpp \
   DataLayout.cpp \
   DebugInfo.cpp \
   DebugLoc.cpp \
-  DiagnosticInfo.cpp \
-  DiagnosticPrinter.cpp \
   DIBuilder.cpp \
   Dominators.cpp \
   Function.cpp \
-  GCOV.cpp \
   GVMaterializer.cpp \
   Globals.cpp \
   IRBuilder.cpp \
-  IRPrintingPasses.cpp \
   InlineAsm.cpp \
   Instruction.cpp \
   Instructions.cpp \
@@ -30,14 +24,12 @@ vmcore_SRC_FILES := \
   LLVMContext.cpp \
   LLVMContextImpl.cpp \
   LeakDetector.cpp \
-  LegacyPassManager.cpp \
-  Mangler.cpp \
-  MDBuilder.cpp \
   Metadata.cpp \
   Module.cpp \
   Pass.cpp \
   PassManager.cpp \
   PassRegistry.cpp \
+  PrintModulePass.cpp \
   Type.cpp \
   TypeFinder.cpp \
   Use.cpp \
@@ -66,7 +58,6 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 # For the device
 # =====================================================
 include $(CLEAR_VARS)
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 
 REQUIRES_RTTI := 1
 
@@ -79,4 +70,3 @@ LOCAL_MODULE_TAGS := optional
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
-endif

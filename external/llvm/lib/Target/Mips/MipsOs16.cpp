@@ -11,20 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "mips-os16"
 #include "MipsOs16.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-
-#define DEBUG_TYPE "mips-os16"
-
-
-static cl::opt<std::string> Mips32FunctionMask(
-  "mips32-function-mask",
-  cl::init(""),
-  cl::desc("Force function to be mips32"),
-  cl::Hidden);
 
 namespace {
 
@@ -94,43 +85,18 @@ namespace llvm {
 
 
 bool MipsOs16::runOnModule(Module &M) {
-  bool usingMask = Mips32FunctionMask.length() > 0;
-  bool doneUsingMask = false; // this will make it stop repeating
-  DEBUG(dbgs() << "Run on Module MipsOs16 \n" << Mips32FunctionMask << "\n");
-  if (usingMask)
-    DEBUG(dbgs() << "using mask \n" << Mips32FunctionMask << "\n");
-  unsigned int functionIndex = 0;
+  DEBUG(errs() << "Run on Module MipsOs16\n");
   bool modified = false;
   for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
     if (F->isDeclaration()) continue;
     DEBUG(dbgs() << "Working on " << F->getName() << "\n");
-    if (usingMask) {
-      if (!doneUsingMask) {
-        if (functionIndex == Mips32FunctionMask.length())
-          functionIndex = 0;
-        switch (Mips32FunctionMask[functionIndex]) {
-        case '1':
-          DEBUG(dbgs() << "mask forced mips32: " << F->getName() << "\n");
-          F->addFnAttr("nomips16");
-          break;
-        case '.':
-          doneUsingMask = true;
-          break;
-        default:
-          break;
-        }
-        functionIndex++;
-      }
+    if (needsFP(*F)) {
+      DEBUG(dbgs() << " need to compile as nomips16 \n");
+      F->addFnAttr("nomips16");
     }
     else {
-      if (needsFP(*F)) {
-        DEBUG(dbgs() << "os16 forced mips32: " << F->getName() << "\n");
-        F->addFnAttr("nomips16");
-      }
-      else {
-        DEBUG(dbgs() << "os16 forced mips16: " << F->getName() << "\n");
-        F->addFnAttr("mips16");
-      }
+      F->addFnAttr("mips16");
+      DEBUG(dbgs() << " no need to compile as nomips16 \n");
     }
   }
   return modified;

@@ -12,10 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/Compression.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryBuffer.h"
 #if LLVM_ENABLE_ZLIB == 1 && HAVE_ZLIB_H
 #include <zlib.h>
 #endif
@@ -46,47 +48,50 @@ static zlib::Status encodeZlibReturnValue(int ReturnValue) {
 
 bool zlib::isAvailable() { return true; }
 zlib::Status zlib::compress(StringRef InputBuffer,
-                            SmallVectorImpl<char> &CompressedBuffer,
+                            OwningPtr<MemoryBuffer> &CompressedBuffer,
                             CompressionLevel Level) {
   unsigned long CompressedSize = ::compressBound(InputBuffer.size());
-  CompressedBuffer.resize(CompressedSize);
+  OwningArrayPtr<char> TmpBuffer(new char[CompressedSize]);
   int CLevel = encodeZlibCompressionLevel(Level);
   Status Res = encodeZlibReturnValue(::compress2(
-      (Bytef *)CompressedBuffer.data(), &CompressedSize,
+      (Bytef *)TmpBuffer.get(), &CompressedSize,
       (const Bytef *)InputBuffer.data(), InputBuffer.size(), CLevel));
-  CompressedBuffer.resize(CompressedSize);
+  if (Res == StatusOK) {
+    CompressedBuffer.reset(MemoryBuffer::getMemBufferCopy(
+        StringRef(TmpBuffer.get(), CompressedSize)));
+    // Tell MSan that memory initialized by zlib is valid.
+    __msan_unpoison(CompressedBuffer->getBufferStart(), CompressedSize);
+  }
   return Res;
 }
 
 zlib::Status zlib::uncompress(StringRef InputBuffer,
-                              SmallVectorImpl<char> &UncompressedBuffer,
+                              OwningPtr<MemoryBuffer> &UncompressedBuffer,
                               size_t UncompressedSize) {
-  UncompressedBuffer.resize(UncompressedSize);
-  Status Res = encodeZlibReturnValue(::uncompress(
-      (Bytef *)UncompressedBuffer.data(), (uLongf *)&UncompressedSize,
-      (const Bytef *)InputBuffer.data(), InputBuffer.size()));
-  UncompressedBuffer.resize(UncompressedSize);
+  OwningArrayPtr<char> TmpBuffer(new char[UncompressedSize]);
+  Status Res = encodeZlibReturnValue(
+      ::uncompress((Bytef *)TmpBuffer.get(), (uLongf *)&UncompressedSize,
+                   (const Bytef *)InputBuffer.data(), InputBuffer.size()));
+  if (Res == StatusOK) {
+    UncompressedBuffer.reset(MemoryBuffer::getMemBufferCopy(
+        StringRef(TmpBuffer.get(), UncompressedSize)));
+    // Tell MSan that memory initialized by zlib is valid.
+    __msan_unpoison(UncompressedBuffer->getBufferStart(), UncompressedSize);
+  }
   return Res;
-}
-
-uint32_t zlib::crc32(StringRef Buffer) {
-  return ::crc32(0, (const Bytef *)Buffer.data(), Buffer.size());
 }
 
 #else
 bool zlib::isAvailable() { return false; }
 zlib::Status zlib::compress(StringRef InputBuffer,
-                            SmallVectorImpl<char> &CompressedBuffer,
+                            OwningPtr<MemoryBuffer> &CompressedBuffer,
                             CompressionLevel Level) {
   return zlib::StatusUnsupported;
 }
 zlib::Status zlib::uncompress(StringRef InputBuffer,
-                              SmallVectorImpl<char> &UncompressedBuffer,
+                              OwningPtr<MemoryBuffer> &UncompressedBuffer,
                               size_t UncompressedSize) {
   return zlib::StatusUnsupported;
-}
-uint32_t zlib::crc32(StringRef Buffer) {
-  llvm_unreachable("zlib::crc32 is unavailable");
 }
 #endif
 

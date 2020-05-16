@@ -1,8 +1,4 @@
-set(LLVM_LINK_COMPONENTS
-  ${LLVM_TARGETS_TO_BUILD}
-  Object
-  Support
-  )
+set(LLVM_LINK_COMPONENTS bitreader object)
 
 add_llvm_tool(llvm-nm
   llvm-nm.cpp

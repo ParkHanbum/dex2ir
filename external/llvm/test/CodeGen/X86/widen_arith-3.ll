@@ -1,5 +1,7 @@
-; RUN: llc < %s -mcpu=generic -march=x86 -mattr=+sse4.2 -post-RA-scheduler=true | FileCheck %s
-; CHECK: paddd
+; RUN: llc < %s -mcpu=generic -march=x86 -mattr=+sse42 -post-RA-scheduler=true | FileCheck %s
+; CHECK: incl
+; CHECK: incl
+; CHECK: incl
 
 ; Widen a v3i16 to v8i16 to do a vector add
 

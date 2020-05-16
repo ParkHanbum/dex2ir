@@ -14,6 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "globalsmodref-aa"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/Statistic.h"
@@ -23,16 +24,14 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/InstIterator.h"
 #include <set>
 using namespace llvm;
-
-#define DEBUG_TYPE "globalsmodref-aa"
 
 STATISTIC(NumNonAddrTakenGlobalVars,
           "Number of global vars without address taken");
@@ -95,38 +94,34 @@ namespace {
       initializeGlobalsModRefPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnModule(Module &M) override {
-      InitializeAliasAnalysis(this);
-
-      // Find non-addr taken globals.
-      AnalyzeGlobals(M);
-
-      // Propagate on CG.
-      AnalyzeCallGraph(getAnalysis<CallGraphWrapperPass>().getCallGraph(), M);
+    bool runOnModule(Module &M) {
+      InitializeAliasAnalysis(this);                 // set up super class
+      AnalyzeGlobals(M);                          // find non-addr taken globals
+      AnalyzeCallGraph(getAnalysis<CallGraph>(), M); // Propagate on CG
       return false;
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AliasAnalysis::getAnalysisUsage(AU);
-      AU.addRequired<CallGraphWrapperPass>();
+      AU.addRequired<CallGraph>();
       AU.setPreservesAll();                         // Does not transform code
     }
 
     //------------------------------------------------
     // Implement the AliasAnalysis API
     //
-    AliasResult alias(const Location &LocA, const Location &LocB) override;
+    AliasResult alias(const Location &LocA, const Location &LocB);
     ModRefResult getModRefInfo(ImmutableCallSite CS,
-                               const Location &Loc) override;
+                               const Location &Loc);
     ModRefResult getModRefInfo(ImmutableCallSite CS1,
-                               ImmutableCallSite CS2) override {
+                               ImmutableCallSite CS2) {
       return AliasAnalysis::getModRefInfo(CS1, CS2);
     }
 
     /// getModRefBehavior - Return the behavior of the specified function if
     /// called from the specified call site.  The call site may be null in which
     /// case the most generic behavior of this function should be returned.
-    ModRefBehavior getModRefBehavior(const Function *F) override {
+    ModRefBehavior getModRefBehavior(const Function *F) {
       ModRefBehavior Min = UnknownModRefBehavior;
 
       if (FunctionRecord *FR = getFunctionInfo(F)) {
@@ -142,7 +137,7 @@ namespace {
     /// getModRefBehavior - Return the behavior of the specified function if
     /// called from the specified call site.  The call site may be null in which
     /// case the most generic behavior of this function should be returned.
-    ModRefBehavior getModRefBehavior(ImmutableCallSite CS) override {
+    ModRefBehavior getModRefBehavior(ImmutableCallSite CS) {
       ModRefBehavior Min = UnknownModRefBehavior;
 
       if (const Function* F = CS.getCalledFunction())
@@ -156,15 +151,15 @@ namespace {
       return ModRefBehavior(AliasAnalysis::getModRefBehavior(CS) & Min);
     }
 
-    void deleteValue(Value *V) override;
-    void copyValue(Value *From, Value *To) override;
-    void addEscapingUse(Use &U) override;
+    virtual void deleteValue(Value *V);
+    virtual void copyValue(Value *From, Value *To);
+    virtual void addEscapingUse(Use &U);
 
     /// getAdjustedAnalysisPointer - This method is used when a pass implements
     /// an analysis interface through multiple inheritance.  If needed, it
     /// should override this to adjust the this pointer as needed for the
     /// specified pass info.
-    void *getAdjustedAnalysisPointer(AnalysisID PI) override {
+    virtual void *getAdjustedAnalysisPointer(AnalysisID PI) {
       if (PI == &AliasAnalysis::ID)
         return (AliasAnalysis*)this;
       return this;
@@ -178,14 +173,14 @@ namespace {
         FunctionInfo.find(F);
       if (I != FunctionInfo.end())
         return &I->second;
-      return nullptr;
+      return 0;
     }
 
     void AnalyzeGlobals(Module &M);
     void AnalyzeCallGraph(CallGraph &CG, Module &M);
     bool AnalyzeUsesOfPointer(Value *V, std::vector<Function*> &Readers,
                               std::vector<Function*> &Writers,
-                              GlobalValue *OkayStoreDest = nullptr);
+                              GlobalValue *OkayStoreDest = 0);
     bool AnalyzeIndirectGlobalMemory(GlobalValue *GV);
   };
 }
@@ -194,7 +189,7 @@ char GlobalsModRef::ID = 0;
 INITIALIZE_AG_PASS_BEGIN(GlobalsModRef, AliasAnalysis,
                 "globalsmodref-aa", "Simple mod/ref analysis for globals",    
                 false, true, false)
-INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
+INITIALIZE_AG_DEPENDENCY(CallGraph)
 INITIALIZE_AG_PASS_END(GlobalsModRef, AliasAnalysis,
                 "globalsmodref-aa", "Simple mod/ref analysis for globals",    
                 false, true, false)
@@ -253,33 +248,42 @@ bool GlobalsModRef::AnalyzeUsesOfPointer(Value *V,
                                          GlobalValue *OkayStoreDest) {
   if (!V->getType()->isPointerTy()) return true;
 
-  for (Use &U : V->uses()) {
-    User *I = U.getUser();
-    if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+  for (Value::use_iterator UI = V->use_begin(), E=V->use_end(); UI != E; ++UI) {
+    User *U = *UI;
+    if (LoadInst *LI = dyn_cast<LoadInst>(U)) {
       Readers.push_back(LI->getParent()->getParent());
-    } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+    } else if (StoreInst *SI = dyn_cast<StoreInst>(U)) {
       if (V == SI->getOperand(1)) {
         Writers.push_back(SI->getParent()->getParent());
       } else if (SI->getOperand(1) != OkayStoreDest) {
         return true;  // Storing the pointer
       }
-    } else if (Operator::getOpcode(I) == Instruction::GetElementPtr) {
-      if (AnalyzeUsesOfPointer(I, Readers, Writers))
+    } else if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(U)) {
+      if (AnalyzeUsesOfPointer(GEP, Readers, Writers)) return true;
+    } else if (BitCastInst *BCI = dyn_cast<BitCastInst>(U)) {
+      if (AnalyzeUsesOfPointer(BCI, Readers, Writers, OkayStoreDest))
         return true;
-    } else if (Operator::getOpcode(I) == Instruction::BitCast) {
-      if (AnalyzeUsesOfPointer(I, Readers, Writers, OkayStoreDest))
-        return true;
-    } else if (CallSite CS = I) {
+    } else if (isFreeCall(U, TLI)) {
+      Writers.push_back(cast<Instruction>(U)->getParent()->getParent());
+    } else if (CallInst *CI = dyn_cast<CallInst>(U)) {
       // Make sure that this is just the function being called, not that it is
       // passing into the function.
-      if (!CS.isCallee(&U)) {
-        // Detect calls to free.
-        if (isFreeCall(I, TLI))
-          Writers.push_back(CS->getParent()->getParent());
-        else
-          return true; // Argument of an unknown call.
+      for (unsigned i = 0, e = CI->getNumArgOperands(); i != e; ++i)
+        if (CI->getArgOperand(i) == V) return true;
+    } else if (InvokeInst *II = dyn_cast<InvokeInst>(U)) {
+      // Make sure that this is just the function being called, not that it is
+      // passing into the function.
+      for (unsigned i = 0, e = II->getNumArgOperands(); i != e; ++i)
+        if (II->getArgOperand(i) == V) return true;
+    } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(U)) {
+      if (CE->getOpcode() == Instruction::GetElementPtr ||
+          CE->getOpcode() == Instruction::BitCast) {
+        if (AnalyzeUsesOfPointer(CE, Readers, Writers))
+          return true;
+      } else {
+        return true;
       }
-    } else if (ICmpInst *ICI = dyn_cast<ICmpInst>(I)) {
+    } else if (ICmpInst *ICI = dyn_cast<ICmpInst>(U)) {
       if (!isa<ConstantPointerNull>(ICI->getOperand(1)))
         return true;  // Allow comparison against null.
     } else {
@@ -304,7 +308,8 @@ bool GlobalsModRef::AnalyzeIndirectGlobalMemory(GlobalValue *GV) {
 
   // Walk the user list of the global.  If we find anything other than a direct
   // load or store, bail out.
-  for (User *U : GV->users()) {
+  for (Value::use_iterator I = GV->use_begin(), E = GV->use_end(); I != E; ++I){
+    User *U = *I;
     if (LoadInst *LI = dyn_cast<LoadInst>(U)) {
       // The pointer loaded from the global can only be used in simple ways:
       // we allow addressing of it and loading storing to it.  We do *not* allow
@@ -358,8 +363,9 @@ bool GlobalsModRef::AnalyzeIndirectGlobalMemory(GlobalValue *GV) {
 void GlobalsModRef::AnalyzeCallGraph(CallGraph &CG, Module &M) {
   // We do a bottom-up SCC traversal of the call graph.  In other words, we
   // visit all callees before callers (leaf-first).
-  for (scc_iterator<CallGraph*> I = scc_begin(&CG); !I.isAtEnd(); ++I) {
-    const std::vector<CallGraphNode *> &SCC = *I;
+  for (scc_iterator<CallGraph*> I = scc_begin(&CG), E = scc_end(&CG); I != E;
+       ++I) {
+    std::vector<CallGraphNode *> &SCC = *I;
     assert(!SCC.empty() && "SCC with no functions?");
 
     if (!SCC[0]->getFunction()) {
@@ -411,8 +417,10 @@ void GlobalsModRef::AnalyzeCallGraph(CallGraph &CG, Module &M) {
             FunctionEffect |= CalleeFR->FunctionEffect;
 
             // Incorporate callee's effects on globals into our info.
-            for (const auto &G : CalleeFR->GlobalInfo)
-              FR.GlobalInfo[G.first] |= G.second;
+            for (std::map<const GlobalValue*, unsigned>::iterator GI =
+                   CalleeFR->GlobalInfo.begin(), E = CalleeFR->GlobalInfo.end();
+                 GI != E; ++GI)
+              FR.GlobalInfo[GI->first] |= GI->second;
             FR.MayReadAnyGlobal |= CalleeFR->MayReadAnyGlobal;
           } else {
             // Can't say anything about it.  However, if it is inside our SCC,
@@ -491,8 +499,8 @@ GlobalsModRef::alias(const Location &LocA,
   if (GV1 || GV2) {
     // If the global's address is taken, pretend we don't know it's a pointer to
     // the global.
-    if (GV1 && !NonAddressTakenGlobals.count(GV1)) GV1 = nullptr;
-    if (GV2 && !NonAddressTakenGlobals.count(GV2)) GV2 = nullptr;
+    if (GV1 && !NonAddressTakenGlobals.count(GV1)) GV1 = 0;
+    if (GV2 && !NonAddressTakenGlobals.count(GV2)) GV2 = 0;
 
     // If the two pointers are derived from two different non-addr-taken
     // globals, or if one is and the other isn't, we know these can't alias.
@@ -506,7 +514,7 @@ GlobalsModRef::alias(const Location &LocA,
   // These pointers may be based on the memory owned by an indirect global.  If
   // so, we may be able to handle this.  First check to see if the base pointer
   // is a direct load from an indirect global.
-  GV1 = GV2 = nullptr;
+  GV1 = GV2 = 0;
   if (const LoadInst *LI = dyn_cast<LoadInst>(UV1))
     if (GlobalVariable *GV = dyn_cast<GlobalVariable>(LI->getOperand(0)))
       if (IndirectGlobals.count(GV))

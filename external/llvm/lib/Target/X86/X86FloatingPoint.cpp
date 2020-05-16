@@ -23,6 +23,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "x86-codegen"
 #include "X86.h"
 #include "X86InstrInfo.h"
 #include "llvm/ADT/DepthFirstIterator.h"
@@ -44,8 +45,6 @@
 #include <algorithm>
 using namespace llvm;
 
-#define DEBUG_TYPE "x86-codegen"
-
 STATISTIC(NumFXCH, "Number of fxch instructions inserted");
 STATISTIC(NumFP  , "Number of floating point instructions");
 
@@ -60,7 +59,7 @@ namespace {
       memset(RegMap, 0, sizeof(RegMap));
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesCFG();
       AU.addRequired<EdgeBundles>();
       AU.addPreservedID(MachineLoopInfoID);
@@ -68,9 +67,9 @@ namespace {
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
 
-    const char *getPassName() const override { return "X86 FP Stackifier"; }
+    virtual const char *getPassName() const { return "X86 FP Stackifier"; }
 
   private:
     const TargetInstrInfo *TII; // Machine instruction info.
@@ -431,9 +430,9 @@ bool FPS::processBasicBlock(MachineFunction &MF, MachineBasicBlock &BB) {
     if (FPInstClass == X86II::NotFP)
       continue;  // Efficiently ignore non-fp insts!
 
-    MachineInstr *PrevMI = nullptr;
+    MachineInstr *PrevMI = 0;
     if (I != BB.begin())
-      PrevMI = std::prev(I);
+      PrevMI = prior(I);
 
     ++NumFP;  // Keep track of # of pseudo instrs
     DEBUG(dbgs() << "\nFPInst:\t" << *MI);
@@ -476,10 +475,10 @@ bool FPS::processBasicBlock(MachineFunction &MF, MachineBasicBlock &BB) {
       } else {
         MachineBasicBlock::iterator Start = I;
         // Rewind to first instruction newly inserted.
-        while (Start != BB.begin() && std::prev(Start) != PrevI) --Start;
+        while (Start != BB.begin() && prior(Start) != PrevI) --Start;
         dbgs() << "Inserted instructions:\n\t";
         Start->print(dbgs(), &MF.getTarget());
-        while (++Start != std::next(I)) {}
+        while (++Start != llvm::next(I)) {}
       }
       dumpStack();
     );
@@ -906,7 +905,7 @@ void FPS::adjustLiveRegs(unsigned Mask, MachineBasicBlock::iterator I) {
 
   // Kill registers by popping.
   if (Kills && I != MBB->begin()) {
-    MachineBasicBlock::iterator I2 = std::prev(I);
+    MachineBasicBlock::iterator I2 = llvm::prior(I);
     while (StackTop) {
       unsigned KReg = getStackEntry(0);
       if (!(Kills & (1 << KReg)))
@@ -1672,10 +1671,8 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     break;
   }
 
-  case X86::RETQ:
-  case X86::RETL:
-  case X86::RETIL:
-  case X86::RETIQ:
+  case X86::RET:
+  case X86::RETI:
     // If RET has an FP register use operand, pass the first one in ST(0) and
     // the second one in ST(1).
 

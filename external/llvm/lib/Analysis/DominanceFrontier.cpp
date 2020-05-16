@@ -9,6 +9,7 @@
 
 #include "llvm/Analysis/DominanceFrontier.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
@@ -16,7 +17,7 @@ using namespace llvm;
 char DominanceFrontier::ID = 0;
 INITIALIZE_PASS_BEGIN(DominanceFrontier, "domfrontier",
                 "Dominance Frontier Construction", true, true)
-INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(DominanceFrontier, "domfrontier",
                 "Dominance Frontier Construction", true, true)
 
@@ -40,12 +41,12 @@ const DominanceFrontier::DomSetType &
 DominanceFrontier::calculate(const DominatorTree &DT,
                              const DomTreeNode *Node) {
   BasicBlock *BB = Node->getBlock();
-  DomSetType *Result = nullptr;
+  DomSetType *Result = NULL;
 
   std::vector<DFCalculateWorkObject> workList;
   SmallPtrSet<BasicBlock *, 32> visited;
 
-  workList.push_back(DFCalculateWorkObject(BB, nullptr, Node, nullptr));
+  workList.push_back(DFCalculateWorkObject(BB, NULL, Node, NULL));
   do {
     DFCalculateWorkObject *currentW = &workList.back();
     assert (currentW && "Missing work object.");
@@ -113,7 +114,7 @@ void DominanceFrontierBase::print(raw_ostream &OS, const Module* ) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     OS << "  DomFrontier for BB ";
     if (I->first)
-      I->first->printAsOperand(OS, false);
+      WriteAsOperand(OS, I->first, false);
     else
       OS << " <<exit node>>";
     OS << " is:\t";
@@ -124,7 +125,7 @@ void DominanceFrontierBase::print(raw_ostream &OS, const Module* ) const {
          I != E; ++I) {
       OS << ' ';
       if (*I)
-        (*I)->printAsOperand(OS, false);
+        WriteAsOperand(OS, *I, false);
       else
         OS << "<<exit node>>";
     }

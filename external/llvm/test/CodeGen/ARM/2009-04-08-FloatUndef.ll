@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 
 define void @execute_shader(<4 x float>* %OUT, <4 x float>* %IN, <4 x float>* %CONST) {
 entry:

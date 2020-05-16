@@ -44,7 +44,7 @@ namespace {
       : SelectionDAGISel(TM, OptLevel),
         Subtarget(*TM.getSubtargetImpl()) { }
 
-    SDNode *Select(SDNode *N) override;
+    SDNode *Select(SDNode *N);
     SDNode *SelectBRIND(SDNode *N);
 
     /// getI32Imm - Return a target constant with the specified value, of type
@@ -66,11 +66,8 @@ namespace {
 
     // Complex Pattern Selectors.
     bool SelectADDRspii(SDValue Addr, SDValue &Base, SDValue &Offset);
-
-    bool SelectInlineAsmMemoryOperand(const SDValue &Op, char ConstraintCode,
-                                      std::vector<SDValue> &OutOps) override;
-
-    const char *getPassName() const override {
+    
+    virtual const char *getPassName() const {
       return "XCore DAG->DAG Pattern Instruction Selection";
     } 
     
@@ -89,14 +86,14 @@ FunctionPass *llvm::createXCoreISelDag(XCoreTargetMachine &TM,
 
 bool XCoreDAGToDAGISel::SelectADDRspii(SDValue Addr, SDValue &Base,
                                        SDValue &Offset) {
-  FrameIndexSDNode *FIN = nullptr;
+  FrameIndexSDNode *FIN = 0;
   if ((FIN = dyn_cast<FrameIndexSDNode>(Addr))) {
     Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i32);
     Offset = CurDAG->getTargetConstant(0, MVT::i32);
     return true;
   }
   if (Addr.getOpcode() == ISD::ADD) {
-    ConstantSDNode *CN = nullptr;
+    ConstantSDNode *CN = 0;
     if ((FIN = dyn_cast<FrameIndexSDNode>(Addr.getOperand(0)))
       && (CN = dyn_cast<ConstantSDNode>(Addr.getOperand(1)))
       && (CN->getSExtValue() % 4 == 0 && CN->getSExtValue() >= 0)) {
@@ -106,28 +103,6 @@ bool XCoreDAGToDAGISel::SelectADDRspii(SDValue Addr, SDValue &Base,
       return true;
     }
   }
-  return false;
-}
-
-bool XCoreDAGToDAGISel::
-SelectInlineAsmMemoryOperand(const SDValue &Op, char ConstraintCode,
-                             std::vector<SDValue> &OutOps) {
-  SDValue Reg;
-  switch (ConstraintCode) {
-  default: return true;
-  case 'm': // Memory.
-    switch (Op.getOpcode()) {
-    default: return true;
-    case XCoreISD::CPRelativeWrapper:
-      Reg = CurDAG->getRegister(XCore::CP, MVT::i32);
-      break;
-    case XCoreISD::DPRelativeWrapper:
-      Reg = CurDAG->getRegister(XCore::DP, MVT::i32);
-      break;
-    }
-  }
-  OutOps.push_back(Reg);
-  OutOps.push_back(Op.getOperand(0));
   return false;
 }
 
@@ -227,7 +202,8 @@ replaceInChain(SelectionDAG *CurDAG, SDValue Chain, SDValue Old, SDValue New)
   }
   if (!found)
     return SDValue();
-  return CurDAG->getNode(ISD::TokenFactor, SDLoc(Chain), MVT::Other, Ops);
+  return CurDAG->getNode(ISD::TokenFactor, SDLoc(Chain), MVT::Other,
+                         &Ops[0], Ops.size());
 }
 
 SDNode *XCoreDAGToDAGISel::SelectBRIND(SDNode *N) {
@@ -236,10 +212,10 @@ SDNode *XCoreDAGToDAGISel::SelectBRIND(SDNode *N) {
   SDValue Chain = N->getOperand(0);
   SDValue Addr = N->getOperand(1);
   if (Addr->getOpcode() != ISD::INTRINSIC_W_CHAIN)
-    return nullptr;
+    return 0;
   unsigned IntNo = cast<ConstantSDNode>(Addr->getOperand(1))->getZExtValue();
   if (IntNo != Intrinsic::xcore_checkevent)
-    return nullptr;
+    return 0;
   SDValue nextAddr = Addr->getOperand(2);
   SDValue CheckEventChainOut(Addr.getNode(), 1);
   if (!CheckEventChainOut.use_empty()) {
@@ -251,7 +227,7 @@ SDNode *XCoreDAGToDAGISel::SelectBRIND(SDNode *N) {
     SDValue NewChain = replaceInChain(CurDAG, Chain, CheckEventChainOut,
                                       CheckEventChainIn);
     if (!NewChain.getNode())
-      return nullptr;
+      return 0;
     Chain = NewChain;
   }
   // Enable events on the thread using setsr 1 and then disable them immediately

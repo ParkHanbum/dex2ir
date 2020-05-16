@@ -1,4 +1,4 @@
-; RUN: llc < %s -march=x86 -mattr=+sse4.2 | FileCheck %s
+; RUN: llc < %s -march=x86 -mattr=+sse42 | FileCheck %s
 
 ; widening shuffle v3float and then a add
 define void @shuf(<3 x float>* %dst.addr, <3 x float> %src1,<3 x float> %src2) nounwind {
@@ -33,9 +33,7 @@ entry:
 define void @shuf3(<4 x float> %tmp10, <4 x float> %vecinit15, <4 x float>* %dst) nounwind {
 entry:
 ; CHECK-LABEL: shuf3:
-; CHECK-NOT: movlhps
-; CHECK-NOT: shufps
-; CHECK: pshufd
+; CHECK: shufps
   %shuffle.i.i.i12 = shufflevector <4 x float> %tmp10, <4 x float> %vecinit15, <4 x i32> <i32 0, i32 1, i32 4, i32 5>
   %tmp25.i.i = shufflevector <4 x float> %shuffle.i.i.i12, <4 x float> undef, <3 x i32> <i32 0, i32 1, i32 2> 
   %tmp1.i.i = shufflevector <3 x float> %tmp25.i.i, <3 x float> zeroinitializer, <4 x i32> <i32 0, i32 1, i32 2, i32 3>

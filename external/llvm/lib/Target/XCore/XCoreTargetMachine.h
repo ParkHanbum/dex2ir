@@ -14,43 +14,49 @@
 #ifndef XCORETARGETMACHINE_H
 #define XCORETARGETMACHINE_H
 
+#include "XCoreFrameLowering.h"
+#include "XCoreISelLowering.h"
+#include "XCoreInstrInfo.h"
+#include "XCoreSelectionDAGInfo.h"
 #include "XCoreSubtarget.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
 
 class XCoreTargetMachine : public LLVMTargetMachine {
   XCoreSubtarget Subtarget;
+  const DataLayout DL;       // Calculates type size & alignment
+  XCoreInstrInfo InstrInfo;
+  XCoreFrameLowering FrameLowering;
+  XCoreTargetLowering TLInfo;
+  XCoreSelectionDAGInfo TSInfo;
 public:
   XCoreTargetMachine(const Target &T, StringRef TT,
                      StringRef CPU, StringRef FS, const TargetOptions &Options,
                      Reloc::Model RM, CodeModel::Model CM,
                      CodeGenOpt::Level OL);
 
-  const XCoreInstrInfo *getInstrInfo() const override {
-    return getSubtargetImpl()->getInstrInfo();
+  virtual const XCoreInstrInfo *getInstrInfo() const { return &InstrInfo; }
+  virtual const XCoreFrameLowering *getFrameLowering() const {
+    return &FrameLowering;
   }
-  const XCoreFrameLowering *getFrameLowering() const override {
-    return getSubtargetImpl()->getFrameLowering();
+  virtual const XCoreSubtarget *getSubtargetImpl() const { return &Subtarget; }
+  virtual const XCoreTargetLowering *getTargetLowering() const {
+    return &TLInfo;
   }
-  const XCoreSubtarget *getSubtargetImpl() const override { return &Subtarget; }
-  const XCoreTargetLowering *getTargetLowering() const override {
-    return getSubtargetImpl()->getTargetLowering();
+
+  virtual const XCoreSelectionDAGInfo* getSelectionDAGInfo() const {
+    return &TSInfo;
   }
-  const XCoreSelectionDAGInfo* getSelectionDAGInfo() const override {
-    return getSubtargetImpl()->getSelectionDAGInfo();
+
+  virtual const TargetRegisterInfo *getRegisterInfo() const {
+    return &InstrInfo.getRegisterInfo();
   }
-  const TargetRegisterInfo *getRegisterInfo() const override {
-    return getSubtargetImpl()->getRegisterInfo();
-  }
-  const DataLayout *getDataLayout() const override {
-    return getSubtargetImpl()->getDataLayout();
-  }
+  virtual const DataLayout       *getDataLayout() const { return &DL; }
 
   // Pass Pipeline Configuration
-  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
-
-  void addAnalysisPasses(PassManagerBase &PM) override;
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
 };
 
 } // end namespace llvm

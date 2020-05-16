@@ -9,9 +9,6 @@
 
 LEVEL := ../..
 TOOLNAME := opt
-LINK_COMPONENTS := bitreader bitwriter asmparser irreader instrumentation scalaropts objcarcopts ipo vectorize all-targets codegen
-
-# Support plugins.
-NO_DEAD_STRIP := 1
+LINK_COMPONENTS := bitreader bitwriter asmparser irreader instrumentation scalaropts objcarcopts ipo vectorize all-targets
 
 include $(LEVEL)/Makefile.common

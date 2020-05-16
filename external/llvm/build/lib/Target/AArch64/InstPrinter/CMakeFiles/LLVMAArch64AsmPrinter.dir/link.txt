@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMAArch64AsmPrinter.a  CMakeFiles/LLVMAArch64AsmPrinter.dir/AArch64InstPrinter.cpp.o
+/usr/bin/ranlib ../../../libLLVMAArch64AsmPrinter.a

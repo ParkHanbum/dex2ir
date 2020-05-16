@@ -375,23 +375,21 @@ define void @f38(i8 *%dest) {
   ret void
 }
 
-; 258 bytes, i32 version.  We need two MVCs.
+; 258 bytes, i32 version.  258 bytes is too big for a single MVC.
+; For now expect none, so that the test fails and gets updated when
+; large copies are implemented.
 define void @f39(i8 *%dest) {
 ; CHECK-LABEL: f39:
-; CHECK: mvi 0(%r2), 255
-; CHECK: mvc 1(256,%r2), 0(%r2)
-; CHECK: mvc 257(1,%r2), 256(%r2)
+; CHECK-NOT: mvc
 ; CHECK: br %r14
   call void @llvm.memset.p0i8.i32(i8 *%dest, i8 -1, i32 258, i32 1, i1 false)
   ret void
 }
 
-; 258 bytes, i64 version.
+; 258 bytes, i64 version, with the same comments as above.
 define void @f40(i8 *%dest) {
 ; CHECK-LABEL: f40:
-; CHECK: mvi 0(%r2), 255
-; CHECK: mvc 1(256,%r2), 0(%r2)
-; CHECK: mvc 257(1,%r2), 256(%r2)
+; CHECK-NOT: mvc
 ; CHECK: br %r14
   call void @llvm.memset.p0i8.i64(i8 *%dest, i8 -1, i64 258, i32 1, i1 false)
   ret void

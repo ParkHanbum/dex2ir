@@ -15,6 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "msp430-branch-select"
 #include "MSP430.h"
 #include "MSP430InstrInfo.h"
 #include "llvm/ADT/Statistic.h"
@@ -23,8 +24,6 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetMachine.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "msp430-branch-select"
 
 STATISTIC(NumExpanded, "Number of branches expanded to long format");
 
@@ -36,9 +35,9 @@ namespace {
     /// BlockSizes - The sizes of the basic blocks in the function.
     std::vector<unsigned> BlockSizes;
 
-    bool runOnMachineFunction(MachineFunction &Fn) override;
+    virtual bool runOnMachineFunction(MachineFunction &Fn);
 
-    const char *getPassName() const override {
+    virtual const char *getPassName() const {
       return "MSP430 Branch Selector";
     }
   };

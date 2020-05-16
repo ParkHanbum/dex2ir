@@ -674,7 +674,7 @@ GBCExpanderPass::EmitStackOverflowCheck(llvm::Instruction* first_non_alloca) {
 
   // Get thread.stack_end_
   llvm::Value* stack_end =
-    irb_.Runtime().EmitLoadFromThreadOffset(art::Thread::StackEndOffset().Int32Value(),
+    irb_.Runtime().EmitLoadFromThreadOffset(art::Thread::StackEndOffset<8>().Int32Value(),
                                             irb_.getPtrEquivIntTy(),
                                             kTBAARuntimeInfo);
 
@@ -963,7 +963,7 @@ void GBCExpanderPass::Expand_TestSuspend(llvm::CallInst& call_inst) {
   uint32_t dex_pc = LV2UInt(call_inst.getMetadata("DexOff")->getOperand(0));
 
   llvm::Value* suspend_count =
-      irb_.Runtime().EmitLoadFromThreadOffset(art::Thread::ThreadFlagsOffset().Int32Value(),
+      irb_.Runtime().EmitLoadFromThreadOffset(art::Thread::ThreadFlagsOffset<8>().Int32Value(),
                                               irb_.getInt16Ty(),
                                               kTBAARuntimeInfo);
   llvm::Value* is_suspend = irb_.CreateICmpNE(suspend_count, irb_.getInt16(0));

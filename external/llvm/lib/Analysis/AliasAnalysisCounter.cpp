@@ -14,6 +14,7 @@
 
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -74,13 +75,13 @@ namespace {
       }
     }
 
-    bool runOnModule(Module &M) override {
+    bool runOnModule(Module &M) {
       this->M = &M;
       InitializeAliasAnalysis(this);
       return false;
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AliasAnalysis::getAnalysisUsage(AU);
       AU.addRequired<AliasAnalysis>();
       AU.setPreservesAll();
@@ -90,25 +91,25 @@ namespace {
     /// an analysis interface through multiple inheritance.  If needed, it
     /// should override this to adjust the this pointer as needed for the
     /// specified pass info.
-    void *getAdjustedAnalysisPointer(AnalysisID PI) override {
+    virtual void *getAdjustedAnalysisPointer(AnalysisID PI) {
       if (PI == &AliasAnalysis::ID)
         return (AliasAnalysis*)this;
       return this;
     }
     
     // FIXME: We could count these too...
-    bool pointsToConstantMemory(const Location &Loc, bool OrLocal) override {
+    bool pointsToConstantMemory(const Location &Loc, bool OrLocal) {
       return getAnalysis<AliasAnalysis>().pointsToConstantMemory(Loc, OrLocal);
     }
 
     // Forwarding functions: just delegate to a real AA implementation, counting
     // the number of responses...
-    AliasResult alias(const Location &LocA, const Location &LocB) override;
+    AliasResult alias(const Location &LocA, const Location &LocB);
 
     ModRefResult getModRefInfo(ImmutableCallSite CS,
-                               const Location &Loc) override;
+                               const Location &Loc);
     ModRefResult getModRefInfo(ImmutableCallSite CS1,
-                               ImmutableCallSite CS2) override {
+                               ImmutableCallSite CS2) {
       return AliasAnalysis::getModRefInfo(CS1,CS2);
     }
   };
@@ -126,7 +127,7 @@ AliasAnalysis::AliasResult
 AliasAnalysisCounter::alias(const Location &LocA, const Location &LocB) {
   AliasResult R = getAnalysis<AliasAnalysis>().alias(LocA, LocB);
 
-  const char *AliasString = nullptr;
+  const char *AliasString = 0;
   switch (R) {
   case NoAlias:   No++;   AliasString = "No alias"; break;
   case MayAlias:  May++;  AliasString = "May alias"; break;
@@ -137,10 +138,10 @@ AliasAnalysisCounter::alias(const Location &LocA, const Location &LocB) {
   if (PrintAll || (PrintAllFailures && R == MayAlias)) {
     errs() << AliasString << ":\t";
     errs() << "[" << LocA.Size << "B] ";
-    LocA.Ptr->printAsOperand(errs(), true, M);
+    WriteAsOperand(errs(), LocA.Ptr, true, M);
     errs() << ", ";
     errs() << "[" << LocB.Size << "B] ";
-    LocB.Ptr->printAsOperand(errs(), true, M);
+    WriteAsOperand(errs(), LocB.Ptr, true, M);
     errs() << "\n";
   }
 
@@ -152,7 +153,7 @@ AliasAnalysisCounter::getModRefInfo(ImmutableCallSite CS,
                                     const Location &Loc) {
   ModRefResult R = getAnalysis<AliasAnalysis>().getModRefInfo(CS, Loc);
 
-  const char *MRString = nullptr;
+  const char *MRString = 0;
   switch (R) {
   case NoModRef: NoMR++;     MRString = "NoModRef"; break;
   case Ref:      JustRef++;  MRString = "JustRef"; break;
@@ -163,7 +164,7 @@ AliasAnalysisCounter::getModRefInfo(ImmutableCallSite CS,
   if (PrintAll || (PrintAllFailures && R == ModRef)) {
     errs() << MRString << ":  Ptr: ";
     errs() << "[" << Loc.Size << "B] ";
-    Loc.Ptr->printAsOperand(errs(), true, M);
+    WriteAsOperand(errs(), Loc.Ptr, true, M);
     errs() << "\t<->" << *CS.getInstruction() << '\n';
   }
   return R;

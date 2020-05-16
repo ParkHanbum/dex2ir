@@ -1,4 +1,4 @@
-//===-- InstrinsicInst.cpp - Intrinsic Instruction Wrappers ---------------===//
+//===-- InstrinsicInst.cpp - Intrinsic Instruction Wrappers -----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -35,7 +35,7 @@ static Value *CastOperand(Value *C) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C))
     if (CE->isCast())
       return CE->getOperand(0);
-  return nullptr;
+  return NULL;
 }
 
 Value *DbgInfoIntrinsic::StripCast(Value *C) {
@@ -57,7 +57,7 @@ Value *DbgDeclareInst::getAddress() const {
   if (MDNode* MD = cast_or_null<MDNode>(getArgOperand(0)))
     return MD->getOperand(0);
   else
-    return nullptr;
+    return NULL;
 }
 
 //===----------------------------------------------------------------------===//

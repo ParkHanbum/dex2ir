@@ -12,14 +12,19 @@ LIBRARYNAME = LLVMAArch64CodeGen
 TARGET = AArch64
 
 # Make sure that tblgen is run, first thing.
-BUILT_SOURCES = AArch64GenRegisterInfo.inc AArch64GenInstrInfo.inc \
-		AArch64GenAsmWriter.inc AArch64GenAsmWriter1.inc \
-		AArch64GenDAGISel.inc \
-		AArch64GenCallingConv.inc AArch64GenAsmMatcher.inc \
-		AArch64GenSubtargetInfo.inc AArch64GenMCCodeEmitter.inc \
-		AArch64GenFastISel.inc AArch64GenDisassemblerTables.inc \
-		AArch64GenMCPseudoLowering.inc
+BUILT_SOURCES = AArch64GenAsmMatcher.inc \
+   AArch64GenAsmWriter.inc \
+   AArch64GenCallingConv.inc \
+   AArch64GenDAGISel.inc \
+   AArch64GenDisassemblerTables.inc \
+   AArch64GenInstrInfo.inc \
+   AArch64GenMCCodeEmitter.inc \
+   AArch64GenMCPseudoLowering.inc \
+   AArch64GenRegisterInfo.inc \
+   AArch64GenSubtargetInfo.inc
 
-DIRS = TargetInfo InstPrinter AsmParser Disassembler MCTargetDesc Utils
+DIRS = InstPrinter AsmParser Disassembler TargetInfo MCTargetDesc Utils
 
 include $(LEVEL)/Makefile.common
+
+

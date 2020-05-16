@@ -37,9 +37,9 @@ struct SubtargetFeatureKV {
   uint64_t Value;                       // K-V integer value
   uint64_t Implies;                     // K-V bit mask
 
-  // Compare routine for std::lower_bound
-  bool operator<(StringRef S) const {
-    return StringRef(Key) < S;
+  // Compare routine for std binary search
+  bool operator<(const SubtargetFeatureKV &S) const {
+    return strcmp(Key, S.Key) < 0;
   }
 };
 
@@ -52,9 +52,9 @@ struct SubtargetInfoKV {
   const char *Key;                      // K-V key string
   const void *Value;                    // K-V pointer value
 
-  // Compare routine for std::lower_bound
-  bool operator<(StringRef S) const {
-    return StringRef(Key) < S;
+  // Compare routine for std binary search
+  bool operator<(const SubtargetInfoKV &S) const {
+    return strcmp(Key, S.Key) < 0;
   }
 };
 
@@ -99,7 +99,8 @@ public:
   // Dump feature info.
   void dump() const;
 
-  /// Adds the default features for the specified target triple.
+  /// Retrieve a formatted string of the default features for the specified
+  /// target triple.
   void getDefaultSubtargetFeatures(const Triple& Triple);
 };
 

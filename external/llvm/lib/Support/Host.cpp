@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file implements the operating system Host concept.
+//  This header file implements the operating system Host concept.
 //
 //===----------------------------------------------------------------------===//
 
@@ -39,8 +39,6 @@
 #include <mach/machine.h>
 #endif
 
-#define DEBUG_TYPE "host-detection"
-
 //===----------------------------------------------------------------------===//
 //
 //  Implementations of the CPU detection routines
@@ -54,55 +52,8 @@ using namespace llvm;
 
 /// GetX86CpuIDAndInfo - Execute the specified cpuid and return the 4 values in the
 /// specified arguments.  If we can't run cpuid on the host, return true.
-static bool GetX86CpuIDAndInfo(unsigned value, unsigned *rEAX, unsigned *rEBX,
-                               unsigned *rECX, unsigned *rEDX) {
-#if defined(__GNUC__) || defined(__clang__)
-  #if defined(__x86_64__) || defined(_M_AMD64) || defined (_M_X64)
-    // gcc doesn't know cpuid would clobber ebx/rbx. Preseve it manually.
-    asm ("movq\t%%rbx, %%rsi\n\t"
-         "cpuid\n\t"
-         "xchgq\t%%rbx, %%rsi\n\t"
-         : "=a" (*rEAX),
-           "=S" (*rEBX),
-           "=c" (*rECX),
-           "=d" (*rEDX)
-         :  "a" (value));
-    return false;
-  #elif defined(i386) || defined(__i386__) || defined(__x86__) || defined(_M_IX86)
-    asm ("movl\t%%ebx, %%esi\n\t"
-         "cpuid\n\t"
-         "xchgl\t%%ebx, %%esi\n\t"
-         : "=a" (*rEAX),
-           "=S" (*rEBX),
-           "=c" (*rECX),
-           "=d" (*rEDX)
-         :  "a" (value));
-    return false;
-// pedantic #else returns to appease -Wunreachable-code (so we don't generate
-// postprocessed code that looks like "return true; return false;")
-  #else
-    return true;
-  #endif
-#elif defined(_MSC_VER)
-  // The MSVC intrinsic is portable across x86 and x64.
-  int registers[4];
-  __cpuid(registers, value);
-  *rEAX = registers[0];
-  *rEBX = registers[1];
-  *rECX = registers[2];
-  *rEDX = registers[3];
-  return false;
-#else
-  return true;
-#endif
-}
-
-/// GetX86CpuIDAndInfoEx - Execute the specified cpuid with subleaf and return the
-/// 4 values in the specified arguments.  If we can't run cpuid on the host,
-/// return true.
-static bool GetX86CpuIDAndInfoEx(unsigned value, unsigned subleaf,
-                                 unsigned *rEAX, unsigned *rEBX, unsigned *rECX,
-                                 unsigned *rEDX) {
+static bool GetX86CpuIDAndInfo(unsigned value, unsigned *rEAX,
+                            unsigned *rEBX, unsigned *rECX, unsigned *rEDX) {
 #if defined(__x86_64__) || defined(_M_AMD64) || defined (_M_X64)
   #if defined(__GNUC__)
     // gcc doesn't know cpuid would clobber ebx/rbx. Preseve it manually.
@@ -113,22 +64,16 @@ static bool GetX86CpuIDAndInfoEx(unsigned value, unsigned subleaf,
            "=S" (*rEBX),
            "=c" (*rECX),
            "=d" (*rEDX)
-         :  "a" (value),
-            "c" (subleaf));
+         :  "a" (value));
     return false;
   #elif defined(_MSC_VER)
-    // __cpuidex was added in MSVC++ 9.0 SP1
-    #if (_MSC_VER > 1500) || (_MSC_VER == 1500 && _MSC_FULL_VER >= 150030729)
-      int registers[4];
-      __cpuidex(registers, value, subleaf);
-      *rEAX = registers[0];
-      *rEBX = registers[1];
-      *rECX = registers[2];
-      *rEDX = registers[3];
-      return false;
-    #else
-      return true;
-    #endif
+    int registers[4];
+    __cpuid(registers, value);
+    *rEAX = registers[0];
+    *rEBX = registers[1];
+    *rECX = registers[2];
+    *rEDX = registers[3];
+    return false;
   #else
     return true;
   #endif
@@ -141,13 +86,11 @@ static bool GetX86CpuIDAndInfoEx(unsigned value, unsigned subleaf,
            "=S" (*rEBX),
            "=c" (*rECX),
            "=d" (*rEDX)
-         :  "a" (value),
-            "c" (subleaf));
+         :  "a" (value));
     return false;
   #elif defined(_MSC_VER)
     __asm {
       mov   eax,value
-      mov   ecx,subleaf
       cpuid
       mov   esi,rEAX
       mov   dword ptr [esi],eax
@@ -159,6 +102,8 @@ static bool GetX86CpuIDAndInfoEx(unsigned value, unsigned subleaf,
       mov   dword ptr [esi],edx
     }
     return false;
+// pedantic #else returns to appease -Wunreachable-code (so we don't generate
+// postprocessed code that looks like "return true; return false;")
   #else
     return true;
   #endif
@@ -195,7 +140,7 @@ static void DetectX86FamilyModel(unsigned EAX, unsigned &Family,
   }
 }
 
-StringRef sys::getHostCPUName() {
+std::string sys::getHostCPUName() {
   unsigned EAX = 0, EBX = 0, ECX = 0, EDX = 0;
   if (GetX86CpuIDAndInfo(0x1, &EAX, &EBX, &ECX, &EDX))
     return "generic";
@@ -203,14 +148,6 @@ StringRef sys::getHostCPUName() {
   unsigned Model  = 0;
   DetectX86FamilyModel(EAX, Family, Model);
 
-  union {
-    unsigned u[3];
-    char     c[12];
-  } text;
-
-  GetX86CpuIDAndInfo(0, &EAX, text.u+0, text.u+2, text.u+1);
-
-  unsigned MaxLeaf = EAX;
   bool HasSSE3 = (ECX & 0x1);
   bool HasSSE41 = (ECX & 0x80000);
   // If CPUID indicates support for XSAVE, XRESTORE and AVX, and XGETBV 
@@ -218,13 +155,15 @@ StringRef sys::getHostCPUName() {
   // switch, then we have full AVX support.
   const unsigned AVXBits = (1 << 27) | (1 << 28);
   bool HasAVX = ((ECX & AVXBits) == AVXBits) && OSHasAVXSupport();
-  bool HasAVX2 = HasAVX && MaxLeaf >= 0x7 &&
-                 !GetX86CpuIDAndInfoEx(0x7, 0x0, &EAX, &EBX, &ECX, &EDX) &&
-                 (EBX & 0x20);
   GetX86CpuIDAndInfo(0x80000001, &EAX, &EBX, &ECX, &EDX);
   bool Em64T = (EDX >> 29) & 0x1;
-  bool HasTBM = (ECX >> 21) & 0x1;
 
+  union {
+    unsigned u[3];
+    char     c[12];
+  } text;
+
+  GetX86CpuIDAndInfo(0, &EAX, text.u+0, text.u+2, text.u+1);
   if (memcmp(text.c, "GenuineIntel", 12) == 0) {
     switch (Family) {
     case 3:
@@ -332,19 +271,9 @@ StringRef sys::getHostCPUName() {
 
       // Ivy Bridge:
       case 58:
-      case 62: // Ivy Bridge EP
         // Not all Ivy Bridge processors support AVX (such as the Pentium
         // versions instead of the i7 versions).
         return HasAVX ? "core-avx-i" : "corei7";
-
-      // Haswell:
-      case 60:
-      case 63:
-      case 69:
-      case 70:
-        // Not all Haswell processors support AVX too (such as the Pentium
-        // versions instead of the i7 versions).
-        return HasAVX2 ? "core-avx2" : "corei7";
 
       case 28: // Most 45 nm Intel Atom processors
       case 38: // 45 nm Atom Lincroft
@@ -352,12 +281,6 @@ StringRef sys::getHostCPUName() {
       case 53: // 32 nm Atom Midview
       case 54: // 32 nm Atom Midview
         return "atom";
-
-      // Atom Silvermont codes from the Intel software optimization guide.
-      case 55:
-      case 74:
-      case 77:
-        return "slm";
 
       default: return (Em64T) ? "x86-64" : "i686";
       }
@@ -436,13 +359,9 @@ StringRef sys::getHostCPUName() {
       case 21:
         if (!HasAVX) // If the OS doesn't support AVX provide a sane fallback.
           return "btver1";
-        if (Model >= 0x50)
-          return "bdver4"; // 50h-6Fh: Excavator
-        if (Model >= 0x30)
-          return "bdver3"; // 30h-3Fh: Steamroller
-        if (Model >= 0x10 || HasTBM)
-          return "bdver2"; // 10h-1Fh: Piledriver
-        return "bdver1";   // 00h-0Fh: Bulldozer
+        if (Model > 15 && Model <= 31)
+          return "bdver2";
+        return "bdver1";
       case 22:
         if (!HasAVX) // If the OS doesn't support AVX provide a sane fallback.
           return "btver1";
@@ -454,7 +373,7 @@ StringRef sys::getHostCPUName() {
   return "generic";
 }
 #elif defined(__APPLE__) && (defined(__ppc__) || defined(__powerpc__))
-StringRef sys::getHostCPUName() {
+std::string sys::getHostCPUName() {
   host_basic_info_data_t hostInfo;
   mach_msg_type_number_t infoCount;
 
@@ -483,7 +402,7 @@ StringRef sys::getHostCPUName() {
   return "generic";
 }
 #elif defined(__linux__) && (defined(__ppc__) || defined(__powerpc__))
-StringRef sys::getHostCPUName() {
+std::string sys::getHostCPUName() {
   // Access to the Processor Version Register (PVR) on PowerPC is privileged,
   // and so we must use an operating-system interface to determine the current
   // processor type. On Linux, this is exposed through the /proc/cpuinfo file.
@@ -570,12 +489,10 @@ StringRef sys::getHostCPUName() {
     .Case("A2", "a2")
     .Case("POWER6", "pwr6")
     .Case("POWER7", "pwr7")
-    .Case("POWER8", "pwr8")
-    .Case("POWER8E", "pwr8")
     .Default(generic);
 }
 #elif defined(__linux__) && defined(__arm__)
-StringRef sys::getHostCPUName() {
+std::string sys::getHostCPUName() {
   // The cpuid register on arm is not accessible from user space. On Linux,
   // it is exposed through the /proc/cpuinfo file.
   // Note: We cannot mmap /proc/cpuinfo here and then process the resulting
@@ -627,68 +544,15 @@ StringRef sys::getHostCPUName() {
           .Case("0xc24", "cortex-m4")
           .Default("generic");
 
-  if (Implementer == "0x51") // Qualcomm Technologies, Inc.
-    // Look for the CPU part line.
-    for (unsigned I = 0, E = Lines.size(); I != E; ++I)
-      if (Lines[I].startswith("CPU part"))
-        // The CPU part is a 3 digit hexadecimal number with a 0x prefix. The
-        // values correspond to the "Part number" in the CP15/c0 register. The
-        // contents are specified in the various processor manuals.
-        return StringSwitch<const char *>(Lines[I].substr(8).ltrim("\t :"))
-          .Case("0x06f", "krait") // APQ8064
-          .Default("generic");
-
-  return "generic";
-}
-#elif defined(__linux__) && defined(__s390x__)
-StringRef sys::getHostCPUName() {
-  // STIDP is a privileged operation, so use /proc/cpuinfo instead.
-  // Note: We cannot mmap /proc/cpuinfo here and then process the resulting
-  // memory buffer because the 'file' has 0 size (it can be read from only
-  // as a stream).
-
-  std::string Err;
-  DataStreamer *DS = getDataFileStreamer("/proc/cpuinfo", &Err);
-  if (!DS) {
-    DEBUG(dbgs() << "Unable to open /proc/cpuinfo: " << Err << "\n");
-    return "generic";
-  }
-
-  // The "processor 0:" line comes after a fair amount of other information,
-  // including a cache breakdown, but this should be plenty.
-  char buffer[2048];
-  size_t CPUInfoSize = DS->GetBytes((unsigned char*) buffer, sizeof(buffer));
-  delete DS;
-
-  StringRef Str(buffer, CPUInfoSize);
-  SmallVector<StringRef, 32> Lines;
-  Str.split(Lines, "\n");
-  for (unsigned I = 0, E = Lines.size(); I != E; ++I) {
-    if (Lines[I].startswith("processor ")) {
-      size_t Pos = Lines[I].find("machine = ");
-      if (Pos != StringRef::npos) {
-        Pos += sizeof("machine = ") - 1;
-        unsigned int Id;
-        if (!Lines[I].drop_front(Pos).getAsInteger(10, Id)) {
-          if (Id >= 2827)
-            return "zEC12";
-          if (Id >= 2817)
-            return "z196";
-        }
-      }
-      break;
-    }
-  }
-  
   return "generic";
 }
 #else
-StringRef sys::getHostCPUName() {
+std::string sys::getHostCPUName() {
   return "generic";
 }
 #endif
 
-#if defined(__linux__) && (defined(__arm__) || defined(__aarch64__))
+#if defined(__linux__) && defined(__arm__)
 bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
   std::string Err;
   DataStreamer *DS = getDataFileStreamer("/proc/cpuinfo", &Err);
@@ -717,24 +581,8 @@ bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
       break;
     }
 
-#if defined(__aarch64__)
-  // Keep track of which crypto features we have seen
-  enum {
-    CAP_AES   = 0x1,
-    CAP_PMULL = 0x2,
-    CAP_SHA1  = 0x4,
-    CAP_SHA2  = 0x8
-  };
-  uint32_t crypto = 0;
-#endif
-
   for (unsigned I = 0, E = CPUFeatures.size(); I != E; ++I) {
     StringRef LLVMFeatureStr = StringSwitch<StringRef>(CPUFeatures[I])
-#if defined(__aarch64__)
-      .Case("asimd", "neon")
-      .Case("fp", "fp-armv8")
-      .Case("crc32", "crc")
-#else
       .Case("half", "fp16")
       .Case("neon", "neon")
       .Case("vfpv3", "vfp3")
@@ -742,31 +590,11 @@ bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
       .Case("vfpv4", "vfp4")
       .Case("idiva", "hwdiv-arm")
       .Case("idivt", "hwdiv")
-#endif
       .Default("");
-
-#if defined(__aarch64__)
-    // We need to check crypto separately since we need all of the crypto
-    // extensions to enable the subtarget feature
-    if (CPUFeatures[I] == "aes")
-      crypto |= CAP_AES;
-    else if (CPUFeatures[I] == "pmull")
-      crypto |= CAP_PMULL;
-    else if (CPUFeatures[I] == "sha1")
-      crypto |= CAP_SHA1;
-    else if (CPUFeatures[I] == "sha2")
-      crypto |= CAP_SHA2;
-#endif
 
     if (LLVMFeatureStr != "")
       Features.GetOrCreateValue(LLVMFeatureStr).setValue(true);
   }
-
-#if defined(__aarch64__)
-  // If we have all crypto bits we can add the feature
-  if (crypto == (CAP_AES | CAP_PMULL | CAP_SHA1 | CAP_SHA2))
-    Features.GetOrCreateValue("crypto").setValue(true);
-#endif
 
   return true;
 }

@@ -12,7 +12,7 @@ x86_codegen_TBLGEN_TABLES := \
 
 x86_codegen_SRC_FILES := \
   X86AsmPrinter.cpp \
-  X86AtomicExpandPass.cpp \
+  X86COFFMachineModuleInfo.cpp \
   X86CodeEmitter.cpp \
   X86FastISel.cpp \
   X86FixupLEAs.cpp \
@@ -53,7 +53,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
+ifeq ($(TARGET_ARCH),x86)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 

@@ -44,7 +44,7 @@ static RETSIGTYPE SignalHandler(int Sig);  // defined below.
 static SmartMutex<true> SignalsMutex;
 
 /// InterruptFunction - The function to call if ctrl-c is pressed.
-static void (*InterruptFunction)() = nullptr;
+static void (*InterruptFunction)() = 0;
 
 static std::vector<std::string> FilesToRemove;
 static std::vector<std::pair<void(*)(void*), void*> > CallBacksToRun;
@@ -55,7 +55,7 @@ static std::vector<std::pair<void(*)(void*), void*> > CallBacksToRun;
 static const int IntSigs[] = {
   SIGHUP, SIGINT, SIGPIPE, SIGTERM, SIGUSR1, SIGUSR2
 };
-static const int *const IntSigsEnd = std::end(IntSigs);
+static const int *const IntSigsEnd = array_endof(IntSigs);
 
 // KillSigs - Signals that represent that we have a bug, and our prompt
 // termination has been ordered.
@@ -74,7 +74,7 @@ static const int KillSigs[] = {
   , SIGEMT
 #endif
 };
-static const int *const KillSigsEnd = std::end(KillSigs);
+static const int *const KillSigsEnd = array_endof(KillSigs);
 
 static unsigned NumRegisteredSignals = 0;
 static struct {
@@ -113,7 +113,7 @@ static void UnregisterHandlers() {
   // Restore all of the signal handlers to how they were before we showed up.
   for (unsigned i = 0, e = NumRegisteredSignals; i != e; ++i)
     sigaction(RegisteredSignalInfo[i].SigNo,
-              &RegisteredSignalInfo[i].SA, nullptr);
+              &RegisteredSignalInfo[i].SA, 0);
   NumRegisteredSignals = 0;
 }
 
@@ -160,7 +160,7 @@ static RETSIGTYPE SignalHandler(int Sig) {
   // Unmask all potentially blocked kill signals.
   sigset_t SigMask;
   sigfillset(&SigMask);
-  sigprocmask(SIG_UNBLOCK, &SigMask, nullptr);
+  sigprocmask(SIG_UNBLOCK, &SigMask, 0);
 
   SignalsMutex.acquire();
   RemoveFilesToRemove();
@@ -169,7 +169,7 @@ static RETSIGTYPE SignalHandler(int Sig) {
     if (InterruptFunction) {
       void (*IF)() = InterruptFunction;
       SignalsMutex.release();
-      InterruptFunction = nullptr;
+      InterruptFunction = 0;
       IF();        // run the interrupt function.
       return;
     }
@@ -212,7 +212,7 @@ void llvm::sys::SetInterruptFunction(void (*IF)()) {
 bool llvm::sys::RemoveFileOnSignal(StringRef Filename,
                                    std::string* ErrMsg) {
   SignalsMutex.acquire();
-  std::string *OldPtr = FilesToRemove.empty() ? nullptr : &FilesToRemove[0];
+  std::string *OldPtr = FilesToRemove.empty() ? 0 : &FilesToRemove[0];
   FilesToRemove.push_back(Filename);
 
   // We want to call 'c_str()' on every std::string in this vector so that if
@@ -271,7 +271,7 @@ void llvm::sys::PrintStackTrace(FILE *FD) {
   // Use backtrace() to output a backtrace on Linux systems with glibc.
   int depth = backtrace(StackTrace,
                         static_cast<int>(array_lengthof(StackTrace)));
-#if HAVE_DLFCN_H && __GNUG__
+#if HAVE_DLFCN_H && HAVE_CXXABI_H && __GNUG__
   int width = 0;
   for (int i = 0; i < depth; ++i) {
     Dl_info dlinfo;
@@ -279,8 +279,8 @@ void llvm::sys::PrintStackTrace(FILE *FD) {
     const char* name = strrchr(dlinfo.dli_fname, '/');
 
     int nwidth;
-    if (!name) nwidth = strlen(dlinfo.dli_fname);
-    else       nwidth = strlen(name) - 1;
+    if (name == NULL) nwidth = strlen(dlinfo.dli_fname);
+    else              nwidth = strlen(name) - 1;
 
     if (nwidth > width) width = nwidth;
   }
@@ -292,22 +292,22 @@ void llvm::sys::PrintStackTrace(FILE *FD) {
     fprintf(FD, "%-2d", i);
 
     const char* name = strrchr(dlinfo.dli_fname, '/');
-    if (!name) fprintf(FD, " %-*s", width, dlinfo.dli_fname);
-    else       fprintf(FD, " %-*s", width, name+1);
+    if (name == NULL) fprintf(FD, " %-*s", width, dlinfo.dli_fname);
+    else              fprintf(FD, " %-*s", width, name+1);
 
     fprintf(FD, " %#0*lx",
             (int)(sizeof(void*) * 2) + 2, (unsigned long)StackTrace[i]);
 
-    if (dlinfo.dli_sname != nullptr) {
+    if (dlinfo.dli_sname != NULL) {
       fputc(' ', FD);
 #  if HAVE_CXXABI_H
       int res;
-      char* d = abi::__cxa_demangle(dlinfo.dli_sname, nullptr, nullptr, &res);
+      char* d = abi::__cxa_demangle(dlinfo.dli_sname, NULL, NULL, &res);
 #  else
       char* d = NULL;
 #  endif
-      if (!d) fputs(dlinfo.dli_sname, FD);
-      else    fputs(d, FD);
+      if (d == NULL) fputs(dlinfo.dli_sname, FD);
+      else           fputs(d, FD);
       free(d);
 
       // FIXME: When we move to C++11, use %t length modifier. It's not in
@@ -331,9 +331,9 @@ static void PrintStackTraceSignalHandler(void *) {
 /// PrintStackTraceOnErrorSignal - When an error signal (such as SIGABRT or
 /// SIGSEGV) is delivered to the process, print a stack trace and then exit.
 void llvm::sys::PrintStackTraceOnErrorSignal() {
-  AddSignalHandler(PrintStackTraceSignalHandler, nullptr);
+  AddSignalHandler(PrintStackTraceSignalHandler, 0);
 
-#if defined(__APPLE__) && defined(ENABLE_CRASH_OVERRIDES)
+#if defined(__APPLE__) && !defined(ANDROID)
   // Environment variable to disable any kind of crash dialog.
   if (getenv("LLVM_DISABLE_CRASH_REPORT")) {
     mach_port_t self = mach_task_self();
@@ -359,7 +359,7 @@ void llvm::sys::PrintStackTraceOnErrorSignal() {
 // the same linkage unit by just defining our own versions of the assert handler
 // and abort.
 
-#if defined(__APPLE__) && defined(ENABLE_CRASH_OVERRIDES)
+#if defined(__APPLE__) && !defined(ANDROID)
 
 #include <signal.h>
 #include <pthread.h>

@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass replaces occurrences of __nvvm_reflect("string") with an
+// This pass replaces occurences of __nvvm_reflect("string") with an
 // integer based on -nvvm-reflect-list string=<int> option given to this pass.
 // If an undefined string value is seen in a call to __nvvm_reflect("string"),
 // a default value of 0 will be used.
@@ -18,14 +18,13 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DerivedTypes.h"
+#include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
-#include "llvm/Pass.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_os_ostream.h"
@@ -39,8 +38,6 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "nvptx-reflect"
-
 namespace llvm { void initializeNVVMReflectPass(PassRegistry &); }
 
 namespace {
@@ -48,16 +45,17 @@ class NVVMReflect : public ModulePass {
 private:
   StringMap<int> VarMap;
   typedef DenseMap<std::string, int>::iterator VarMapIter;
+  Function *ReflectFunction;
 
 public:
   static char ID;
-  NVVMReflect() : ModulePass(ID) {
+  NVVMReflect() : ModulePass(ID), ReflectFunction(0) {
     initializeNVVMReflectPass(*PassRegistry::getPassRegistry());
     VarMap.clear();
   }
 
   NVVMReflect(const StringMap<int> &Mapping)
-  : ModulePass(ID) {
+  : ModulePass(ID), ReflectFunction(0) {
     initializeNVVMReflectPass(*PassRegistry::getPassRegistry());
     for (StringMap<int>::const_iterator I = Mapping.begin(), E = Mapping.end();
          I != E; ++I) {
@@ -65,13 +63,9 @@ public:
     }
   }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.setPreservesAll();
-  }
-  bool runOnModule(Module &) override;
+  void getAnalysisUsage(AnalysisUsage &AU) const { AU.setPreservesAll(); }
+  virtual bool runOnModule(Module &);
 
-private:
-  bool handleFunction(Function *ReflectFunction);
   void setVarMap();
 };
 }
@@ -85,16 +79,16 @@ ModulePass *llvm::createNVVMReflectPass(const StringMap<int>& Mapping) {
 }
 
 static cl::opt<bool>
-NVVMReflectEnabled("nvvm-reflect-enable", cl::init(true), cl::Hidden,
+NVVMReflectEnabled("nvvm-reflect-enable", cl::init(true),
                    cl::desc("NVVM reflection, enabled by default"));
 
 char NVVMReflect::ID = 0;
 INITIALIZE_PASS(NVVMReflect, "nvvm-reflect",
-                "Replace occurrences of __nvvm_reflect() calls with 0/1", false,
+                "Replace occurences of __nvvm_reflect() calls with 0/1", false,
                 false)
 
 static cl::list<std::string>
-ReflectList("nvvm-reflect-list", cl::value_desc("name=<int>"), cl::Hidden,
+ReflectList("nvvm-reflect-list", cl::value_desc("name=<int>"),
             cl::desc("A list of string=num assignments"),
             cl::ValueRequired);
 
@@ -122,7 +116,19 @@ void NVVMReflect::setVarMap() {
   }
 }
 
-bool NVVMReflect::handleFunction(Function *ReflectFunction) {
+bool NVVMReflect::runOnModule(Module &M) {
+  if (!NVVMReflectEnabled)
+    return false;
+
+  setVarMap();
+
+  ReflectFunction = M.getFunction(NVVM_REFLECT_FUNCTION);
+
+  // If reflect function is not used, then there will be
+  // no entry in the module.
+  if (ReflectFunction == 0)
+    return false;
+
   // Validate _reflect function
   assert(ReflectFunction->isDeclaration() &&
          "_reflect function should not have a body");
@@ -137,23 +143,23 @@ bool NVVMReflect::handleFunction(Function *ReflectFunction) {
   // ConstantArray can be found successfully, see if it can be
   // found in VarMap. If so, replace the uses of CallInst with the
   // value found in VarMap. If not, replace the use  with value 0.
-  for (User *U : ReflectFunction->users()) {
-    assert(isa<CallInst>(U) && "Only a call instruction can use _reflect");
-    CallInst *Reflect = cast<CallInst>(U);
+  for (Value::use_iterator I = ReflectFunction->use_begin(),
+                           E = ReflectFunction->use_end();
+       I != E; ++I) {
+    assert(isa<CallInst>(*I) && "Only a call instruction can use _reflect");
+    CallInst *Reflect = cast<CallInst>(*I);
 
     assert((Reflect->getNumOperands() == 2) &&
            "Only one operand expect for _reflect function");
     // In cuda, we will have an extra constant-to-generic conversion of
     // the string.
-    const Value *Str = Reflect->getArgOperand(0);
-    if (isa<CallInst>(Str)) {
-      // CUDA path
-      const CallInst *ConvCall = cast<CallInst>(Str);
-      Str = ConvCall->getArgOperand(0);
-    }
-    assert(isa<ConstantExpr>(Str) &&
+    const Value *conv = Reflect->getArgOperand(0);
+    assert(isa<CallInst>(conv) && "Expected a const-to-gen conversion");
+    const CallInst *ConvCall = cast<CallInst>(conv);
+    const Value *str = ConvCall->getArgOperand(0);
+    assert(isa<ConstantExpr>(str) &&
            "Format of _reflect function not recognized");
-    const ConstantExpr *GEP = cast<ConstantExpr>(Str);
+    const ConstantExpr *GEP = cast<ConstantExpr>(str);
 
     const Value *Sym = GEP->getOperand(0);
     assert(isa<Constant>(Sym) && "Format of _reflect function not recognized");
@@ -186,37 +192,4 @@ bool NVVMReflect::handleFunction(Function *ReflectFunction) {
   for (unsigned i = 0, e = ToRemove.size(); i != e; ++i)
     ToRemove[i]->eraseFromParent();
   return true;
-}
-
-bool NVVMReflect::runOnModule(Module &M) {
-  if (!NVVMReflectEnabled)
-    return false;
-
-  setVarMap();
-
-
-  bool Res = false;
-  std::string Name;
-  Type *Tys[1];
-  Type *I8Ty = Type::getInt8Ty(M.getContext());
-  Function *ReflectFunction;
-
-  // Check for standard overloaded versions of llvm.nvvm.reflect
-
-  for (unsigned i = 0; i != 5; ++i) {
-    Tys[0] = PointerType::get(I8Ty, i);
-    Name = Intrinsic::getName(Intrinsic::nvvm_reflect, Tys);
-    ReflectFunction = M.getFunction(Name);
-    if(ReflectFunction != 0) {
-      Res |= handleFunction(ReflectFunction);
-    }
-  }
-
-  ReflectFunction = M.getFunction(NVVM_REFLECT_FUNCTION);
-  // If reflect function is not used, then there will be
-  // no entry in the module.
-  if (ReflectFunction != 0)
-    Res |= handleFunction(ReflectFunction);
-
-  return Res;
 }

@@ -60,11 +60,6 @@ ValueEnumerator::ValueEnumerator(const Module *M) {
        I != E; ++I)
     EnumerateValue(I->getAliasee());
 
-  // Enumerate the prefix data constants.
-  for (Module::const_iterator I = M->begin(), E = M->end(); I != E; ++I)
-    if (I->hasPrefixData())
-      EnumerateValue(I->getPrefixData());
-
   // Insert constants and metadata that are named at module level into the slot
   // pool so that the module symbol table can refer to them...
   EnumerateValueSymbolTable(M->getValueSymbolTable());
@@ -73,34 +68,37 @@ ValueEnumerator::ValueEnumerator(const Module *M) {
   SmallVector<std::pair<unsigned, MDNode*>, 8> MDs;
 
   // Enumerate types used by function bodies and argument lists.
-  for (const Function &F : *M) {
-    for (const Argument &A : F.args())
-      EnumerateType(A.getType());
+  for (Module::const_iterator F = M->begin(), E = M->end(); F != E; ++F) {
 
-    for (const BasicBlock &BB : F)
-      for (const Instruction &I : BB) {
-        for (const Use &Op : I.operands()) {
-          if (MDNode *MD = dyn_cast<MDNode>(&Op))
+    for (Function::const_arg_iterator I = F->arg_begin(), E = F->arg_end();
+         I != E; ++I)
+      EnumerateType(I->getType());
+
+    for (Function::const_iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
+      for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I!=E;++I){
+        for (User::const_op_iterator OI = I->op_begin(), E = I->op_end();
+             OI != E; ++OI) {
+          if (MDNode *MD = dyn_cast<MDNode>(*OI))
             if (MD->isFunctionLocal() && MD->getFunction())
               // These will get enumerated during function-incorporation.
               continue;
-          EnumerateOperandType(Op);
+          EnumerateOperandType(*OI);
         }
-        EnumerateType(I.getType());
-        if (const CallInst *CI = dyn_cast<CallInst>(&I))
+        EnumerateType(I->getType());
+        if (const CallInst *CI = dyn_cast<CallInst>(I))
           EnumerateAttributes(CI->getAttributes());
-        else if (const InvokeInst *II = dyn_cast<InvokeInst>(&I))
+        else if (const InvokeInst *II = dyn_cast<InvokeInst>(I))
           EnumerateAttributes(II->getAttributes());
 
         // Enumerate metadata attached with this instruction.
         MDs.clear();
-        I.getAllMetadataOtherThanDebugLoc(MDs);
+        I->getAllMetadataOtherThanDebugLoc(MDs);
         for (unsigned i = 0, e = MDs.size(); i != e; ++i)
           EnumerateMetadata(MDs[i].second);
 
-        if (!I.getDebugLoc().isUnknown()) {
+        if (!I->getDebugLoc().isUnknown()) {
           MDNode *Scope, *IA;
-          I.getDebugLoc().getScopeAndInlinedAt(Scope, IA, I.getContext());
+          I->getDebugLoc().getScopeAndInlinedAt(Scope, IA, I->getContext());
           if (Scope) EnumerateMetadata(Scope);
           if (IA) EnumerateMetadata(IA);
         }
@@ -115,12 +113,6 @@ unsigned ValueEnumerator::getInstructionID(const Instruction *Inst) const {
   InstructionMapType::const_iterator I = InstructionMap.find(Inst);
   assert(I != InstructionMap.end() && "Instruction is not mapped!");
   return I->second;
-}
-
-unsigned ValueEnumerator::getComdatID(const Comdat *C) const {
-  unsigned ComdatID = Comdats.idFor(C);
-  assert(ComdatID && "Comdat not found!");
-  return ComdatID;
 }
 
 void ValueEnumerator::setInstructionID(const Instruction *I) {
@@ -162,11 +154,12 @@ void ValueEnumerator::print(raw_ostream &OS, const ValueMapType &Map,
     V->dump();
 
     OS << " Uses(" << std::distance(V->use_begin(),V->use_end()) << "):";
-    for (const Use &U : V->uses()) {
-      if (&U != &*V->use_begin())
+    for (Value::const_use_iterator UI = V->use_begin(), UE = V->use_end();
+         UI != UE; ++UI) {
+      if (UI != V->use_begin())
         OS << ",";
-      if(U->hasName())
-        OS << " " << U->getName();
+      if((*UI)->hasName())
+        OS << " " << (*UI)->getName();
       else
         OS << " [null]";
 
@@ -175,19 +168,29 @@ void ValueEnumerator::print(raw_ostream &OS, const ValueMapType &Map,
   }
 }
 
+// Optimize constant ordering.
+namespace {
+  struct CstSortPredicate {
+    ValueEnumerator &VE;
+    explicit CstSortPredicate(ValueEnumerator &ve) : VE(ve) {}
+    bool operator()(const std::pair<const Value*, unsigned> &LHS,
+                    const std::pair<const Value*, unsigned> &RHS) {
+      // Sort by plane.
+      if (LHS.first->getType() != RHS.first->getType())
+        return VE.getTypeID(LHS.first->getType()) <
+               VE.getTypeID(RHS.first->getType());
+      // Then by frequency.
+      return LHS.second > RHS.second;
+    }
+  };
+}
+
 /// OptimizeConstants - Reorder constant pool for denser encoding.
 void ValueEnumerator::OptimizeConstants(unsigned CstStart, unsigned CstEnd) {
   if (CstStart == CstEnd || CstStart+1 == CstEnd) return;
 
-  std::stable_sort(Values.begin() + CstStart, Values.begin() + CstEnd,
-                   [this](const std::pair<const Value *, unsigned> &LHS,
-                          const std::pair<const Value *, unsigned> &RHS) {
-    // Sort by plane.
-    if (LHS.first->getType() != RHS.first->getType())
-      return getTypeID(LHS.first->getType()) < getTypeID(RHS.first->getType());
-    // Then by frequency.
-    return LHS.second > RHS.second;
-  });
+  CstSortPredicate P(*this);
+  std::stable_sort(Values.begin()+CstStart, Values.begin()+CstEnd, P);
 
   // Ensure that integer and vector of integer constants are at the start of the
   // constant pool.  This is important so that GEP structure indices come before
@@ -312,10 +315,6 @@ void ValueEnumerator::EnumerateValue(const Value *V) {
     Values[ValueID-1].second++;
     return;
   }
-
-  if (auto *GO = dyn_cast<GlobalObject>(V))
-    if (const Comdat *C = GO->getComdat())
-      Comdats.insert(C);
 
   // Enumerate the type of this value.
   EnumerateType(V->getType());

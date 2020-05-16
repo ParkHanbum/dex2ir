@@ -17,45 +17,55 @@
 
 namespace llvm {
 
+typedef std::vector<DWARFAbbreviationDeclaration>
+  DWARFAbbreviationDeclarationColl;
+typedef DWARFAbbreviationDeclarationColl::iterator
+  DWARFAbbreviationDeclarationCollIter;
+typedef DWARFAbbreviationDeclarationColl::const_iterator
+  DWARFAbbreviationDeclarationCollConstIter;
+
 class DWARFAbbreviationDeclarationSet {
   uint32_t Offset;
-  /// Code of the first abbreviation, if all abbreviations in the set have
-  /// consecutive codes. UINT32_MAX otherwise.
-  uint32_t FirstAbbrCode;
+  uint32_t IdxOffset;
   std::vector<DWARFAbbreviationDeclaration> Decls;
+  public:
+  DWARFAbbreviationDeclarationSet()
+    : Offset(0), IdxOffset(0) {}
 
-public:
-  DWARFAbbreviationDeclarationSet();
+  DWARFAbbreviationDeclarationSet(uint32_t offset, uint32_t idxOffset)
+    : Offset(offset), IdxOffset(idxOffset) {}
 
+  void clear() {
+    IdxOffset = 0;
+    Decls.clear();
+  }
   uint32_t getOffset() const { return Offset; }
   void dump(raw_ostream &OS) const;
-  bool extract(DataExtractor Data, uint32_t *OffsetPtr);
+  bool extract(DataExtractor data, uint32_t* offset_ptr);
 
   const DWARFAbbreviationDeclaration *
-  getAbbreviationDeclaration(uint32_t AbbrCode) const;
-
-private:
-  void clear();
+    getAbbreviationDeclaration(uint32_t abbrCode) const;
 };
 
 class DWARFDebugAbbrev {
+public:
   typedef std::map<uint64_t, DWARFAbbreviationDeclarationSet>
-    DWARFAbbreviationDeclarationSetMap;
+    DWARFAbbreviationDeclarationCollMap;
+  typedef DWARFAbbreviationDeclarationCollMap::iterator
+    DWARFAbbreviationDeclarationCollMapIter;
+  typedef DWARFAbbreviationDeclarationCollMap::const_iterator
+    DWARFAbbreviationDeclarationCollMapConstIter;
 
-  DWARFAbbreviationDeclarationSetMap AbbrDeclSets;
-  mutable DWARFAbbreviationDeclarationSetMap::const_iterator PrevAbbrOffsetPos;
+private:
+  DWARFAbbreviationDeclarationCollMap AbbrevCollMap;
+  mutable DWARFAbbreviationDeclarationCollMapConstIter PrevAbbrOffsetPos;
 
 public:
   DWARFDebugAbbrev();
-
   const DWARFAbbreviationDeclarationSet *
-  getAbbreviationDeclarationSet(uint64_t CUAbbrOffset) const;
-
+    getAbbreviationDeclarationSet(uint64_t cu_abbr_offset) const;
   void dump(raw_ostream &OS) const;
-  void extract(DataExtractor Data);
-
-private:
-  void clear();
+  void parse(DataExtractor data);
 };
 
 }

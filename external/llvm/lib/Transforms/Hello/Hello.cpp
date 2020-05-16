@@ -12,13 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "hello"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "hello"
 
 STATISTIC(HelloCounter, "Counts number of functions greeted");
 
@@ -28,7 +27,7 @@ namespace {
     static char ID; // Pass identification, replacement for typeid
     Hello() : FunctionPass(ID) {}
 
-    bool runOnFunction(Function &F) override {
+    virtual bool runOnFunction(Function &F) {
       ++HelloCounter;
       errs() << "Hello: ";
       errs().write_escaped(F.getName()) << '\n';
@@ -46,15 +45,15 @@ namespace {
     static char ID; // Pass identification, replacement for typeid
     Hello2() : FunctionPass(ID) {}
 
-    bool runOnFunction(Function &F) override {
+    virtual bool runOnFunction(Function &F) {
       ++HelloCounter;
       errs() << "Hello: ";
       errs().write_escaped(F.getName()) << '\n';
       return false;
     }
 
-    // We don't modify the program, so we preserve all analyses.
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    // We don't modify the program, so we preserve all analyses
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
     }
   };

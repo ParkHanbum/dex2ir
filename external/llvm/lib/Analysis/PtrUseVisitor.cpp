@@ -16,13 +16,14 @@
 using namespace llvm;
 
 void detail::PtrUseVisitorBase::enqueueUsers(Instruction &I) {
-  for (Use &U : I.uses()) {
-    if (VisitedUses.insert(&U)) {
+  for (Value::use_iterator UI = I.use_begin(), UE = I.use_end();
+       UI != UE; ++UI) {
+    if (VisitedUses.insert(&UI.getUse())) {
       UseToVisit NewU = {
-        UseToVisit::UseAndIsOffsetKnownPair(&U, IsOffsetKnown),
+        UseToVisit::UseAndIsOffsetKnownPair(&UI.getUse(), IsOffsetKnown),
         Offset
       };
-      Worklist.push_back(std::move(NewU));
+      Worklist.push_back(llvm_move(NewU));
     }
   }
 }

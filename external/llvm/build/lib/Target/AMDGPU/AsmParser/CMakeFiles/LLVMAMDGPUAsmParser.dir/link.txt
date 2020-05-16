@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMAMDGPUAsmParser.a  CMakeFiles/LLVMAMDGPUAsmParser.dir/AMDGPUAsmParser.cpp.o
+/usr/bin/ranlib ../../../libLLVMAMDGPUAsmParser.a

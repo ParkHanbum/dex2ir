@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "processimplicitdefs"
+
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -18,8 +20,6 @@
 #include "llvm/Target/TargetInstrInfo.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "processimplicitdefs"
 
 namespace {
 /// Process IMPLICIT_DEF instructions and make sure there is one implicit_def
@@ -41,9 +41,9 @@ public:
     initializeProcessImplicitDefsPass(*PassRegistry::getPassRegistry());
   }
 
-  void getAnalysisUsage(AnalysisUsage &au) const override;
+  virtual void getAnalysisUsage(AnalysisUsage &au) const;
 
-  bool runOnMachineFunction(MachineFunction &fn) override;
+  virtual bool runOnMachineFunction(MachineFunction &fn);
 };
 } // end anonymous namespace
 
@@ -78,9 +78,12 @@ void ProcessImplicitDefs::processImplicitDef(MachineInstr *MI) {
   unsigned Reg = MI->getOperand(0).getReg();
 
   if (TargetRegisterInfo::isVirtualRegister(Reg)) {
-    // For virtual registers, mark all uses as <undef>, and convert users to
+    // For virtual regiusters, mark all uses as <undef>, and convert users to
     // implicit-def when possible.
-    for (MachineOperand &MO : MRI->use_nodbg_operands(Reg)) {
+    for (MachineRegisterInfo::use_nodbg_iterator UI =
+         MRI->use_nodbg_begin(Reg),
+         UE = MRI->use_nodbg_end(); UI != UE; ++UI) {
+      MachineOperand &MO = UI.getOperand();
       MO.setIsUndef();
       MachineInstr *UserMI = MO.getParent();
       if (!canTurnIntoImplicitDef(UserMI))

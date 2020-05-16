@@ -11,14 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "flattencfg"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/IR/CFG.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Transforms/Utils/Local.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "flattencfg"
 
 namespace {
 struct FlattenCFGPass : public FunctionPass {
@@ -27,9 +26,9 @@ public:
   FlattenCFGPass() : FunctionPass(ID) {
     initializeFlattenCFGPassPass(*PassRegistry::getPassRegistry());
   }
-  bool runOnFunction(Function &F) override;
+  bool runOnFunction(Function &F);
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
+  void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<AliasAnalysis>();
   }
 

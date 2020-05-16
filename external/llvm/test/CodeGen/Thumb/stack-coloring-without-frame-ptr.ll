@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=thumb-eabi -mcpu=arm1022e %s -o /dev/null
+; RUN: llc < %s -march=thumb -mcpu=arm1022e
 
 %iterator = type { i8**, i8**, i8**, i8*** }
 %insert_iterator = type { %deque*, %iterator }

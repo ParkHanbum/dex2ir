@@ -16,6 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "loop-unroll"
 #include "llvm/Transforms/Utils/UnrollLoop.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/InstructionSimplify.h"
@@ -23,20 +24,13 @@
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
-#include "llvm/Transforms/Utils/LoopUtils.h"
 #include "llvm/Transforms/Utils/SimplifyIndVar.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "loop-unroll"
 
 // TODO: Should these be here or in LoopUnroll?
 STATISTIC(NumCompletelyUnrolled, "Number of loops completely unrolled");
@@ -72,10 +66,10 @@ static BasicBlock *FoldBlockIntoPredecessor(BasicBlock *BB, LoopInfo* LI,
   // pred, and if there is only one distinct successor of the predecessor, and
   // if there are no PHI nodes.
   BasicBlock *OnlyPred = BB->getSinglePredecessor();
-  if (!OnlyPred) return nullptr;
+  if (!OnlyPred) return 0;
 
   if (OnlyPred->getTerminator()->getNumSuccessors() != 1)
-    return nullptr;
+    return 0;
 
   DEBUG(dbgs() << "Merging: " << *BB << "into: " << *OnlyPred);
 
@@ -96,8 +90,7 @@ static BasicBlock *FoldBlockIntoPredecessor(BasicBlock *BB, LoopInfo* LI,
   // Move all definitions in the successor to the predecessor...
   OnlyPred->getInstList().splice(OnlyPred->end(), BB->getInstList());
 
-  // OldName will be valid until erased.
-  StringRef OldName = BB->getName();
+  std::string OldName = BB->getName();
 
   // Erase basic block from the function...
 
@@ -109,12 +102,11 @@ static BasicBlock *FoldBlockIntoPredecessor(BasicBlock *BB, LoopInfo* LI,
     }
   }
   LI->removeBlock(BB);
+  BB->eraseFromParent();
 
   // Inherit predecessor's name if it exists...
   if (!OldName.empty() && !OnlyPred->hasName())
     OnlyPred->setName(OldName);
-
-  BB->eraseFromParent();
 
   return OnlyPred;
 }
@@ -143,10 +135,10 @@ static BasicBlock *FoldBlockIntoPredecessor(BasicBlock *BB, LoopInfo* LI,
 /// removed from the LoopPassManager as well. LPM can also be NULL.
 ///
 /// This utility preserves LoopInfo. If DominatorTree or ScalarEvolution are
-/// available from the Pass it must also preserve those analyses.
+/// available it must also preserve those analyses.
 bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
                       bool AllowRuntime, unsigned TripMultiple,
-                      LoopInfo *LI, Pass *PP, LPPassManager *LPM) {
+                      LoopInfo *LI, LPPassManager *LPM) {
   BasicBlock *Preheader = L->getLoopPreheader();
   if (!Preheader) {
     DEBUG(dbgs() << "  Can't unroll; loop preheader-insertion failed.\n");
@@ -214,8 +206,8 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
 
   // Notify ScalarEvolution that the loop will be substantially changed,
   // if not outright eliminated.
-  if (PP) {
-    ScalarEvolution *SE = PP->getAnalysisIfAvailable<ScalarEvolution>();
+  if (LPM) {
+    ScalarEvolution *SE = LPM->getAnalysisIfAvailable<ScalarEvolution>();
     if (SE)
       SE->forgetLoop(L);
   }
@@ -231,38 +223,23 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
       (unsigned)GreatestCommonDivisor64(Count, TripMultiple);
   }
 
-  // Report the unrolling decision.
-  DebugLoc LoopLoc = L->getStartLoc();
-  Function *F = Header->getParent();
-  LLVMContext &Ctx = F->getContext();
-
   if (CompletelyUnroll) {
     DEBUG(dbgs() << "COMPLETELY UNROLLING loop %" << Header->getName()
           << " with trip count " << TripCount << "!\n");
-    emitOptimizationRemark(Ctx, DEBUG_TYPE, *F, LoopLoc,
-                           Twine("completely unrolled loop with ") +
-                               Twine(TripCount) + " iterations");
   } else {
-    auto EmitDiag = [&](const Twine &T) {
-      emitOptimizationRemark(Ctx, DEBUG_TYPE, *F, LoopLoc,
-                             "unrolled loop by a factor of " + Twine(Count) +
-                                 T);
-    };
-
     DEBUG(dbgs() << "UNROLLING loop %" << Header->getName()
           << " by " << Count);
     if (TripMultiple == 0 || BreakoutTrip != TripMultiple) {
       DEBUG(dbgs() << " with a breakout at trip " << BreakoutTrip);
-      EmitDiag(" with a breakout at trip " + Twine(BreakoutTrip));
     } else if (TripMultiple != 1) {
       DEBUG(dbgs() << " with " << TripMultiple << " trips per branch");
-      EmitDiag(" with " + Twine(TripMultiple) + " trips per branch");
     } else if (RuntimeTripCount) {
       DEBUG(dbgs() << " with run-time trip count");
-      EmitDiag(" with run-time trip count");
     }
     DEBUG(dbgs() << "!\n");
   }
+
+  std::vector<BasicBlock*> LoopBlocks = L->getBlocks();
 
   bool ContinueOnTrue = L->contains(BI->getSuccessor(0));
   BasicBlock *LoopExit = BI->getSuccessor(ContinueOnTrue);
@@ -432,18 +409,14 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
     }
   }
 
-  DominatorTree *DT = nullptr;
-  if (PP) {
+  if (LPM) {
     // FIXME: Reconstruct dom info, because it is not preserved properly.
     // Incrementally updating domtree after loop unrolling would be easy.
-    if (DominatorTreeWrapperPass *DTWP =
-            PP->getAnalysisIfAvailable<DominatorTreeWrapperPass>()) {
-      DT = &DTWP->getDomTree();
-      DT->recalculate(*L->getHeader()->getParent());
-    }
+    if (DominatorTree *DT = LPM->getAnalysisIfAvailable<DominatorTree>())
+      DT->runOnFunction(*L->getHeader()->getParent());
 
     // Simplify any new induction variables in the partially unrolled loop.
-    ScalarEvolution *SE = PP->getAnalysisIfAvailable<ScalarEvolution>();
+    ScalarEvolution *SE = LPM->getAnalysisIfAvailable<ScalarEvolution>();
     if (SE && !CompletelyUnroll) {
       SmallVector<WeakVH, 16> DeadInsts;
       simplifyLoopIVs(L, SE, LPM, DeadInsts);
@@ -476,36 +449,9 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
 
   NumCompletelyUnrolled += CompletelyUnroll;
   ++NumUnrolled;
-
-  Loop *OuterL = L->getParentLoop();
   // Remove the loop from the LoopPassManager if it's completely removed.
-  if (CompletelyUnroll && LPM != nullptr)
+  if (CompletelyUnroll && LPM != NULL)
     LPM->deleteLoopFromQueue(L);
-
-  // If we have a pass and a DominatorTree we should re-simplify impacted loops
-  // to ensure subsequent analyses can rely on this form. We want to simplify
-  // at least one layer outside of the loop that was unrolled so that any
-  // changes to the parent loop exposed by the unrolling are considered.
-  if (PP && DT) {
-    if (!OuterL && !CompletelyUnroll)
-      OuterL = L;
-    if (OuterL) {
-      DataLayoutPass *DLP = PP->getAnalysisIfAvailable<DataLayoutPass>();
-      const DataLayout *DL = DLP ? &DLP->getDataLayout() : nullptr;
-      ScalarEvolution *SE = PP->getAnalysisIfAvailable<ScalarEvolution>();
-      simplifyLoop(OuterL, DT, LI, PP, /*AliasAnalysis*/ nullptr, SE, DL);
-
-      // LCSSA must be performed on the outermost affected loop. The unrolled
-      // loop's last loop latch is guaranteed to be in the outermost loop after
-      // deleteLoopFromQueue updates LoopInfo.
-      Loop *LatchLoop = LI->getLoopFor(Latches.back());
-      if (!OuterL->contains(LatchLoop))
-        while (OuterL->getParentLoop() != LatchLoop)
-          OuterL = OuterL->getParentLoop();
-
-      formLCSSARecursively(*OuterL, *DT, SE);
-    }
-  }
 
   return true;
 }

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../libLLVMBPFCodeGen.a  CMakeFiles/LLVMBPFCodeGen.dir/BPFAsmPrinter.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFFrameLowering.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFInstrInfo.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFISelDAGToDAG.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFISelLowering.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFMCInstLower.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFRegisterInfo.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFSubtarget.cpp.o CMakeFiles/LLVMBPFCodeGen.dir/BPFTargetMachine.cpp.o
+/usr/bin/ranlib ../../libLLVMBPFCodeGen.a

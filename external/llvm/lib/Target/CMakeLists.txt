@@ -1,4 +1,5 @@
 add_llvm_library(LLVMTarget
+  Mangler.cpp
   Target.cpp
   TargetIntrinsicInfo.cpp
   TargetJITInfo.cpp
@@ -8,8 +9,6 @@ add_llvm_library(LLVMTarget
   TargetMachineC.cpp
   TargetSubtargetInfo.cpp
   )
-
-list(APPEND LLVM_COMMON_DEPENDS intrinsics_gen)
 
 foreach(t ${LLVM_TARGETS_TO_BUILD})
   message(STATUS "Targeting ${t}")

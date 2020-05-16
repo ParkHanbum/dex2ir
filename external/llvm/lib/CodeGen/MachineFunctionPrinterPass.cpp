@@ -34,14 +34,14 @@ struct MachineFunctionPrinterPass : public MachineFunctionPass {
   MachineFunctionPrinterPass(raw_ostream &os, const std::string &banner) 
       : MachineFunctionPass(ID), OS(os), Banner(banner) {}
 
-  const char *getPassName() const override { return "MachineFunction Printer"; }
+  const char *getPassName() const { return "MachineFunction Printer"; }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesAll();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
-  bool runOnMachineFunction(MachineFunction &MF) override {
+  bool runOnMachineFunction(MachineFunction &MF) {
     OS << "# " << Banner << ":\n";
     MF.print(OS, getAnalysisIfAvailable<SlotIndexes>());
     return false;

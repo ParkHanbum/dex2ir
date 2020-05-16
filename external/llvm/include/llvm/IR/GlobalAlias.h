@@ -66,25 +66,14 @@ public:
   }
   /// getAliasedGlobal() - Aliasee can be either global or bitcast of
   /// global. This method retrives the global for both aliasee flavours.
-  GlobalValue *getAliasedGlobal();
-  const GlobalValue *getAliasedGlobal() const {
-    return const_cast<GlobalAlias *>(this)->getAliasedGlobal();
-  }
+  const GlobalValue *getAliasedGlobal() const;
 
   /// resolveAliasedGlobal() - This method tries to ultimately resolve the alias
   /// by going through the aliasing chain and trying to find the very last
   /// global. Returns NULL if a cycle was found. If stopOnWeak is false, then
   /// the whole chain aliasing chain is traversed, otherwise - only strong
   /// aliases.
-  GlobalValue *resolveAliasedGlobal(bool stopOnWeak = true);
-  const GlobalValue *resolveAliasedGlobal(bool stopOnWeak = true) const {
-    return const_cast<GlobalAlias *>(this)->resolveAliasedGlobal(stopOnWeak);
-  }
-
-  static bool isValidLinkage(LinkageTypes L) {
-    return isExternalLinkage(L) || isLocalLinkage(L) ||
-      isWeakLinkage(L) || isLinkOnceLinkage(L);
-  }
+  const GlobalValue *resolveAliasedGlobal(bool stopOnWeak = true) const;
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const Value *V) {

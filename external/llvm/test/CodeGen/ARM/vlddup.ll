@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -float-abi=soft -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 
 define <8 x i8> @vld1dupi8(i8* %A) nounwind {
 ;CHECK-LABEL: vld1dupi8:

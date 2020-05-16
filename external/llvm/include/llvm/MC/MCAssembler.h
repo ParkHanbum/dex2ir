@@ -19,7 +19,6 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/DataTypes.h"
-#include <algorithm>
 #include <vector> // FIXME: Shouldn't be needed.
 
 namespace mcld {
@@ -825,9 +824,6 @@ public:
   typedef SymbolDataListType::const_iterator const_symbol_iterator;
   typedef SymbolDataListType::iterator symbol_iterator;
 
-  typedef std::vector<std::string> FileNameVectorType;
-  typedef FileNameVectorType::const_iterator const_file_name_iterator;
-
   typedef std::vector<IndirectSymbolData>::const_iterator
     const_indirect_symbol_iterator;
   typedef std::vector<IndirectSymbolData>::iterator indirect_symbol_iterator;
@@ -870,9 +866,6 @@ private:
 
   /// The list of linker options to propagate into the object file.
   std::vector<std::vector<std::string> > LinkerOptions;
-
-  /// List of declared file names
-  FileNameVectorType FileNames;
 
   /// The set of function symbols for which a .thumb_func directive has
   /// been seen.
@@ -1167,20 +1160,6 @@ public:
       Entry = new MCSymbolData(Symbol, 0, 0, this);
 
     return *Entry;
-  }
-
-  const_file_name_iterator file_names_begin() const {
-    return FileNames.begin();
-  }
-
-  const_file_name_iterator file_names_end() const {
-    return FileNames.end();
-  }
-
-  void addFileName(StringRef FileName) {
-    if (std::find(file_names_begin(), file_names_end(), FileName) ==
-        file_names_end())
-      FileNames.push_back(FileName);
   }
 
   /// @}

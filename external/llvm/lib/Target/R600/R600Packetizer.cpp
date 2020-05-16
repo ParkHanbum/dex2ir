@@ -14,9 +14,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "packets"
 #include "llvm/Support/Debug.h"
 #include "AMDGPU.h"
-#include "AMDGPUSubtarget.h"
 #include "R600InstrInfo.h"
 #include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/MachineDominators.h"
@@ -28,8 +28,6 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "packets"
-
 namespace {
 
 class R600Packetizer : public MachineFunctionPass {
@@ -38,7 +36,7 @@ public:
   static char ID;
   R600Packetizer(const TargetMachine &TM) : MachineFunctionPass(ID) {}
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
+  void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesCFG();
     AU.addRequired<MachineDominatorTree>();
     AU.addPreserved<MachineDominatorTree>();
@@ -47,11 +45,11 @@ public:
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
-  const char *getPassName() const override {
+  const char *getPassName() const {
     return "R600 Packetizer";
   }
 
-  bool runOnMachineFunction(MachineFunction &Fn) override;
+  bool runOnMachineFunction(MachineFunction &Fn);
 };
 char R600Packetizer::ID = 0;
 
@@ -60,15 +58,13 @@ class R600PacketizerList : public VLIWPacketizerList {
 private:
   const R600InstrInfo *TII;
   const R600RegisterInfo &TRI;
-  bool VLIW5;
-  bool ConsideredInstUsesAlreadyWrittenVectorElement;
 
   unsigned getSlot(const MachineInstr *MI) const {
     return TRI.getHWRegChan(MI->getOperand(0).getReg());
   }
 
   /// \returns register to PV chan mapping for bundle/single instructions that
-  /// immediately precedes I.
+  /// immediatly precedes I.
   DenseMap<unsigned, unsigned> getPreviousVector(MachineBasicBlock::iterator I)
       const {
     DenseMap<unsigned, unsigned> Result;
@@ -78,13 +74,7 @@ private:
     MachineBasicBlock::instr_iterator BI = I.getInstrIterator();
     if (I->isBundle())
       BI++;
-    int LastDstChan = -1;
     do {
-      bool isTrans = false;
-      int BISlot = getSlot(BI);
-      if (LastDstChan >= BISlot)
-        isTrans = true;
-      LastDstChan = BISlot;
       if (TII->isPredicated(BI))
         continue;
       int OperandIdx = TII->getOperandIdx(BI->getOpcode(), AMDGPU::OpName::write);
@@ -95,7 +85,7 @@ private:
         continue;
       }
       unsigned Dst = BI->getOperand(DstIdx).getReg();
-      if (isTrans || TII->isTransOnly(BI)) {
+      if (TII->isTransOnly(BI)) {
         Result[Dst] = AMDGPU::PS;
         continue;
       }
@@ -152,24 +142,19 @@ public:
                         MachineDominatorTree &MDT)
   : VLIWPacketizerList(MF, MLI, MDT, true),
     TII (static_cast<const R600InstrInfo *>(MF.getTarget().getInstrInfo())),
-    TRI(TII->getRegisterInfo()) {
-    VLIW5 = !MF.getTarget().getSubtarget<AMDGPUSubtarget>().hasCaymanISA();
-  }
+    TRI(TII->getRegisterInfo()) { }
 
   // initPacketizerState - initialize some internal flags.
-  void initPacketizerState() override {
-    ConsideredInstUsesAlreadyWrittenVectorElement = false;
-  }
+  void initPacketizerState() { }
 
   // ignorePseudoInstruction - Ignore bundling of pseudo instructions.
-  bool ignorePseudoInstruction(MachineInstr *MI,
-                               MachineBasicBlock *MBB) override {
+  bool ignorePseudoInstruction(MachineInstr *MI, MachineBasicBlock *MBB) {
     return false;
   }
 
   // isSoloInstruction - return true if instruction MI can not be packetized
   // with any other instruction, which means that MI itself is a packet.
-  bool isSoloInstruction(MachineInstr *MI) override {
+  bool isSoloInstruction(MachineInstr *MI) {
     if (TII->isVector(*MI))
       return true;
     if (!TII->isALUInstr(MI->getOpcode()))
@@ -185,10 +170,10 @@ public:
 
   // isLegalToPacketizeTogether - Is it legal to packetize SUI and SUJ
   // together.
-  bool isLegalToPacketizeTogether(SUnit *SUI, SUnit *SUJ) override {
+  bool isLegalToPacketizeTogether(SUnit *SUI, SUnit *SUJ) {
     MachineInstr *MII = SUI->getInstr(), *MIJ = SUJ->getInstr();
-    if (getSlot(MII) == getSlot(MIJ))
-      ConsideredInstUsesAlreadyWrittenVectorElement = true;
+    if (getSlot(MII) <= getSlot(MIJ) && !TII->isTransOnly(MII))
+      return false;
     // Does MII and MIJ share the same pred_sel ?
     int OpI = TII->getOperandIdx(MII->getOpcode(), AMDGPU::OpName::pred_sel),
         OpJ = TII->getOperandIdx(MIJ->getOpcode(), AMDGPU::OpName::pred_sel);
@@ -209,22 +194,12 @@ public:
         return false;
       }
     }
-
-    bool ARDef = TII->definesAddressRegister(MII) ||
-                 TII->definesAddressRegister(MIJ);
-    bool ARUse = TII->usesAddressRegister(MII) ||
-                 TII->usesAddressRegister(MIJ);
-    if (ARDef && ARUse)
-      return false;
-
     return true;
   }
 
   // isLegalToPruneDependencies - Is it legal to prune dependece between SUI
   // and SUJ.
-  bool isLegalToPruneDependencies(SUnit *SUI, SUnit *SUJ) override {
-    return false;
-  }
+  bool isLegalToPruneDependencies(SUnit *SUI, SUnit *SUJ) {return false;}
 
   void setIsLastBit(MachineInstr *MI, unsigned Bit) const {
     unsigned LastOp = TII->getOperandIdx(MI->getOpcode(), AMDGPU::OpName::last);
@@ -236,20 +211,6 @@ public:
                                  std::vector<R600InstrInfo::BankSwizzle> &BS,
                                  bool &isTransSlot) {
     isTransSlot = TII->isTransOnly(MI);
-    assert (!isTransSlot || VLIW5);
-
-    // Is the dst reg sequence legal ?
-    if (!isTransSlot && !CurrentPacketMIs.empty()) {
-      if (getSlot(MI) <= getSlot(CurrentPacketMIs.back())) {
-        if (ConsideredInstUsesAlreadyWrittenVectorElement  &&
-            !TII->isVectorOnly(MI) && VLIW5) {
-          isTransSlot = true;
-          DEBUG(dbgs() << "Considering as Trans Inst :"; MI->dump(););
-        }
-        else
-          return false;
-      }
-    }
 
     // Are the Constants limitations met ?
     CurrentPacketMIs.push_back(MI);
@@ -285,15 +246,11 @@ public:
       return false;
     }
 
-    // We cannot read LDS source registrs from the Trans slot.
-    if (isTransSlot && TII->readsLDSSrcReg(MI))
-      return false;
-
     CurrentPacketMIs.pop_back();
     return true;
   }
 
-  MachineBasicBlock::iterator addToPacket(MachineInstr *MI) override {
+  MachineBasicBlock::iterator addToPacket(MachineInstr *MI) {
     MachineBasicBlock::iterator FirstInBundle =
         CurrentPacketMIs.empty() ? MI : CurrentPacketMIs.front();
     const DenseMap<unsigned, unsigned> &PV =
@@ -316,13 +273,11 @@ public:
       substitutePV(MI, PV);
       MachineBasicBlock::iterator It = VLIWPacketizerList::addToPacket(MI);
       if (isTransSlot) {
-        endPacket(std::next(It)->getParent(), std::next(It));
+        endPacket(llvm::next(It)->getParent(), llvm::next(It));
       }
       return It;
     }
     endPacket(MI->getParent(), MI);
-    if (TII->isTransOnly(MI))
-      return MI;
     return VLIWPacketizerList::addToPacket(MI);
   }
 };
@@ -353,7 +308,7 @@ bool R600Packetizer::runOnMachineFunction(MachineFunction &Fn) {
     MachineBasicBlock::iterator End = MBB->end();
     MachineBasicBlock::iterator MI = MBB->begin();
     while (MI != End) {
-      if (MI->isKill() || MI->getOpcode() == AMDGPU::IMPLICIT_DEF ||
+      if (MI->isKill() ||
           (MI->getOpcode() == AMDGPU::CF_ALU && !MI->getOperand(8).getImm())) {
         MachineBasicBlock::iterator DeleteMI = MI;
         ++MI;
@@ -376,20 +331,20 @@ bool R600Packetizer::runOnMachineFunction(MachineFunction &Fn) {
       // instruction stream until we find the nearest boundary.
       MachineBasicBlock::iterator I = RegionEnd;
       for(;I != MBB->begin(); --I, --RemainingCount) {
-        if (TII->isSchedulingBoundary(std::prev(I), MBB, Fn))
+        if (TII->isSchedulingBoundary(llvm::prior(I), MBB, Fn))
           break;
       }
       I = MBB->begin();
 
       // Skip empty scheduling regions.
       if (I == RegionEnd) {
-        RegionEnd = std::prev(RegionEnd);
+        RegionEnd = llvm::prior(RegionEnd);
         --RemainingCount;
         continue;
       }
       // Skip regions with one instruction.
-      if (I == std::prev(RegionEnd)) {
-        RegionEnd = std::prev(RegionEnd);
+      if (I == llvm::prior(RegionEnd)) {
+        RegionEnd = llvm::prior(RegionEnd);
         continue;
       }
 

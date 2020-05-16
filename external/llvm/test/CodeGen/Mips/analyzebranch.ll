@@ -1,25 +1,9 @@
-; RUN: llc -march=mips -mcpu=mips32   < %s | FileCheck %s -check-prefix=ALL -check-prefix=FCC
-; RUN: llc -march=mips -mcpu=mips32r2 < %s | FileCheck %s -check-prefix=ALL -check-prefix=FCC
-; RUN: llc -march=mips -mcpu=mips32r6 < %s | FileCheck %s -check-prefix=ALL -check-prefix=GPR -check-prefix=32-GPR
-; RUN: llc -march=mips64 -mcpu=mips4    < %s | FileCheck %s -check-prefix=ALL -check-prefix=FCC
-; RUN: llc -march=mips64 -mcpu=mips64   < %s | FileCheck %s -check-prefix=ALL -check-prefix=FCC
-; RUN: llc -march=mips64 -mcpu=mips64r2 < %s | FileCheck %s -check-prefix=ALL -check-prefix=FCC
-; RUN: llc -march=mips64 -mcpu=mips64r6 < %s | FileCheck %s -check-prefix=ALL -check-prefix=GPR -check-prefix=64-GPR
+; RUN: llc -march=mips < %s | FileCheck %s
 
 define double @foo(double %a, double %b) nounwind readnone {
 entry:
-; ALL-LABEL: foo:
-
-; FCC:           bc1f $BB
-; FCC:           nop
-
-; 32-GPR:        mtc1      $zero, $[[Z:f[0-9]]]
-; 32-GPR:        mthc1     $zero, $[[Z:f[0-9]]]
-; 64-GPR:        dmtc1     $zero, $[[Z:f[0-9]]]
-; GPR:           cmp.lt.d  $[[FGRCC:f[0-9]+]], $[[Z]], $f12
-; GPR:           mfc1      $[[GPRCC:[0-9]+]], $[[FGRCC]]
-; GPR-NOT:       not       $[[GPRCC]], $[[GPRCC]]
-; GPR:           bnez      $[[GPRCC]], $BB
+; CHECK: bc1f $BB
+; CHECK: nop
 
   %cmp = fcmp ogt double %a, 0.000000e+00
   br i1 %cmp, label %if.end6, label %if.else
@@ -41,17 +25,8 @@ return:                                           ; preds = %if.else, %if.end6
 
 define void @f1(float %f) nounwind {
 entry:
-; ALL-LABEL: f1:
-
-; FCC:           bc1f $BB
-; FCC:           nop
-
-; GPR:           mtc1     $zero, $[[Z:f[0-9]]]
-; GPR:           cmp.eq.s $[[FGRCC:f[0-9]+]], $f12, $[[Z]]
-; GPR:           mfc1     $[[GPRCC:[0-9]+]], $[[FGRCC]]
-; GPR-NOT:       not      $[[GPRCC]], $[[GPRCC]]
-; GPR:           beqz     $[[GPRCC]], $BB
-
+; CHECK: bc1f $BB
+; CHECK: nop
   %cmp = fcmp une float %f, 0.000000e+00
   br i1 %cmp, label %if.then, label %if.end
 

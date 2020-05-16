@@ -1,5 +1,4 @@
-; RUN: opt < %s -instcombine -S | FileCheck %s
-; CHECK: select
+; RUN: opt < %s -instcombine -S | grep select
 ; END.
 
 target datalayout = "e-p:32:32"

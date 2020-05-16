@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMPowerPCAsmParser.a  CMakeFiles/LLVMPowerPCAsmParser.dir/PPCAsmParser.cpp.o
+/usr/bin/ranlib ../../../libLLVMPowerPCAsmParser.a

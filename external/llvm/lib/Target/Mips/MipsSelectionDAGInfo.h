@@ -22,7 +22,7 @@ class MipsTargetMachine;
 
 class MipsSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit MipsSelectionDAGInfo(const DataLayout &DL);
+  explicit MipsSelectionDAGInfo(const MipsTargetMachine &TM);
   ~MipsSelectionDAGInfo();
 };
 

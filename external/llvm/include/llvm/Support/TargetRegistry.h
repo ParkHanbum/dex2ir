@@ -46,18 +46,18 @@ namespace llvm {
   class MCRelocationInfo;
   class MCTargetAsmParser;
   class TargetMachine;
-  class MCTargetStreamer;
   class TargetOptions;
   class raw_ostream;
   class formatted_raw_ostream;
 
-  MCStreamer *createAsmStreamer(MCContext &Ctx,
-                                MCTargetStreamer *TargetStreamer,
-                                formatted_raw_ostream &OS, bool isVerboseAsm,
+  MCStreamer *createAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
+                                bool isVerboseAsm,
                                 bool useLoc, bool useCFI,
                                 bool useDwarfDirectory,
-                                MCInstPrinter *InstPrint, MCCodeEmitter *CE,
-                                MCAsmBackend *TAB, bool ShowInst);
+                                MCInstPrinter *InstPrint,
+                                MCCodeEmitter *CE,
+                                MCAsmBackend *TAB,
+                                bool ShowInst);
 
   MCRelocationInfo *createMCRelocationInfo(StringRef TT, MCContext &Ctx);
 
@@ -104,12 +104,10 @@ namespace llvm {
     typedef AsmPrinter *(*AsmPrinterCtorTy)(TargetMachine &TM,
                                             MCStreamer &Streamer);
     typedef MCAsmBackend *(*MCAsmBackendCtorTy)(const Target &T,
-                                                const MCRegisterInfo &MRI,
                                                 StringRef TT,
                                                 StringRef CPU);
     typedef MCTargetAsmParser *(*MCAsmParserCtorTy)(MCSubtargetInfo &STI,
-                                                    MCAsmParser &P,
-                                                    const MCInstrInfo &MII);
+                                                    MCAsmParser &P);
     typedef MCDisassembler *(*MCDisassemblerCtorTy)(const Target &T,
                                                     const MCSubtargetInfo &STI);
     typedef MCInstPrinter *(*MCInstPrinterCtorTy)(const Target &T,
@@ -236,9 +234,9 @@ namespace llvm {
     MCSymbolizerCtorTy MCSymbolizerCtorFn;
 
   public:
-    Target()
-        : AsmStreamerCtorFn(0), MCRelocationInfoCtorFn(0),
-          MCSymbolizerCtorFn(0) {}
+    Target() : AsmStreamerCtorFn(llvm::createAsmStreamer),
+               MCRelocationInfoCtorFn(llvm::createMCRelocationInfo),
+               MCSymbolizerCtorFn(llvm::createMCSymbolizer) {}
 
     /// @name Target Information
     /// @{
@@ -264,6 +262,27 @@ namespace llvm {
 
     /// hasMCAsmBackend - Check if this target supports .o generation.
     bool hasMCAsmBackend() const { return MCAsmBackendCtorFn != 0; }
+
+    /// hasAsmParser - Check if this target supports .s parsing.
+    bool hasMCAsmParser() const { return MCAsmParserCtorFn != 0; }
+
+    /// hasAsmPrinter - Check if this target supports .s printing.
+    bool hasAsmPrinter() const { return AsmPrinterCtorFn != 0; }
+
+    /// hasMCDisassembler - Check if this target has a disassembler.
+    bool hasMCDisassembler() const { return MCDisassemblerCtorFn != 0; }
+
+    /// hasMCInstPrinter - Check if this target has an instruction printer.
+    bool hasMCInstPrinter() const { return MCInstPrinterCtorFn != 0; }
+
+    /// hasMCCodeEmitter - Check if this target supports instruction encoding.
+    bool hasMCCodeEmitter() const { return MCCodeEmitterCtorFn != 0; }
+
+    /// hasMCObjectStreamer - Check if this target supports streaming to files.
+    bool hasMCObjectStreamer() const { return MCObjectStreamerCtorFn != 0; }
+
+    /// hasAsmStreamer - Check if this target supports streaming to files.
+    bool hasAsmStreamer() const { return AsmStreamerCtorFn != 0; }
 
     /// @}
     /// @name Feature Constructors
@@ -354,11 +373,10 @@ namespace llvm {
     /// createMCAsmBackend - Create a target specific assembly parser.
     ///
     /// \param Triple The target triple string.
-    MCAsmBackend *createMCAsmBackend(const MCRegisterInfo &MRI,
-                                     StringRef Triple, StringRef CPU) const {
+    MCAsmBackend *createMCAsmBackend(StringRef Triple, StringRef CPU) const {
       if (!MCAsmBackendCtorFn)
         return 0;
-      return MCAsmBackendCtorFn(*this, MRI, Triple, CPU);
+      return MCAsmBackendCtorFn(*this, Triple, CPU);
     }
 
     /// createMCAsmParser - Create a target specific assembly parser.
@@ -366,11 +384,10 @@ namespace llvm {
     /// \param Parser The target independent parser implementation to use for
     /// parsing and lexing.
     MCTargetAsmParser *createMCAsmParser(MCSubtargetInfo &STI,
-                                         MCAsmParser &Parser,
-                                         const MCInstrInfo &MII) const {
+                                         MCAsmParser &Parser) const {
       if (!MCAsmParserCtorFn)
         return 0;
-      return MCAsmParserCtorFn(STI, Parser, MII);
+      return MCAsmParserCtorFn(STI, Parser);
     }
 
     /// createAsmPrinter - Create a target specific assembly printer pass.  This
@@ -440,13 +457,9 @@ namespace llvm {
                                   MCCodeEmitter *CE,
                                   MCAsmBackend *TAB,
                                   bool ShowInst) const {
-      if (AsmStreamerCtorFn)
-        return AsmStreamerCtorFn(Ctx, OS, isVerboseAsm, useLoc, useCFI,
-                                 useDwarfDirectory, InstPrint, CE, TAB,
-                                 ShowInst);
-      return llvm::createAsmStreamer(Ctx, 0, OS, isVerboseAsm, useLoc, useCFI,
-                                     useDwarfDirectory, InstPrint, CE, TAB,
-                                     ShowInst);
+      // AsmStreamerCtorFn is default to llvm::createAsmStreamer
+      return AsmStreamerCtorFn(Ctx, OS, isVerboseAsm, useLoc, useCFI,
+                               useDwarfDirectory, InstPrint, CE, TAB, ShowInst);
     }
 
     /// createMCRelocationInfo - Create a target specific MCRelocationInfo.
@@ -455,10 +468,7 @@ namespace llvm {
     /// \param Ctx The target context.
     MCRelocationInfo *
       createMCRelocationInfo(StringRef TT, MCContext &Ctx) const {
-      MCRelocationInfoCtorTy Fn = MCRelocationInfoCtorFn
-                                      ? MCRelocationInfoCtorFn
-                                      : llvm::createMCRelocationInfo;
-      return Fn(TT, Ctx);
+      return MCRelocationInfoCtorFn(TT, Ctx);
     }
 
     /// createMCSymbolizer - Create a target specific MCSymbolizer.
@@ -475,9 +485,8 @@ namespace llvm {
                        LLVMSymbolLookupCallback SymbolLookUp,
                        void *DisInfo,
                        MCContext *Ctx, MCRelocationInfo *RelInfo) const {
-      MCSymbolizerCtorTy Fn =
-          MCSymbolizerCtorFn ? MCSymbolizerCtorFn : llvm::createMCSymbolizer;
-      return Fn(TT, GetOpInfo, SymbolLookUp, DisInfo, Ctx, RelInfo);
+      return MCSymbolizerCtorFn(TT, GetOpInfo, SymbolLookUp, DisInfo,
+                                Ctx, RelInfo);
     }
 
     /// @}
@@ -598,7 +607,9 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct a MCAsmInfo for the target.
     static void RegisterMCAsmInfo(Target &T, Target::MCAsmInfoCtorFnTy Fn) {
-      T.MCAsmInfoCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.MCAsmInfoCtorFn)
+        T.MCAsmInfoCtorFn = Fn;
     }
 
     /// RegisterMCCodeGenInfo - Register a MCCodeGenInfo implementation for the
@@ -612,7 +623,9 @@ namespace llvm {
     /// @param Fn - A function to construct a MCCodeGenInfo for the target.
     static void RegisterMCCodeGenInfo(Target &T,
                                      Target::MCCodeGenInfoCtorFnTy Fn) {
-      T.MCCodeGenInfoCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.MCCodeGenInfoCtorFn)
+        T.MCCodeGenInfoCtorFn = Fn;
     }
 
     /// RegisterMCInstrInfo - Register a MCInstrInfo implementation for the
@@ -625,14 +638,18 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct a MCInstrInfo for the target.
     static void RegisterMCInstrInfo(Target &T, Target::MCInstrInfoCtorFnTy Fn) {
-      T.MCInstrInfoCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.MCInstrInfoCtorFn)
+        T.MCInstrInfoCtorFn = Fn;
     }
 
     /// RegisterMCInstrAnalysis - Register a MCInstrAnalysis implementation for
     /// the given target.
     static void RegisterMCInstrAnalysis(Target &T,
                                         Target::MCInstrAnalysisCtorFnTy Fn) {
-      T.MCInstrAnalysisCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.MCInstrAnalysisCtorFn)
+        T.MCInstrAnalysisCtorFn = Fn;
     }
 
     /// RegisterMCRegInfo - Register a MCRegisterInfo implementation for the
@@ -645,7 +662,9 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct a MCRegisterInfo for the target.
     static void RegisterMCRegInfo(Target &T, Target::MCRegInfoCtorFnTy Fn) {
-      T.MCRegInfoCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.MCRegInfoCtorFn)
+        T.MCRegInfoCtorFn = Fn;
     }
 
     /// RegisterMCSubtargetInfo - Register a MCSubtargetInfo implementation for
@@ -659,7 +678,9 @@ namespace llvm {
     /// @param Fn - A function to construct a MCSubtargetInfo for the target.
     static void RegisterMCSubtargetInfo(Target &T,
                                         Target::MCSubtargetInfoCtorFnTy Fn) {
-      T.MCSubtargetInfoCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.MCSubtargetInfoCtorFn)
+        T.MCSubtargetInfoCtorFn = Fn;
     }
 
     /// RegisterTargetMachine - Register a TargetMachine implementation for the
@@ -673,7 +694,9 @@ namespace llvm {
     /// @param Fn - A function to construct a TargetMachine for the target.
     static void RegisterTargetMachine(Target &T,
                                       Target::TargetMachineCtorTy Fn) {
-      T.TargetMachineCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.TargetMachineCtorFn)
+        T.TargetMachineCtorFn = Fn;
     }
 
     /// RegisterMCAsmBackend - Register a MCAsmBackend implementation for the
@@ -686,7 +709,8 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct an AsmBackend for the target.
     static void RegisterMCAsmBackend(Target &T, Target::MCAsmBackendCtorTy Fn) {
-      T.MCAsmBackendCtorFn = Fn;
+      if (!T.MCAsmBackendCtorFn)
+        T.MCAsmBackendCtorFn = Fn;
     }
 
     /// RegisterMCAsmParser - Register a MCTargetAsmParser implementation for
@@ -699,7 +723,8 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct an MCTargetAsmParser for the target.
     static void RegisterMCAsmParser(Target &T, Target::MCAsmParserCtorTy Fn) {
-      T.MCAsmParserCtorFn = Fn;
+      if (!T.MCAsmParserCtorFn)
+        T.MCAsmParserCtorFn = Fn;
     }
 
     /// RegisterAsmPrinter - Register an AsmPrinter implementation for the given
@@ -712,7 +737,9 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct an AsmPrinter for the target.
     static void RegisterAsmPrinter(Target &T, Target::AsmPrinterCtorTy Fn) {
-      T.AsmPrinterCtorFn = Fn;
+      // Ignore duplicate registration.
+      if (!T.AsmPrinterCtorFn)
+        T.AsmPrinterCtorFn = Fn;
     }
 
     /// RegisterMCDisassembler - Register a MCDisassembler implementation for
@@ -726,7 +753,8 @@ namespace llvm {
     /// @param Fn - A function to construct an MCDisassembler for the target.
     static void RegisterMCDisassembler(Target &T,
                                        Target::MCDisassemblerCtorTy Fn) {
-      T.MCDisassemblerCtorFn = Fn;
+      if (!T.MCDisassemblerCtorFn)
+        T.MCDisassemblerCtorFn = Fn;
     }
 
     /// RegisterMCInstPrinter - Register a MCInstPrinter implementation for the
@@ -740,7 +768,8 @@ namespace llvm {
     /// @param Fn - A function to construct an MCInstPrinter for the target.
     static void RegisterMCInstPrinter(Target &T,
                                       Target::MCInstPrinterCtorTy Fn) {
-      T.MCInstPrinterCtorFn = Fn;
+      if (!T.MCInstPrinterCtorFn)
+        T.MCInstPrinterCtorFn = Fn;
     }
 
     /// RegisterMCCodeEmitter - Register a MCCodeEmitter implementation for the
@@ -754,7 +783,8 @@ namespace llvm {
     /// @param Fn - A function to construct an MCCodeEmitter for the target.
     static void RegisterMCCodeEmitter(Target &T,
                                       Target::MCCodeEmitterCtorTy Fn) {
-      T.MCCodeEmitterCtorFn = Fn;
+      if (!T.MCCodeEmitterCtorFn)
+        T.MCCodeEmitterCtorFn = Fn;
     }
 
     /// RegisterMCObjectStreamer - Register a object code MCStreamer
@@ -768,7 +798,8 @@ namespace llvm {
     /// @param Fn - A function to construct an MCStreamer for the target.
     static void RegisterMCObjectStreamer(Target &T,
                                          Target::MCObjectStreamerCtorTy Fn) {
-      T.MCObjectStreamerCtorFn = Fn;
+      if (!T.MCObjectStreamerCtorFn)
+        T.MCObjectStreamerCtorFn = Fn;
     }
 
     /// RegisterAsmStreamer - Register an assembly MCStreamer implementation
@@ -781,7 +812,8 @@ namespace llvm {
     /// @param T - The target being registered.
     /// @param Fn - A function to construct an MCStreamer for the target.
     static void RegisterAsmStreamer(Target &T, Target::AsmStreamerCtorTy Fn) {
-      T.AsmStreamerCtorFn = Fn;
+      if (T.AsmStreamerCtorFn == createAsmStreamer)
+        T.AsmStreamerCtorFn = Fn;
     }
 
     /// RegisterMCRelocationInfo - Register an MCRelocationInfo
@@ -795,7 +827,8 @@ namespace llvm {
     /// @param Fn - A function to construct an MCRelocationInfo for the target.
     static void RegisterMCRelocationInfo(Target &T,
                                          Target::MCRelocationInfoCtorTy Fn) {
-      T.MCRelocationInfoCtorFn = Fn;
+      if (T.MCRelocationInfoCtorFn == llvm::createMCRelocationInfo)
+        T.MCRelocationInfoCtorFn = Fn;
     }
 
     /// RegisterMCSymbolizer - Register an MCSymbolizer
@@ -809,7 +842,8 @@ namespace llvm {
     /// @param Fn - A function to construct an MCSymbolizer for the target.
     static void RegisterMCSymbolizer(Target &T,
                                      Target::MCSymbolizerCtorTy Fn) {
-      T.MCSymbolizerCtorFn = Fn;
+      if (T.MCSymbolizerCtorFn == llvm::createMCSymbolizer)
+        T.MCSymbolizerCtorFn = Fn;
     }
 
     /// @}
@@ -1084,10 +1118,9 @@ namespace llvm {
     }
 
   private:
-    static MCAsmBackend *Allocator(const Target &T,
-                                   const MCRegisterInfo &MRI,
-                                   StringRef Triple, StringRef CPU) {
-      return new MCAsmBackendImpl(T, MRI, Triple, CPU);
+    static MCAsmBackend *Allocator(const Target &T, StringRef Triple,
+                                   StringRef CPU) {
+      return new MCAsmBackendImpl(T, Triple, CPU);
     }
   };
 
@@ -1106,9 +1139,8 @@ namespace llvm {
     }
 
   private:
-    static MCTargetAsmParser *Allocator(MCSubtargetInfo &STI, MCAsmParser &P,
-                                        const MCInstrInfo &MII) {
-      return new MCAsmParserImpl(STI, P, MII);
+    static MCTargetAsmParser *Allocator(MCSubtargetInfo &STI, MCAsmParser &P) {
+      return new MCAsmParserImpl(STI, P);
     }
   };
 

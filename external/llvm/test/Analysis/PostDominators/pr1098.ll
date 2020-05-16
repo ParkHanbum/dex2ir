@@ -1,8 +1,7 @@
-; RUN: opt < %s -postdomtree -analyze | FileCheck %s
+; RUN: opt < %s -postdomtree -analyze | grep entry
 ; PR932
 
 define void @foo(i1 %x) {
-; CHECK: entry
 entry:
         br i1 %x, label %bb1, label %bb0
 bb0:            ; preds = %entry, bb0

@@ -24,23 +24,23 @@ namespace llvm {
 /// the ASMPrint interface.
 ///
 class NVPTXSection : public MCSection {
-  virtual void anchor();
+
 public:
   NVPTXSection(SectionVariant V, SectionKind K) : MCSection(V, K) {}
-  virtual ~NVPTXSection() {}
+  ~NVPTXSection() {}
 
   /// Override this as NVPTX has its own way of printing switching
   /// to a section.
-  void PrintSwitchToSection(const MCAsmInfo &MAI,
-                            raw_ostream &OS,
-                            const MCExpr *Subsection) const override {}
+  virtual void PrintSwitchToSection(const MCAsmInfo &MAI,
+                                    raw_ostream &OS,
+                                    const MCExpr *Subsection) const {}
 
   /// Base address of PTX sections is zero.
-  bool isBaseAddressKnownZero() const override { return true; }
-  bool UseCodeAlign() const override { return false; }
-  bool isVirtualSection() const override { return false; }
-  std::string getLabelBeginName() const override { return ""; }
-  std::string getLabelEndName() const override { return ""; }
+  virtual bool isBaseAddressKnownZero() const { return true; }
+  virtual bool UseCodeAlign() const { return false; }
+  virtual bool isVirtualSection() const { return false; }
+  virtual std::string getLabelBeginName() const { return ""; }
+  virtual std::string getLabelEndName() const { return ""; }
 };
 
 } // end namespace llvm

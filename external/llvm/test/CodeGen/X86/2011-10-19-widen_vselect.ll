@@ -1,10 +1,12 @@
-; RUN: llc < %s -march=x86-64 -mtriple=x86_64-unknown-linux-gnu -mcpu=corei7 | FileCheck %s
+; RUN: llc < %s -march=x86-64 -mcpu=corei7 | FileCheck %s
 
-; Make sure that we don't crash when legalizing vselect and vsetcc and that
+target triple = "x86_64-unknown-linux-gnu"
+
+; Make sure that we don't crash when legalizng vselect and vsetcc and that
 ; we are able to generate vector blend instructions.
 
-; CHECK-LABEL: simple_widen
-; CHECK-NOT: blend
+; CHECK: simple_widen
+; CHECK: blend
 ; CHECK: ret
 define void @simple_widen() {
 entry:
@@ -13,7 +15,7 @@ entry:
   ret void
 }
 
-; CHECK-LABEL: complex_inreg_work
+; CHECK: complex_inreg_work
 ; CHECK: blend
 ; CHECK: ret
 
@@ -25,8 +27,8 @@ entry:
   ret void
 }
 
-; CHECK-LABEL: zero_test
-; CHECK: xorps	%xmm0, %xmm0
+; CHECK: zero_test
+; CHECK: blend
 ; CHECK: ret
 
 define void @zero_test() {
@@ -36,7 +38,7 @@ entry:
   ret void
 }
 
-; CHECK-LABEL: full_test
+; CHECK: full_test
 ; CHECK: blend
 ; CHECK: ret
 

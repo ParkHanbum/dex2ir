@@ -26,9 +26,9 @@
 #ifndef LLVM_SUPPORT_DEBUG_H
 #define LLVM_SUPPORT_DEBUG_H
 
-#include "llvm/Support/raw_ostream.h"
-
 namespace llvm {
+
+class raw_ostream;
 
 /// DEBUG_TYPE macro - Files can specify a DEBUG_TYPE as a string, which causes
 /// all of their DEBUG statements to be activatable with -debug-only=thatstring.

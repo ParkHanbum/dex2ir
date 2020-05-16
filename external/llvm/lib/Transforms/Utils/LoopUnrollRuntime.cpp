@@ -21,6 +21,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "loop-unroll"
 #include "llvm/Transforms/Utils/UnrollLoop.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/LoopIterator.h"
@@ -35,8 +36,6 @@
 #include <algorithm>
 
 using namespace llvm;
-
-#define DEBUG_TYPE "loop-unroll"
 
 STATISTIC(NumRuntimeUnrolled,
           "Number of loops unrolled with run-time trip counts");
@@ -59,7 +58,7 @@ static void ConnectProlog(Loop *L, Value *TripCount, unsigned Count,
                           BasicBlock *OrigPH, BasicBlock *NewPH,
                           ValueToValueMapTy &LVMap, Pass *P) {
   BasicBlock *Latch = L->getLoopLatch();
-  assert(Latch && "Loop must have a latch");
+  assert(Latch != 0 && "Loop must have a latch");
 
   // Create a PHI node for each outgoing value from the original loop
   // (which means it is an outgoing value from the prolog code too).
@@ -111,7 +110,7 @@ static void ConnectProlog(Loop *L, Value *TripCount, unsigned Count,
     new ICmpInst(InsertPt, ICmpInst::ICMP_ULT, TripCount,
                  ConstantInt::get(TripCount->getType(), Count));
   BasicBlock *Exit = L->getUniqueExitBlock();
-  assert(Exit && "Loop must have a single exit block only");
+  assert(Exit != 0 && "Loop must have a single exit block only");
   // Split the exit to maintain loop canonicalization guarantees
   SmallVector<BasicBlock*, 4> Preds(pred_begin(Exit), pred_end(Exit));
   if (!Exit->isLandingPad()) {
@@ -233,7 +232,7 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count, LoopInfo *LI,
 
   // Make sure the loop is in canonical form, and there is a single
   // exit block only.
-  if (!L->isLoopSimplifyForm() || !L->getUniqueExitBlock())
+  if (!L->isLoopSimplifyForm() || L->getUniqueExitBlock() == 0)
     return false;
 
   // Use Scalar Evolution to compute the trip count.  This allows more
@@ -241,7 +240,7 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count, LoopInfo *LI,
   if (!LPM)
     return false;
   ScalarEvolution *SE = LPM->getAnalysisIfAvailable<ScalarEvolution>();
-  if (!SE)
+  if (SE == 0)
     return false;
 
   // Only unroll loops with a computable trip count and the trip count needs
@@ -280,17 +279,17 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count, LoopInfo *LI,
   SCEVExpander Expander(*SE, "loop-unroll");
   Value *TripCount = Expander.expandCodeFor(TripCountSC, TripCountSC->getType(),
                                             PreHeaderBR);
+  Type *CountTy = TripCount->getType();
+  BinaryOperator *ModVal =
+    BinaryOperator::CreateURem(TripCount,
+                               ConstantInt::get(CountTy, Count),
+                               "xtraiter");
+  ModVal->insertBefore(PreHeaderBR);
 
-  IRBuilder<> B(PreHeaderBR);
-  Value *ModVal = B.CreateAnd(TripCount, Count - 1, "xtraiter");
-
-  // Check if for no extra iterations, then jump to unrolled loop.  We have to
-  // check that the trip count computation didn't overflow when adding one to
-  // the backedge taken count.
-  Value *LCmp = B.CreateIsNotNull(ModVal, "lcmp.mod");
-  Value *OverflowCheck = B.CreateIsNull(TripCount, "lcmp.overflow");
-  Value *BranchVal = B.CreateOr(OverflowCheck, LCmp, "lcmp.or");
-
+  // Check if for no extra iterations, then jump to unrolled loop
+  Value *BranchVal = new ICmpInst(PreHeaderBR,
+                                  ICmpInst::ICMP_NE, ModVal,
+                                  ConstantInt::get(CountTy, 0), "lcmp");
   // Branch to either the extra iterations or the unrolled loop
   // We will fix up the true branch label when adding loop body copies
   BranchInst::Create(PEnd, PEnd, BranchVal, PreHeaderBR);
@@ -302,7 +301,7 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count, LoopInfo *LI,
   ValueToValueMapTy LVMap;
   Function *F = Header->getParent();
   // These variables are used to update the CFG links in each iteration
-  BasicBlock *CompareBB = nullptr;
+  BasicBlock *CompareBB = 0;
   BasicBlock *LastLoopBB = PH;
   // Get an ordered list of blocks in the loop to help with the ordering of the
   // cloned blocks in the prolog code
@@ -344,7 +343,6 @@ bool llvm::UnrollRuntimeLoopProlog(Loop *L, unsigned Count, LoopInfo *LI,
       }
 
       // The comparison w/ the extra iteration value and branch
-      Type *CountTy = TripCount->getType();
       Value *BranchVal = new ICmpInst(*NewBB, ICmpInst::ICMP_EQ, ModVal,
                                       ConstantInt::get(CountTy, leftOverIters),
                                       "un.tmp");

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMNVPTXDesc.a  CMakeFiles/LLVMNVPTXDesc.dir/NVPTXMCAsmInfo.cpp.o CMakeFiles/LLVMNVPTXDesc.dir/NVPTXMCTargetDesc.cpp.o
+/usr/bin/ranlib ../../../libLLVMNVPTXDesc.a

@@ -26,20 +26,19 @@
 // TODO: ObjCARCContract could insert PHI nodes when uses aren't
 // dominated by single calls.
 
+#define DEBUG_TYPE "objc-arc-contract"
 #include "ObjCARC.h"
 #include "ARCRuntimeEntryPoints.h"
 #include "DependencyAnalysis.h"
 #include "ProvenanceAnalysis.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/IR/Dominators.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
 using namespace llvm::objcarc;
-
-#define DEBUG_TYPE "objc-arc-contract"
 
 STATISTIC(NumPeeps,       "Number of calls peephole-optimized");
 STATISTIC(NumStoreStrongs, "Number objc_storeStrong calls formed");
@@ -80,9 +79,9 @@ namespace {
     void ContractRelease(Instruction *Release,
                          inst_iterator &Iter);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
-    bool doInitialization(Module &M) override;
-    bool runOnFunction(Function &F) override;
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+    virtual bool doInitialization(Module &M);
+    virtual bool runOnFunction(Function &F);
 
   public:
     static char ID;
@@ -96,7 +95,7 @@ char ObjCARCContract::ID = 0;
 INITIALIZE_PASS_BEGIN(ObjCARCContract,
                       "objc-arc-contract", "ObjC ARC contraction", false, false)
 INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
-INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(ObjCARCContract,
                     "objc-arc-contract", "ObjC ARC contraction", false, false)
 
@@ -106,7 +105,7 @@ Pass *llvm::createObjCARCContractPass() {
 
 void ObjCARCContract::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<AliasAnalysis>();
-  AU.addRequired<DominatorTreeWrapperPass>();
+  AU.addRequired<DominatorTree>();
   AU.setPreservesCFG();
 }
 
@@ -158,7 +157,7 @@ ObjCARCContract::ContractAutorelease(Function &F, Instruction *Autorelease,
 
   // Check that there are no instructions between the retain and the autorelease
   // (such as an autorelease_pop) which may change the count.
-  CallInst *Retain = nullptr;
+  CallInst *Retain = 0;
   if (Class == IC_AutoreleaseRV)
     FindDependencies(RetainAutoreleaseRVDep, Arg,
                      Autorelease->getParent(), Autorelease,
@@ -219,7 +218,7 @@ void ObjCARCContract::ContractRelease(Instruction *Release,
   BasicBlock::iterator I = Load, End = BB->end();
   ++I;
   AliasAnalysis::Location Loc = AA->getLocation(Load);
-  StoreInst *Store = nullptr;
+  StoreInst *Store = 0;
   bool SawRelease = false;
   for (; !Store || !SawRelease; ++I) {
     if (I == End)
@@ -301,7 +300,7 @@ bool ObjCARCContract::doInitialization(Module &M) {
   EP.Initialize(&M);
 
   // Initialize RetainRVMarker.
-  RetainRVMarker = nullptr;
+  RetainRVMarker = 0;
   if (NamedMDNode *NMD =
         M.getNamedMetadata("clang.arc.retainAutoreleasedReturnValueMarker"))
     if (NMD->getNumOperands() == 1) {
@@ -324,7 +323,7 @@ bool ObjCARCContract::runOnFunction(Function &F) {
 
   Changed = false;
   AA = &getAnalysis<AliasAnalysis>();
-  DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+  DT = &getAnalysis<DominatorTree>();
 
   PA.setAA(&getAnalysis<AliasAnalysis>());
 
@@ -441,17 +440,17 @@ bool ObjCARCContract::runOnFunction(Function &F) {
 
     // Don't use GetObjCArg because we don't want to look through bitcasts
     // and such; to do the replacement, the argument must have type i8*.
-    Value *Arg = cast<CallInst>(Inst)->getArgOperand(0);
+    const Value *Arg = cast<CallInst>(Inst)->getArgOperand(0);
     for (;;) {
       // If we're compiling bugpointed code, don't get in trouble.
       if (!isa<Instruction>(Arg) && !isa<Argument>(Arg))
         break;
       // Look through the uses of the pointer.
-      for (Value::use_iterator UI = Arg->use_begin(), UE = Arg->use_end();
+      for (Value::const_use_iterator UI = Arg->use_begin(), UE = Arg->use_end();
            UI != UE; ) {
-        // Increment UI now, because we may unlink its element.
-        Use &U = *UI++;
-        unsigned OperandNo = U.getOperandNo();
+        Use &U = UI.getUse();
+        unsigned OperandNo = UI.getOperandNo();
+        ++UI; // Increment UI now, because we may unlink its element.
 
         // If the call's return value dominates a use of the call's argument
         // value, rewrite the use to use the return value. We check for
@@ -476,9 +475,9 @@ bool ObjCARCContract::runOnFunction(Function &F) {
             for (unsigned i = 0, e = PHI->getNumIncomingValues(); i != e; ++i)
               if (PHI->getIncomingBlock(i) == BB) {
                 // Keep the UI iterator valid.
-                if (UI != UE &&
-                    &PHI->getOperandUse(
-                        PHINode::getOperandNumForIncomingValue(i)) == &*UI)
+                if (&PHI->getOperandUse(
+                      PHINode::getOperandNumForIncomingValue(i)) ==
+                    &UI.getUse())
                   ++UI;
                 PHI->setIncomingValue(i, Replacement);
               }

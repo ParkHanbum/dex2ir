@@ -1,8 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
 transforms_utils_SRC_FILES := \
-  AddDiscriminators.cpp \
-  ASanStackFrameLayout.cpp \
   BasicBlockUtils.cpp \
   BreakCriticalEdges.cpp \
   BuildLibCalls.cpp \
@@ -11,9 +9,7 @@ transforms_utils_SRC_FILES := \
   CloneModule.cpp \
   CmpInstAnalysis.cpp \
   CodeExtractor.cpp \
-  CtorUtils.cpp \
   DemoteRegToStack.cpp \
-  GlobalStatus.cpp \
   InlineFunction.cpp \
   InstructionNamer.cpp \
   LCSSA.cpp \
@@ -33,6 +29,7 @@ transforms_utils_SRC_FILES := \
   SimplifyIndVar.cpp \
   SimplifyInstructions.cpp \
   SimplifyLibCalls.cpp \
+  SpecialCaseList.cpp \
   UnifyFunctionExitNodes.cpp \
   Utils.cpp \
   ValueMapper.cpp
@@ -52,7 +49,6 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(transforms_utils_SRC_FILES)
@@ -63,4 +59,3 @@ LOCAL_MODULE_TAGS := optional
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
-endif

@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 
 %struct.comment = type { i8**, i32*, i32, i8* }
 %struct.info = type { i32, i32, i32, i32, i32, i32, i32, i8* }

@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "jump-threading"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -26,18 +27,16 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/ValueHandle.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "jump-threading"
 
 STATISTIC(NumThreads, "Number of jumps threaded");
 STATISTIC(NumFolds,   "Number of terminators folded");
@@ -77,7 +76,7 @@ namespace {
   /// revectored to the false side of the second if.
   ///
   class JumpThreading : public FunctionPass {
-    const DataLayout *DL;
+    DataLayout *TD;
     TargetLibraryInfo *TLI;
     LazyValueInfo *LVI;
 #ifdef NDEBUG
@@ -106,9 +105,9 @@ namespace {
       initializeJumpThreadingPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnFunction(Function &F) override;
+    bool runOnFunction(Function &F);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<LazyValueInfo>();
       AU.addPreserved<LazyValueInfo>();
       AU.addRequired<TargetLibraryInfo>();
@@ -149,23 +148,10 @@ FunctionPass *llvm::createJumpThreadingPass() { return new JumpThreading(); }
 /// runOnFunction - Top level algorithm.
 ///
 bool JumpThreading::runOnFunction(Function &F) {
-  if (skipOptnoneFunction(F))
-    return false;
-
   DEBUG(dbgs() << "Jump threading on function '" << F.getName() << "'\n");
-  DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
-  DL = DLP ? &DLP->getDataLayout() : nullptr;
+  TD = getAnalysisIfAvailable<DataLayout>();
   TLI = &getAnalysis<TargetLibraryInfo>();
   LVI = &getAnalysis<LazyValueInfo>();
-
-  // Remove unreachable blocks from function as they may result in infinite
-  // loop. We do threading if we found something profitable. Jump threading a
-  // branch can create other opportunities. If these opportunities form a cycle
-  // i.e. if any jump treading is undoing previous threading in the path, then
-  // we will loop forever. We take care of this issue by not jump threading for
-  // back edges. This works for normal cases but not for unreachable blocks as
-  // they may have cycle with no back edge.
-  removeUnreachableBlocks(F);
 
   FindLoopHeaders(F);
 
@@ -265,7 +251,7 @@ static unsigned getJumpThreadDuplicationCost(const BasicBlock *BB,
     // as having cost of 2 total, and if they are a vector intrinsic, we model
     // them as having cost 1.
     if (const CallInst *CI = dyn_cast<CallInst>(I)) {
-      if (CI->cannotDuplicate())
+      if (CI->hasFnAttr(Attribute::NoDuplicate))
         // Blocks with NoDuplicate are modelled as having infinite cost, so they
         // are never duplicated.
         return ~0U;
@@ -318,7 +304,7 @@ void JumpThreading::FindLoopHeaders(Function &F) {
 /// Returns null if Val is null or not an appropriate constant.
 static Constant *getKnownConstant(Value *Val, ConstantPreference Preference) {
   if (!Val)
-    return nullptr;
+    return 0;
 
   // Undef is "known" enough.
   if (UndefValue *U = dyn_cast<UndefValue>(Val))
@@ -362,7 +348,7 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB, PredValueInfo &Result,
   // If V is a non-instruction value, or an instruction in a different block,
   // then it can't be derived from a PHI.
   Instruction *I = dyn_cast<Instruction>(V);
-  if (!I || I->getParent() != BB) {
+  if (I == 0 || I->getParent() != BB) {
 
     // Okay, if this is a live-in value, see if it has a known value at the end
     // of any of our predecessors.
@@ -504,8 +490,8 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB, PredValueInfo &Result,
         Value *LHS = PN->getIncomingValue(i);
         Value *RHS = Cmp->getOperand(1)->DoPHITranslation(BB, PredBB);
 
-        Value *Res = SimplifyCmpInst(Cmp->getPredicate(), LHS, RHS, DL);
-        if (!Res) {
+        Value *Res = SimplifyCmpInst(Cmp->getPredicate(), LHS, RHS, TD);
+        if (Res == 0) {
           if (!isa<Constant>(RHS))
             continue;
 
@@ -591,7 +577,7 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB, PredValueInfo &Result,
           // Either operand will do, so be sure to pick the one that's a known
           // constant.
           // FIXME: Do this more cleverly if both values are known constants?
-          KnownCond = (TrueVal != nullptr);
+          KnownCond = (TrueVal != 0);
         }
 
         // See if the select has a known constant value for this predecessor.
@@ -706,7 +692,7 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
   // Run constant folding to see if we can reduce the condition to a simple
   // constant.
   if (Instruction *I = dyn_cast<Instruction>(Condition)) {
-    Value *SimpleVal = ConstantFoldInstruction(I, DL, TLI);
+    Value *SimpleVal = ConstantFoldInstruction(I, TD, TLI);
     if (SimpleVal) {
       I->replaceAllUsesWith(SimpleVal);
       I->eraseFromParent();
@@ -747,7 +733,7 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
   Instruction *CondInst = dyn_cast<Instruction>(Condition);
 
   // All the rest of our checks depend on the condition being an instruction.
-  if (!CondInst) {
+  if (CondInst == 0) {
     // FIXME: Unify this with code below.
     if (ProcessThreadableEdges(Condition, BB, Preference))
       return true;
@@ -841,6 +827,7 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
   return false;
 }
 
+
 /// SimplifyPartiallyRedundantLoad - If LI is an obviously partially redundant
 /// load instruction, eliminate it by replacing it with a PHI node.  This is an
 /// important optimization that encourages jump threading, and needs to be run
@@ -853,12 +840,6 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   // partially redundant.
   BasicBlock *LoadBB = LI->getParent();
   if (LoadBB->getSinglePredecessor())
-    return false;
-
-  // If the load is defined in a landing pad, it can't be partially redundant,
-  // because the edges between the invoke and the landing pad cannot have other
-  // instructions between them.
-  if (LoadBB->isLandingPad())
     return false;
 
   Value *LoadedPtr = LI->getOperand(0);
@@ -900,7 +881,7 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   SmallPtrSet<BasicBlock*, 8> PredsScanned;
   typedef SmallVector<std::pair<BasicBlock*, Value*>, 8> AvailablePredsTy;
   AvailablePredsTy AvailablePreds;
-  BasicBlock *OneUnavailablePred = nullptr;
+  BasicBlock *OneUnavailablePred = 0;
 
   // If we got here, the loaded value is transparent through to the start of the
   // block.  Check to see if it is available in any of the predecessor blocks.
@@ -914,16 +895,16 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
 
     // Scan the predecessor to see if the value is available in the pred.
     BBIt = PredBB->end();
-    MDNode *ThisTBAATag = nullptr;
+    MDNode *ThisTBAATag = 0;
     Value *PredAvailable = FindAvailableLoadedValue(LoadedPtr, PredBB, BBIt, 6,
-                                                    nullptr, &ThisTBAATag);
+                                                    0, &ThisTBAATag);
     if (!PredAvailable) {
       OneUnavailablePred = PredBB;
       continue;
     }
 
     // If tbaa tags disagree or are not present, forget about them.
-    if (TBAATag != ThisTBAATag) TBAATag = nullptr;
+    if (TBAATag != ThisTBAATag) TBAATag = 0;
 
     // If so, this load is partially redundant.  Remember this info so that we
     // can create a PHI node.
@@ -939,7 +920,7 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   // predecessor, we want to insert a merge block for those common predecessors.
   // This ensures that we only have to insert one reload, thus not increasing
   // code size.
-  BasicBlock *UnavailablePred = nullptr;
+  BasicBlock *UnavailablePred = 0;
 
   // If there is exactly one predecessor where the value is unavailable, the
   // already computed 'OneUnavailablePred' block is it.  If it ends in an
@@ -1006,7 +987,7 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
     BasicBlock *P = *PI;
     AvailablePredsTy::iterator I =
       std::lower_bound(AvailablePreds.begin(), AvailablePreds.end(),
-                       std::make_pair(P, (Value*)nullptr));
+                       std::make_pair(P, (Value*)0));
 
     assert(I != AvailablePreds.end() && I->first == P &&
            "Didn't find entry for predecessor!");
@@ -1113,7 +1094,7 @@ bool JumpThreading::ProcessThreadableEdges(Value *Cond, BasicBlock *BB,
   SmallPtrSet<BasicBlock*, 16> SeenPreds;
   SmallVector<std::pair<BasicBlock*, BasicBlock*>, 16> PredToDestList;
 
-  BasicBlock *OnlyDest = nullptr;
+  BasicBlock *OnlyDest = 0;
   BasicBlock *MultipleDestSentinel = (BasicBlock*)(intptr_t)~0ULL;
 
   for (unsigned i = 0, e = PredValues.size(); i != e; ++i) {
@@ -1130,7 +1111,7 @@ bool JumpThreading::ProcessThreadableEdges(Value *Cond, BasicBlock *BB,
 
     BasicBlock *DestBB;
     if (isa<UndefValue>(Val))
-      DestBB = nullptr;
+      DestBB = 0;
     else if (BranchInst *BI = dyn_cast<BranchInst>(BB->getTerminator()))
       DestBB = BI->getSuccessor(cast<ConstantInt>(Val)->isZero());
     else if (SwitchInst *SI = dyn_cast<SwitchInst>(BB->getTerminator())) {
@@ -1181,7 +1162,7 @@ bool JumpThreading::ProcessThreadableEdges(Value *Cond, BasicBlock *BB,
 
   // If the threadable edges are branching on an undefined value, we get to pick
   // the destination that these predecessors should get to.
-  if (!MostPopularDest)
+  if (MostPopularDest == 0)
     MostPopularDest = BB->getTerminator()->
                             getSuccessor(GetBestDestForJumpOnUndef(BB));
 
@@ -1283,7 +1264,7 @@ bool JumpThreading::ProcessBranchOnXOR(BinaryOperator *BO) {
   }
 
   // Determine which value to split on, true, false, or undef if neither.
-  ConstantInt *SplitVal = nullptr;
+  ConstantInt *SplitVal = 0;
   if (NumTrue > NumFalse)
     SplitVal = ConstantInt::getTrue(BB->getContext());
   else if (NumTrue != 0 || NumFalse != 0)
@@ -1304,7 +1285,7 @@ bool JumpThreading::ProcessBranchOnXOR(BinaryOperator *BO) {
   // help us.  However, we can just replace the LHS or RHS with the constant.
   if (BlocksToFoldInto.size() ==
       cast<PHINode>(BB->front()).getNumIncomingValues()) {
-    if (!SplitVal) {
+    if (SplitVal == 0) {
       // If all preds provide undef, just nuke the xor, because it is undef too.
       BO->replaceAllUsesWith(UndefValue::get(BO->getType()));
       BO->eraseFromParent();
@@ -1445,15 +1426,16 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
   for (BasicBlock::iterator I = BB->begin(); I != BB->end(); ++I) {
     // Scan all uses of this instruction to see if it is used outside of its
     // block, and if so, record them in UsesToRename.
-    for (Use &U : I->uses()) {
-      Instruction *User = cast<Instruction>(U.getUser());
+    for (Value::use_iterator UI = I->use_begin(), E = I->use_end(); UI != E;
+         ++UI) {
+      Instruction *User = cast<Instruction>(*UI);
       if (PHINode *UserPN = dyn_cast<PHINode>(User)) {
-        if (UserPN->getIncomingBlock(U) == BB)
+        if (UserPN->getIncomingBlock(UI) == BB)
           continue;
       } else if (User->getParent() == BB)
         continue;
 
-      UsesToRename.push_back(&U);
+      UsesToRename.push_back(&UI.getUse());
     }
 
     // If there are no uses outside the block, we're done with this instruction.
@@ -1488,7 +1470,7 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
   // At this point, the IR is fully up to date and consistent.  Do a quick scan
   // over the new instructions and zap any that are constants or dead.  This
   // frequently happens because of phi translation.
-  SimplifyInstructionsInBlock(NewBB, DL, TLI);
+  SimplifyInstructionsInBlock(NewBB, TD, TLI);
 
   // Threaded an edge!
   ++NumThreads;
@@ -1541,7 +1523,7 @@ bool JumpThreading::DuplicateCondBranchOnPHIIntoPred(BasicBlock *BB,
   // can just clone the bits from BB into the end of the new PredBB.
   BranchInst *OldPredBranch = dyn_cast<BranchInst>(PredBB->getTerminator());
 
-  if (!OldPredBranch || !OldPredBranch->isUnconditional()) {
+  if (OldPredBranch == 0 || !OldPredBranch->isUnconditional()) {
     PredBB = SplitEdge(PredBB, BB, this);
     OldPredBranch = cast<BranchInst>(PredBB->getTerminator());
   }
@@ -1570,7 +1552,7 @@ bool JumpThreading::DuplicateCondBranchOnPHIIntoPred(BasicBlock *BB,
     // If this instruction can be simplified after the operands are updated,
     // just use the simplified value instead.  This frequently happens due to
     // phi translation.
-    if (Value *IV = SimplifyInstruction(New, DL)) {
+    if (Value *IV = SimplifyInstruction(New, TD)) {
       delete New;
       ValueMapping[BI] = IV;
     } else {
@@ -1598,15 +1580,16 @@ bool JumpThreading::DuplicateCondBranchOnPHIIntoPred(BasicBlock *BB,
   for (BasicBlock::iterator I = BB->begin(); I != BB->end(); ++I) {
     // Scan all uses of this instruction to see if it is used outside of its
     // block, and if so, record them in UsesToRename.
-    for (Use &U : I->uses()) {
-      Instruction *User = cast<Instruction>(U.getUser());
+    for (Value::use_iterator UI = I->use_begin(), E = I->use_end(); UI != E;
+         ++UI) {
+      Instruction *User = cast<Instruction>(*UI);
       if (PHINode *UserPN = dyn_cast<PHINode>(User)) {
-        if (UserPN->getIncomingBlock(U) == BB)
+        if (UserPN->getIncomingBlock(UI) == BB)
           continue;
       } else if (User->getParent() == BB)
         continue;
 
-      UsesToRename.push_back(&U);
+      UsesToRename.push_back(&UI.getUse());
     }
 
     // If there are no uses outside the block, we're done with this instruction.

@@ -1,41 +1,19 @@
-;RUN: llc < %s -march=r600 -mcpu=redwood | FileCheck %s -check-prefix=EG -check-prefix=FUNC
-;RUN: llc < %s -march=r600 -mcpu=SI | FileCheck %s -check-prefix=SI -check-prefix=FUNC
+;RUN: llc < %s -march=r600 -mcpu=redwood | FileCheck %s
 
-;FUNC-LABEL: test
-;EG: MULADD_IEEE *
-;EG: FRACT *
-;EG: ADD *
-;EG: SIN * T{{[0-9]+\.[XYZW], PV\.[XYZW]}}
-;EG-NOT: SIN
-;SI: V_MUL_F32
-;SI: V_SIN_F32
-;SI-NOT: V_SIN_F32
+;CHECK: MULADD_IEEE *
+;CHECK: FRACT *
+;CHECK: ADD *
+;CHECK: SIN * T{{[0-9]+\.[XYZW], PV\.[XYZW]}}
 
-define void @test(float addrspace(1)* %out, float %x) #1 {
-   %sin = call float @llvm.sin.f32(float %x)
-   store float %sin, float addrspace(1)* %out
-   ret void
-}
-
-;FUNC-LABEL: testv
-;EG: SIN * T{{[0-9]+\.[XYZW], PV\.[XYZW]}}
-;EG: SIN * T{{[0-9]+\.[XYZW], PV\.[XYZW]}}
-;EG: SIN * T{{[0-9]+\.[XYZW], PV\.[XYZW]}}
-;EG: SIN * T{{[0-9]+\.[XYZW], PV\.[XYZW]}}
-;EG-NOT: SIN
-;SI: V_SIN_F32
-;SI: V_SIN_F32
-;SI: V_SIN_F32
-;SI: V_SIN_F32
-;SI-NOT: V_SIN_F32
-
-define void @testv(<4 x float> addrspace(1)* %out, <4 x float> %vx) #1 {
-   %sin = call <4 x float> @llvm.sin.v4f32( <4 x float> %vx)
-   store <4 x float> %sin, <4 x float> addrspace(1)* %out
+define void @test() {
+   %r0 = call float @llvm.R600.load.input(i32 0)
+   %r1 = call float @llvm.sin.f32( float %r0)
+   call void @llvm.AMDGPU.store.output(float %r1, i32 0)
    ret void
 }
 
 declare float @llvm.sin.f32(float) readnone
-declare <4 x float> @llvm.sin.v4f32(<4 x float>) readnone
 
-attributes #0 = { "ShaderType"="0" }
+declare float @llvm.R600.load.input(i32) readnone
+
+declare void @llvm.AMDGPU.store.output(float, i32)

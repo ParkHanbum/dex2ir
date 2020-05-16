@@ -1,4 +1,4 @@
-; RUN: opt < %s -O3 -S | FileCheck %s
+; RUN: llvm-as < %s | opt -O3 | llvm-dis | FileCheck %s
 ; Testing half to float conversion.
 
 define float @abc() nounwind {

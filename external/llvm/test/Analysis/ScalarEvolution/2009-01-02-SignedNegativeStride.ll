@@ -1,8 +1,5 @@
-; RUN: opt < %s -analyze -scalar-evolution | FileCheck %s
+; RUN: opt < %s -analyze -scalar-evolution | not grep "/u -1"
 ; PR3275
-
-; CHECK: Printing analysis 'Scalar Evolution Analysis' for function 'func_15'
-; CHECK-NOT: /u -1
 
 @g_16 = external global i16		; <i16*> [#uses=3]
 @.str = external constant [4 x i8]		; <[4 x i8]*> [#uses=0]

@@ -18,7 +18,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/YAMLParser.h"
@@ -318,20 +317,18 @@ public:
   IO(void *Ctxt=NULL);
   virtual ~IO();
 
-  virtual bool outputting() const = 0;
+  virtual bool outputting() = 0;
 
   virtual unsigned beginSequence() = 0;
   virtual bool preflightElement(unsigned, void *&) = 0;
   virtual void postflightElement(void*) = 0;
   virtual void endSequence() = 0;
-  virtual bool canElideEmptySequence() = 0;
 
   virtual unsigned beginFlowSequence() = 0;
   virtual bool preflightFlowElement(unsigned, void *&) = 0;
   virtual void postflightFlowElement(void*) = 0;
   virtual void endFlowSequence() = 0;
 
-  virtual bool mapTag(StringRef Tag, bool Default=false) = 0;
   virtual void beginMapping() = 0;
   virtual void endMapping() = 0;
   virtual bool preflightKey(const char*, bool, bool, bool &, void *&) = 0;
@@ -391,7 +388,7 @@ public:
   typename llvm::enable_if_c<has_SequenceTraits<T>::value,void>::type
   mapOptional(const char* Key, T& Val) {
     // omit key/value instead of outputting empty sequence
-    if ( this->canElideEmptySequence() && !(Val.begin() != Val.end()) )
+    if ( this->outputting() && !(Val.begin() != Val.end()) )
       return;
     this->processKey(Key, Val, false);
   }
@@ -406,7 +403,8 @@ public:
   void mapOptional(const char* Key, T& Val, const T& Default) {
     this->processKeyWithDefault(Key, Val, Default, false);
   }
-  
+
+
 private:
   template <typename T>
   void processKeyWithDefault(const char *Key, T &Val, const T& DefaultValue,
@@ -685,23 +683,18 @@ private:
 ///
 class Input : public IO {
 public:
-  // Construct a yaml Input object from a StringRef and optional
-  // user-data. The DiagHandler can be specified to provide
-  // alternative error reporting.
-  Input(StringRef InputContent,
-        void *Ctxt = NULL,
-        SourceMgr::DiagHandlerTy DiagHandler = NULL,
-        void *DiagHandlerCtxt = NULL);
+  // Construct a yaml Input object from a StringRef and optional user-data.
+  Input(StringRef InputContent, void *Ctxt=NULL);
   ~Input();
-
+  
   // Check if there was an syntax or semantic error during parsing.
   llvm::error_code error();
 
-  static bool classof(const IO *io) { return !io->outputting(); }
+  // To set alternate error reporting.
+  void setDiagHandler(llvm::SourceMgr::DiagHandlerTy Handler, void *Ctxt = 0);
 
 private:
-  virtual bool outputting() const;
-  virtual bool mapTag(StringRef, bool);
+  virtual bool outputting();
   virtual void beginMapping();
   virtual void endMapping();
   virtual bool preflightKey(const char *, bool, bool, bool &, void *&);
@@ -722,10 +715,8 @@ private:
   virtual void endBitSetScalar();
   virtual void scalarString(StringRef &);
   virtual void setError(const Twine &message);
-  virtual bool canElideEmptySequence();
 
   class HNode {
-    virtual void anchor();
   public:
     HNode(Node *n) : _node(n) { }
     virtual ~HNode() { }
@@ -735,9 +726,9 @@ private:
   };
 
   class EmptyHNode : public HNode {
-    virtual void anchor();
   public:
     EmptyHNode(Node *n) : HNode(n) { }
+    virtual ~EmptyHNode() {}
     static inline bool classof(const HNode *n) {
       return NullNode::classof(n->_node);
     }
@@ -745,9 +736,9 @@ private:
   };
 
   class ScalarHNode : public HNode {
-    virtual void anchor();
   public:
     ScalarHNode(Node *n, StringRef s) : HNode(n), _value(s) { }
+    virtual ~ScalarHNode() { }
 
     StringRef value() const { return _value; }
 
@@ -825,10 +816,7 @@ public:
   Output(llvm::raw_ostream &, void *Ctxt=NULL);
   virtual ~Output();
 
-  static bool classof(const IO *io) { return io->outputting(); }
-  
-  virtual bool outputting() const;
-  virtual bool mapTag(StringRef, bool);
+  virtual bool outputting();
   virtual void beginMapping();
   virtual void endMapping();
   virtual bool preflightKey(const char *key, bool, bool, bool &, void *&);
@@ -849,7 +837,7 @@ public:
   virtual void endBitSetScalar();
   virtual void scalarString(StringRef &);
   virtual void setError(const Twine &message);
-  virtual bool canElideEmptySequence();
+
 public:
   // These are only used by operator<<. They could be private
   // if that templated operator could be made a friend.
@@ -971,8 +959,8 @@ template <typename T>
 inline
 typename llvm::enable_if_c<has_SequenceTraits<T>::value,Input &>::type
 operator>>(Input &yin, T &docSeq) {
-  if (yin.setCurrentDocument())
-    yamlize(yin, docSeq, true);
+  yin.setCurrentDocument();
+  yamlize(yin, docSeq, true);
   return yin;
 }
 

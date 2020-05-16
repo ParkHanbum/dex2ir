@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMBPFDesc.a  CMakeFiles/LLVMBPFDesc.dir/BPFMCTargetDesc.cpp.o CMakeFiles/LLVMBPFDesc.dir/BPFAsmBackend.cpp.o CMakeFiles/LLVMBPFDesc.dir/BPFMCCodeEmitter.cpp.o CMakeFiles/LLVMBPFDesc.dir/BPFELFObjectWriter.cpp.o
+/usr/bin/ranlib ../../../libLLVMBPFDesc.a

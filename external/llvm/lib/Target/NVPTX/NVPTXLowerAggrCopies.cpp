@@ -16,12 +16,12 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/InstIterator.h"
 
 using namespace llvm;
 
@@ -104,7 +104,7 @@ bool NVPTXLowerAggrCopies::runOnFunction(Function &F) {
   SmallVector<MemTransferInst *, 4> aggrMemcpys;
   SmallVector<MemSetInst *, 4> aggrMemsets;
 
-  const DataLayout *DL = &getAnalysis<DataLayoutPass>().getDataLayout();
+  DataLayout *TD = &getAnalysis<DataLayout>();
   LLVMContext &Context = F.getParent()->getContext();
 
   //
@@ -120,10 +120,10 @@ bool NVPTXLowerAggrCopies::runOnFunction(Function &F) {
         if (load->hasOneUse() == false)
           continue;
 
-        if (DL->getTypeStoreSize(load->getType()) < MaxAggrCopySize)
+        if (TD->getTypeStoreSize(load->getType()) < MaxAggrCopySize)
           continue;
 
-        User *use = load->user_back();
+        User *use = *(load->use_begin());
         if (StoreInst *store = dyn_cast<StoreInst>(use)) {
           if (store->getOperand(0) != load) //getValueOperand
             continue;
@@ -163,10 +163,10 @@ bool NVPTXLowerAggrCopies::runOnFunction(Function &F) {
   //
   for (unsigned i = 0, e = aggrLoads.size(); i != e; ++i) {
     LoadInst *load = aggrLoads[i];
-    StoreInst *store = dyn_cast<StoreInst>(*load->user_begin());
+    StoreInst *store = dyn_cast<StoreInst>(*load->use_begin());
     Value *srcAddr = load->getOperand(0);
     Value *dstAddr = store->getOperand(1);
-    unsigned numLoads = DL->getTypeStoreSize(load->getType());
+    unsigned numLoads = TD->getTypeStoreSize(load->getType());
     Value *len = ConstantInt::get(Type::getInt32Ty(Context), numLoads);
 
     convertTransferToLoop(store, srcAddr, dstAddr, len, load->isVolatile(),

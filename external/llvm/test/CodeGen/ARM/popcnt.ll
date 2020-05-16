@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 ; Implement ctpop with vcnt
 
 define <8 x i8> @vcnt8(<8 x i8>* %A) nounwind {

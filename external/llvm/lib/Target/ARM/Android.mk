@@ -33,7 +33,6 @@ arm_codegen_SRC_FILES := \
   ARMLoadStoreOptimizer.cpp \
   ARMMCInstLower.cpp \
   ARMMachineFunctionInfo.cpp \
-  ARMOptimizeBarriersPass.cpp \
   ARMRegisterInfo.cpp \
   ARMSelectionDAGInfo.cpp \
   ARMSubtarget.cpp \
@@ -68,7 +67,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
+ifeq ($(TARGET_ARCH),arm)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 

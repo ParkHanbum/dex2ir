@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+vfp2 %s -o /dev/null
+; RUN: llc < %s -march=arm -mattr=+vfp2
 
 define double @__ieee754_sqrt(double %x) {
 	%tmp2 = tail call double asm "fsqrtd ${0:P}, ${1:P}", "=w,w"( double %x )

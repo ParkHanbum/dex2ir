@@ -12,9 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/Compression.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/Config/config.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
@@ -24,17 +25,20 @@ namespace {
 #if LLVM_ENABLE_ZLIB == 1 && HAVE_LIBZ
 
 void TestZlibCompression(StringRef Input, zlib::CompressionLevel Level) {
-  SmallString<32> Compressed;
-  SmallString<32> Uncompressed;
+  OwningPtr<MemoryBuffer> Compressed;
+  OwningPtr<MemoryBuffer> Uncompressed;
   EXPECT_EQ(zlib::StatusOK, zlib::compress(Input, Compressed, Level));
   // Check that uncompressed buffer is the same as original.
-  EXPECT_EQ(zlib::StatusOK,
-            zlib::uncompress(Compressed, Uncompressed, Input.size()));
-  EXPECT_EQ(Input, Uncompressed);
+  EXPECT_EQ(zlib::StatusOK, zlib::uncompress(Compressed->getBuffer(),
+                                             Uncompressed, Input.size()));
+  EXPECT_EQ(Input.size(), Uncompressed->getBufferSize());
+  EXPECT_EQ(0,
+            memcmp(Input.data(), Uncompressed->getBufferStart(), Input.size()));
   if (Input.size() > 0) {
     // Uncompression fails if expected length is too short.
     EXPECT_EQ(zlib::StatusBufferTooShort,
-              zlib::uncompress(Compressed, Uncompressed, Input.size() - 1));
+              zlib::uncompress(Compressed->getBuffer(), Uncompressed,
+                               Input.size() - 1));
   }
 }
 
@@ -57,12 +61,6 @@ TEST(CompressionTest, Zlib) {
   TestZlibCompression(BinaryDataStr, zlib::BestSizeCompression);
   TestZlibCompression(BinaryDataStr, zlib::BestSpeedCompression);
   TestZlibCompression(BinaryDataStr, zlib::DefaultCompression);
-}
-
-TEST(CompressionTest, ZlibCRC32) {
-  EXPECT_EQ(
-      0x414FA339U,
-      zlib::crc32(StringRef("The quick brown fox jumps over the lazy dog")));
 }
 
 #endif

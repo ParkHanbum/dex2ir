@@ -24,7 +24,6 @@
 #include <cassert>
 #include <climits>
 #include <cstddef>
-#include <string>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -65,9 +64,7 @@ public:
     return const_iterator(getBucketsEnd(), getBucketsEnd(), true);
   }
 
-  bool LLVM_ATTRIBUTE_UNUSED_RESULT empty() const {
-    return getNumEntries() == 0;
-  }
+  bool empty() const { return getNumEntries() == 0; }
   unsigned size() const { return getNumEntries(); }
 
   /// Grow the densemap so that it has at least Size buckets. Does not shrink
@@ -261,7 +258,7 @@ protected:
     }
 
 #ifndef NDEBUG
-    std::memset((void*)getBuckets(), 0x5a, sizeof(BucketT)*getNumBuckets());
+    memset((void*)getBuckets(), 0x5a, sizeof(BucketT)*getNumBuckets());
 #endif
   }
 
@@ -315,7 +312,7 @@ protected:
     setNumTombstones(other.getNumTombstones());
 
     if (isPodLike<KeyT>::value && isPodLike<ValueT>::value)
-      std::memcpy(getBuckets(), other.getBuckets(),
+      memcpy(getBuckets(), other.getBuckets(),
              getNumBuckets() * sizeof(BucketT));
     else
       for (size_t i = 0; i < getNumBuckets(); ++i) {
@@ -439,8 +436,9 @@ private:
       this->grow(NumBuckets * 2);
       LookupBucketFor(Key, TheBucket);
       NumBuckets = getNumBuckets();
-    } else if (NumBuckets-(NewNumEntries+getNumTombstones()) <= NumBuckets/8) {
-      this->grow(NumBuckets);
+    }
+    if (NumBuckets-(NewNumEntries+getNumTombstones()) <= NumBuckets/8) {
+      this->grow(NumBuckets * 2);
       LookupBucketFor(Key, TheBucket);
     }
     assert(TheBucket);
@@ -715,13 +713,13 @@ public:
     init(NumInitBuckets);
   }
 
-  SmallDenseMap(const SmallDenseMap &other) : BaseT() {
+  SmallDenseMap(const SmallDenseMap &other) {
     init(0);
     copyFrom(other);
   }
 
 #if LLVM_HAS_RVALUE_REFERENCES
-  SmallDenseMap(SmallDenseMap &&other) : BaseT() {
+  SmallDenseMap(SmallDenseMap &&other) {
     init(0);
     swap(other);
   }

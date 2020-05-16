@@ -14,27 +14,26 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
-#include <cctype>
 #include <map>
 
 using namespace llvm;
 using namespace llvm::opt;
 
-namespace llvm {
-namespace opt {
+// Ordering on Info. The ordering is *almost* lexicographic, with two
+// exceptions. First, '\0' comes at the end of the alphabet instead of
+// the beginning (thus options precede any other options which prefix
+// them). Second, for options with the same name, the less permissive
+// version should come first; a Flag option should precede a Joined
+// option, for example.
 
-// Ordering on Info. The ordering is *almost* case-insensitive lexicographic,
-// with an exceptions. '\0' comes at the end of the alphabet instead of the
-// beginning (thus options precede any other options which prefix them).
-static int StrCmpOptionNameIgnoreCase(const char *A, const char *B) {
-  const char *X = A, *Y = B;
-  char a = tolower(*A), b = tolower(*B);
+static int StrCmpOptionName(const char *A, const char *B) {
+  char a = *A, b = *B;
   while (a == b) {
     if (a == '\0')
       return 0;
 
-    a = tolower(*++X);
-    b = tolower(*++Y);
+    a = *++A;
+    b = *++B;
   }
 
   if (a == '\0') // A is a prefix of B.
@@ -46,25 +45,21 @@ static int StrCmpOptionNameIgnoreCase(const char *A, const char *B) {
   return (a < b) ? -1 : 1;
 }
 
-#ifndef NDEBUG
-static int StrCmpOptionName(const char *A, const char *B) {
-  if (int N = StrCmpOptionNameIgnoreCase(A, B))
-    return N;
-  return strcmp(A, B);
-}
+namespace llvm {
+namespace opt {
 
 static inline bool operator<(const OptTable::Info &A, const OptTable::Info &B) {
   if (&A == &B)
     return false;
 
   if (int N = StrCmpOptionName(A.Name, B.Name))
-    return N < 0;
+    return N == -1;
 
   for (const char * const *APre = A.Prefixes,
                   * const *BPre = B.Prefixes;
-                          *APre != nullptr && *BPre != nullptr; ++APre, ++BPre){
+                          *APre != 0 && *BPre != 0; ++APre, ++BPre) {
     if (int N = StrCmpOptionName(*APre, *BPre))
-      return N < 0;
+      return N == -1;
   }
 
   // Names are the same, check that classes are in order; exactly one
@@ -73,22 +68,22 @@ static inline bool operator<(const OptTable::Info &A, const OptTable::Info &B) {
          "Unexpected classes for options with same name.");
   return B.Kind == Option::JoinedClass;
 }
-#endif
 
 // Support lower_bound between info and an option name.
 static inline bool operator<(const OptTable::Info &I, const char *Name) {
-  return StrCmpOptionNameIgnoreCase(I.Name, Name) < 0;
+  return StrCmpOptionName(I.Name, Name) == -1;
+}
+static inline bool operator<(const char *Name, const OptTable::Info &I) {
+  return StrCmpOptionName(Name, I.Name) == -1;
 }
 }
 }
 
 OptSpecifier::OptSpecifier(const Option *Opt) : ID(Opt->getID()) {}
 
-OptTable::OptTable(const Info *_OptionInfos, unsigned _NumOptionInfos,
-                   bool _IgnoreCase)
+OptTable::OptTable(const Info *_OptionInfos, unsigned _NumOptionInfos)
   : OptionInfos(_OptionInfos),
     NumOptionInfos(_NumOptionInfos),
-    IgnoreCase(_IgnoreCase),
     TheInputOptionID(0),
     TheUnknownOptionID(0),
     FirstSearchableIndex(0)
@@ -136,7 +131,7 @@ OptTable::OptTable(const Info *_OptionInfos, unsigned _NumOptionInfos,
   for (unsigned i = FirstSearchableIndex + 1, e = getNumOptions() + 1;
                 i != e; ++i) {
     if (const char *const *P = getInfo(i).Prefixes) {
-      for (; *P != nullptr; ++P) {
+      for (; *P != 0; ++P) {
         PrefixesUnion.insert(*P);
       }
     }
@@ -160,7 +155,7 @@ OptTable::~OptTable() {
 const Option OptTable::getOption(OptSpecifier Opt) const {
   unsigned id = Opt.getID();
   if (id == 0)
-    return Option(nullptr, nullptr);
+    return Option(0, 0);
   assert((unsigned) (id - 1) < getNumOptions() && "Invalid ID.");
   return Option(&getInfo(id), this);
 }
@@ -176,18 +171,11 @@ static bool isInput(const llvm::StringSet<> &Prefixes, StringRef Arg) {
 }
 
 /// \returns Matched size. 0 means no match.
-static unsigned matchOption(const OptTable::Info *I, StringRef Str,
-                            bool IgnoreCase) {
-  for (const char * const *Pre = I->Prefixes; *Pre != nullptr; ++Pre) {
+static unsigned matchOption(const OptTable::Info *I, StringRef Str) {
+  for (const char * const *Pre = I->Prefixes; *Pre != 0; ++Pre) {
     StringRef Prefix(*Pre);
-    if (Str.startswith(Prefix)) {
-      StringRef Rest = Str.substr(Prefix.size());
-      bool Matched = IgnoreCase
-          ? Rest.startswith_lower(I->Name)
-          : Rest.startswith(I->Name);
-      if (Matched)
-        return Prefix.size() + StringRef(I->Name).size();
-    }
+    if (Str.startswith(Prefix) && Str.substr(Prefix.size()).startswith(I->Name))
+      return Prefix.size() + StringRef(I->Name).size();
   }
   return 0;
 }
@@ -222,7 +210,7 @@ Arg *OptTable::ParseOneArg(const ArgList &Args, unsigned &Index,
     unsigned ArgSize = 0;
     // Scan for first option which is a proper prefix.
     for (; Start != End; ++Start)
-      if ((ArgSize = matchOption(Start, Str, IgnoreCase)))
+      if ((ArgSize = matchOption(Start, Str)))
         break;
     if (Start == End)
       break;
@@ -240,7 +228,7 @@ Arg *OptTable::ParseOneArg(const ArgList &Args, unsigned &Index,
 
     // Otherwise, see if this argument was missing values.
     if (Prev != Index)
-      return nullptr;
+      return 0;
   }
 
   // If we failed to find an option and this arg started with /, then it's
@@ -269,6 +257,20 @@ InputArgList *OptTable::ParseArgs(const char *const *ArgBegin,
     if (Str == "") {
       ++Index;
       continue;
+    }
+
+    if (Str == "--") {
+      // Everything after -- is a filename.
+      ++Index;
+
+      assert(TheInputOptionID != 0 && "Invalid input option ID.");
+      while (Index < End) {
+        Args->append(new Arg(getOption(TheInputOptionID),
+                             Args->getArgString(Index), Index,
+                             Args->getArgString(Index)));
+        ++Index;
+      }
+      break;
     }
 
     unsigned Prev = Index;
@@ -306,7 +308,6 @@ static std::string getOptionHelpName(const OptTable &Opts, OptSpecifier Id) {
     break;
 
   case Option::SeparateClass: case Option::JoinedOrSeparateClass:
-  case Option::RemainingArgsClass:
     Name += ' ';
     // FALLTHROUGH
   case Option::JoinedClass: case Option::CommaJoinedClass:

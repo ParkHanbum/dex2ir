@@ -20,6 +20,7 @@ namespace llvm {
 
 class GlobalValue;
 class MCContext;
+class MCSymbol;
 template <typename T> class SmallVectorImpl;
 class TargetMachine;
 class Twine;
@@ -33,6 +34,7 @@ public:
   };
 
 private:
+  MCContext &Context;
   const TargetMachine *TM;
 
   /// AnonGlobalIDs - We need to give global values the same name every time
@@ -46,7 +48,12 @@ private:
   unsigned NextAnonGlobalID;
 
 public:
-  Mangler(const TargetMachine *TM) : TM(TM), NextAnonGlobalID(1) {}
+  Mangler(MCContext &Context, const TargetMachine *TM)
+    : Context(Context), TM(TM), NextAnonGlobalID(1) {}
+
+  /// getSymbol - Return the MCSymbol for the specified global value.  This
+  /// symbol is the main label that is the address of the global.
+  MCSymbol *getSymbol(const GlobalValue *GV);
 
   /// getNameWithPrefix - Fill OutName with the name of the appropriate prefix
   /// and the specified global variable's name.  If the global variable doesn't

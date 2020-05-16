@@ -17,29 +17,28 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "systemz-disassembler"
-
 typedef MCDisassembler::DecodeStatus DecodeStatus;
 
 namespace {
 class SystemZDisassembler : public MCDisassembler {
 public:
-  SystemZDisassembler(const MCSubtargetInfo &STI, MCContext &Ctx)
-    : MCDisassembler(STI, Ctx) {}
+  SystemZDisassembler(const MCSubtargetInfo &STI)
+    : MCDisassembler(STI) {}
   virtual ~SystemZDisassembler() {}
 
   // Override MCDisassembler.
-  DecodeStatus getInstruction(MCInst &instr, uint64_t &size,
-                              const MemoryObject &region, uint64_t address,
-                              raw_ostream &vStream,
-                              raw_ostream &cStream) const override;
+  virtual DecodeStatus getInstruction(MCInst &instr,
+                                      uint64_t &size,
+                                      const MemoryObject &region,
+                                      uint64_t address,
+                                      raw_ostream &vStream,
+                                      raw_ostream &cStream) const LLVM_OVERRIDE;
 };
 } // end anonymous namespace
 
 static MCDisassembler *createSystemZDisassembler(const Target &T,
-                                                 const MCSubtargetInfo &STI,
-                                                 MCContext &Ctx) {
-  return new SystemZDisassembler(STI, Ctx);
+                                                 const MCSubtargetInfo &STI) {
+  return new SystemZDisassembler(STI);
 }
 
 extern "C" void LLVMInitializeSystemZDisassembler() {
@@ -49,11 +48,14 @@ extern "C" void LLVMInitializeSystemZDisassembler() {
 }
 
 static DecodeStatus decodeRegisterClass(MCInst &Inst, uint64_t RegNo,
-                                        const unsigned *Regs) {
+                                        const unsigned *Regs,
+                                        bool isAddress = false) {
   assert(RegNo < 16 && "Invalid register");
-  RegNo = Regs[RegNo];
-  if (RegNo == 0)
-    return MCDisassembler::Fail;
+  if (!isAddress || RegNo) {
+    RegNo = Regs[RegNo];
+    if (RegNo == 0)
+      return MCDisassembler::Fail;
+  }
   Inst.addOperand(MCOperand::CreateReg(RegNo));
   return MCDisassembler::Success;
 }
@@ -62,12 +64,6 @@ static DecodeStatus DecodeGR32BitRegisterClass(MCInst &Inst, uint64_t RegNo,
                                                uint64_t Address,
                                                const void *Decoder) {
   return decodeRegisterClass(Inst, RegNo, SystemZMC::GR32Regs);
-}
-
-static DecodeStatus DecodeGRH32BitRegisterClass(MCInst &Inst, uint64_t RegNo,
-                                                uint64_t Address,
-                                                const void *Decoder) {
-  return decodeRegisterClass(Inst, RegNo, SystemZMC::GRH32Regs);
 }
 
 static DecodeStatus DecodeGR64BitRegisterClass(MCInst &Inst, uint64_t RegNo,
@@ -85,7 +81,7 @@ static DecodeStatus DecodeGR128BitRegisterClass(MCInst &Inst, uint64_t RegNo,
 static DecodeStatus DecodeADDR64BitRegisterClass(MCInst &Inst, uint64_t RegNo,
                                                  uint64_t Address,
                                                  const void *Decoder) {
-  return decodeRegisterClass(Inst, RegNo, SystemZMC::GR64Regs);
+  return decodeRegisterClass(Inst, RegNo, SystemZMC::GR64Regs, true);
 }
 
 static DecodeStatus DecodeFP32BitRegisterClass(MCInst &Inst, uint64_t RegNo,

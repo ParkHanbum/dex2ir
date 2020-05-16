@@ -24,6 +24,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "objc-arc-ap-elim"
 #include "ObjCARC.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/Constants.h"
@@ -33,13 +34,11 @@
 using namespace llvm;
 using namespace llvm::objcarc;
 
-#define DEBUG_TYPE "objc-arc-ap-elim"
-
 namespace {
   /// \brief Autorelease pool elimination.
   class ObjCARCAPElim : public ModulePass {
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
-    bool runOnModule(Module &M) override;
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+    virtual bool runOnModule(Module &M);
 
     static bool MayAutorelease(ImmutableCallSite CS, unsigned Depth = 0);
     static bool OptimizeBB(BasicBlock *BB);
@@ -94,7 +93,7 @@ bool ObjCARCAPElim::MayAutorelease(ImmutableCallSite CS, unsigned Depth) {
 bool ObjCARCAPElim::OptimizeBB(BasicBlock *BB) {
   bool Changed = false;
 
-  Instruction *Push = nullptr;
+  Instruction *Push = 0;
   for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ) {
     Instruction *Inst = I++;
     switch (GetBasicInstructionClass(Inst)) {
@@ -113,11 +112,11 @@ bool ObjCARCAPElim::OptimizeBB(BasicBlock *BB) {
         Inst->eraseFromParent();
         Push->eraseFromParent();
       }
-      Push = nullptr;
+      Push = 0;
       break;
     case IC_CallOrUser:
       if (MayAutorelease(ImmutableCallSite(Inst)))
-        Push = nullptr;
+        Push = 0;
       break;
     default:
       break;
@@ -155,8 +154,8 @@ bool ObjCARCAPElim::runOnModule(Module &M) {
   for (User::op_iterator OI = Init->op_begin(), OE = Init->op_end();
        OI != OE; ++OI) {
     Value *Op = *OI;
-    // llvm.global_ctors is an array of three-field structs where the second
-    // members are constructor functions.
+    // llvm.global_ctors is an array of pairs where the second members
+    // are constructor functions.
     Function *F = dyn_cast<Function>(cast<ConstantStruct>(Op)->getOperand(1));
     // If the user used a constructor function with the wrong signature and
     // it got bitcasted or whatever, look the other way.
@@ -166,7 +165,7 @@ bool ObjCARCAPElim::runOnModule(Module &M) {
     if (F->isDeclaration())
       continue;
     // Only look at functions with one basic block.
-    if (std::next(F->begin()) != F->end())
+    if (llvm::next(F->begin()) != F->end())
       continue;
     // Ok, a single-block constructor function definition. Try to optimize it.
     Changed |= OptimizeBB(F->begin());

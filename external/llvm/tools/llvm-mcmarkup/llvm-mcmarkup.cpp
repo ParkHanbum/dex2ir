@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -19,7 +20,7 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
-#include <system_error>
+#include "llvm/Support/system_error.h"
 using namespace llvm;
 
 static cl::list<std::string>
@@ -135,13 +136,12 @@ MarkupTag MarkupParser::parseTag() {
 }
 
 static void parseMCMarkup(StringRef Filename) {
-  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferPtr =
-      MemoryBuffer::getFileOrSTDIN(Filename);
-  if (std::error_code EC = BufferPtr.getError()) {
-    errs() << ToolName << ": " << EC.message() << '\n';
+  OwningPtr<MemoryBuffer> BufferPtr;
+  if (error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, BufferPtr)) {
+    errs() << ToolName << ": " << ec.message() << '\n';
     return;
   }
-  MemoryBuffer *Buffer = BufferPtr->release();
+  MemoryBuffer *Buffer = BufferPtr.take();
 
   SourceMgr SrcMgr;
 

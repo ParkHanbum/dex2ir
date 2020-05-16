@@ -1,4 +1,5 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | grep movne | count 1
+; RUN: llc < %s -march=arm | grep moveq | count 1
 
 define i32 @f1(float %X, float %Y) {
 	%tmp = fcmp uno float %X, %Y
@@ -11,10 +12,3 @@ define i32 @f2(float %X, float %Y) {
 	%retval = select i1 %tmp, i32 1, i32 -1
 	ret i32 %retval
 }
-
-; CHECK: movne
-; CHECK-NOT: movne
-
-; CHECK: moveq
-; CHECK-NOT: moveq
-

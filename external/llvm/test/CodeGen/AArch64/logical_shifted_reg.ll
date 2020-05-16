@@ -1,4 +1,4 @@
-; RUN: llc -verify-machineinstrs < %s -mtriple=aarch64-none-linux-gnu | FileCheck %s
+; RUN: llc -verify-machineinstrs < %s -mtriple=aarch64-none-linux-gnu -O0 | FileCheck %s
 
 @var1_32 = global i32 0
 @var2_32 = global i32 0
@@ -6,7 +6,7 @@
 @var1_64 = global i64 0
 @var2_64 = global i64 0
 
-define void @logical_32bit() minsize {
+define void @logical_32bit() {
 ; CHECK-LABEL: logical_32bit:
   %val1 = load i32* @var1_32
   %val2 = load i32* @var2_32
@@ -96,7 +96,7 @@ define void @logical_32bit() minsize {
   ret void
 }
 
-define void @logical_64bit() minsize {
+define void @logical_64bit() {
 ; CHECK-LABEL: logical_64bit:
   %val1 = load i64* @var1_64
   %val2 = load i64* @var2_64

@@ -7,8 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "t2-reduce-size"
 #include "ARM.h"
 #include "ARMBaseInstrInfo.h"
+#include "ARMBaseRegisterInfo.h"
 #include "ARMSubtarget.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "Thumb2InstrInfo.h"
@@ -21,10 +23,8 @@
 #include "llvm/IR/Function.h"        // To access Function attributes
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/Support/raw_ostream.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "t2-reduce-size"
 
 STATISTIC(NumNarrows,  "Number of 32-bit instrs reduced to 16-bit ones");
 STATISTIC(Num2Addrs,   "Number of 32-bit instrs reduced to 2addr 16-bit ones");
@@ -137,9 +137,9 @@ namespace {
     const Thumb2InstrInfo *TII;
     const ARMSubtarget *STI;
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
 
-    const char *getPassName() const override {
+    virtual const char *getPassName() const {
       return "Thumb2 instruction size reduction pass";
     }
 
@@ -256,7 +256,8 @@ Thumb2SizeReduce::canAddPseudoFlagDep(MachineInstr *Use, bool FirstInSelfLoop) {
     return HighLatencyCPSR || FirstInSelfLoop;
 
   SmallSet<unsigned, 2> Defs;
-  for (const MachineOperand &MO : CPSRDef->operands()) {
+  for (unsigned i = 0, e = CPSRDef->getNumOperands(); i != e; ++i) {
+    const MachineOperand &MO = CPSRDef->getOperand(i);
     if (!MO.isReg() || MO.isUndef() || MO.isUse())
       continue;
     unsigned Reg = MO.getReg();
@@ -265,7 +266,8 @@ Thumb2SizeReduce::canAddPseudoFlagDep(MachineInstr *Use, bool FirstInSelfLoop) {
     Defs.insert(Reg);
   }
 
-  for (const MachineOperand &MO : Use->operands()) {
+  for (unsigned i = 0, e = Use->getNumOperands(); i != e; ++i) {
+    const MachineOperand &MO = Use->getOperand(i);
     if (!MO.isReg() || MO.isUndef() || MO.isDef())
       continue;
     unsigned Reg = MO.getReg();
@@ -856,7 +858,8 @@ Thumb2SizeReduce::ReduceToNarrow(MachineBasicBlock &MBB, MachineInstr *MI,
 
 static bool UpdateCPSRDef(MachineInstr &MI, bool LiveCPSR, bool &DefCPSR) {
   bool HasDef = false;
-  for (const MachineOperand &MO : MI.operands()) {
+  for (unsigned i = 0, e = MI.getNumOperands(); i != e; ++i) {
+    const MachineOperand &MO = MI.getOperand(i);
     if (!MO.isReg() || MO.isUndef() || MO.isUse())
       continue;
     if (MO.getReg() != ARM::CPSR)
@@ -871,7 +874,8 @@ static bool UpdateCPSRDef(MachineInstr &MI, bool LiveCPSR, bool &DefCPSR) {
 }
 
 static bool UpdateCPSRUse(MachineInstr &MI, bool LiveCPSR) {
-  for (const MachineOperand &MO : MI.operands()) {
+  for (unsigned i = 0, e = MI.getNumOperands(); i != e; ++i) {
+    const MachineOperand &MO = MI.getOperand(i);
     if (!MO.isReg() || MO.isUndef() || MO.isDef())
       continue;
     if (MO.getReg() != ARM::CPSR)
@@ -916,14 +920,15 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
 
   // Yes, CPSR could be livein.
   bool LiveCPSR = MBB.isLiveIn(ARM::CPSR);
-  MachineInstr *BundleMI = nullptr;
+  MachineInstr *BundleMI = 0;
 
-  CPSRDef = nullptr;
+  CPSRDef = 0;
   HighLatencyCPSR = false;
 
   // Check predecessors for the latest CPSRDef.
-  for (auto *Pred : MBB.predecessors()) {
-    const MBBInfo &PInfo = BlockInfo[Pred->getNumber()];
+  for (MachineBasicBlock::pred_iterator
+       I = MBB.pred_begin(), E = MBB.pred_end(); I != E; ++I) {
+    const MBBInfo &PInfo = BlockInfo[(*I)->getNumber()];
     if (!PInfo.Visited) {
       // Since blocks are visited in RPO, this must be a back-edge.
       continue;
@@ -940,7 +945,7 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
   MachineBasicBlock::instr_iterator MII = MBB.instr_begin(),E = MBB.instr_end();
   MachineBasicBlock::instr_iterator NextMII;
   for (; MII != E; MII = NextMII) {
-    NextMII = std::next(MII);
+    NextMII = llvm::next(MII);
 
     MachineInstr *MI = &*MII;
     if (MI->isBundle()) {
@@ -957,7 +962,7 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
 
     if (ReduceMI(MBB, MI, LiveCPSR, IsSelfLoop)) {
       Modified = true;
-      MachineBasicBlock::instr_iterator I = std::prev(NextMII);
+      MachineBasicBlock::instr_iterator I = prior(NextMII);
       MI = &*I;
       // Removing and reinserting the first instruction in a bundle will break
       // up the bundle. Fix the bundling if it was broken.
@@ -975,16 +980,13 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
       MachineOperand *MO = BundleMI->findRegisterDefOperand(ARM::CPSR);
       if (MO && !MO->isDead())
         LiveCPSR = true;
-      MO = BundleMI->findRegisterUseOperand(ARM::CPSR);
-      if (MO && !MO->isKill())
-        LiveCPSR = true;
     }
 
     bool DefCPSR = false;
     LiveCPSR = UpdateCPSRDef(*MI, LiveCPSR, DefCPSR);
     if (MI->isCall()) {
       // Calls don't really set CPSR.
-      CPSRDef = nullptr;
+      CPSRDef = 0;
       HighLatencyCPSR = false;
       IsSelfLoop = false;
     } else if (DefCPSR) {
@@ -1010,8 +1012,8 @@ bool Thumb2SizeReduce::runOnMachineFunction(MachineFunction &MF) {
   AttributeSet FnAttrs = MF.getFunction()->getAttributes();
   OptimizeSize = FnAttrs.hasAttribute(AttributeSet::FunctionIndex,
                                       Attribute::OptimizeForSize);
-  MinimizeSize =
-      FnAttrs.hasAttribute(AttributeSet::FunctionIndex, Attribute::MinSize);
+  MinimizeSize = FnAttrs.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::MinSize);
 
   BlockInfo.clear();
   BlockInfo.resize(MF.getNumBlockIDs());

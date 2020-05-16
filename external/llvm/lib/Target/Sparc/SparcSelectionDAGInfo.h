@@ -22,7 +22,7 @@ class SparcTargetMachine;
 
 class SparcSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit SparcSelectionDAGInfo(const DataLayout &DL);
+  explicit SparcSelectionDAGInfo(const SparcTargetMachine &TM);
   ~SparcSelectionDAGInfo();
 };
 

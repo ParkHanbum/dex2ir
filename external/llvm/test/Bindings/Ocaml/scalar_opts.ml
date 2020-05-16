@@ -1,7 +1,4 @@
-(* RUN: rm -rf %t.builddir
- * RUN: mkdir -p %t.builddir
- * RUN: cp %s %t.builddir
- * RUN: %ocamlopt -warn-error A llvm.cmxa llvm_scalar_opts.cmxa llvm_target.cmxa %t.builddir/scalar_opts.ml -o %t
+(* RUN: %ocamlopt -warn-error A llvm.cmxa llvm_scalar_opts.cmxa llvm_target.cmxa %s -o %t
  * RUN: %t %t.bc
  * XFAIL: vg_leak
  *)
@@ -41,7 +38,10 @@ let test_transforms () =
   let fn = define_function "fn" fty m in
   ignore (build_ret_void (builder_at_end context (entry_block fn)));
   
+  let td = DataLayout.create (target_triple m) in
+  
   ignore (PassManager.create_function m
+           ++ DataLayout.add td
            ++ add_verifier
            ++ add_constant_propagation
            ++ add_sccp
@@ -72,12 +72,13 @@ let test_transforms () =
            ++ add_lower_expect_intrinsic
            ++ add_type_based_alias_analysis
            ++ add_basic_alias_analysis
-           ++ add_partially_inline_lib_calls
            ++ add_verifier
            ++ PassManager.initialize
            ++ PassManager.run_function fn
            ++ PassManager.finalize
-           ++ PassManager.dispose)
+           ++ PassManager.dispose);
+  
+  DataLayout.dispose td
 
 
 (*===-- Driver ------------------------------------------------------------===*)

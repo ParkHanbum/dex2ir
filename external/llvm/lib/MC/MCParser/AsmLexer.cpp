@@ -22,23 +22,23 @@
 using namespace llvm;
 
 AsmLexer::AsmLexer(const MCAsmInfo &_MAI) : MAI(_MAI)  {
-  CurPtr = nullptr;
+  CurBuf = NULL;
+  CurPtr = NULL;
   isAtStartOfLine = true;
-  AllowAtInIdentifier = !StringRef(MAI.getCommentString()).startswith("@");
 }
 
 AsmLexer::~AsmLexer() {
 }
 
-void AsmLexer::setBuffer(StringRef Buf, const char *ptr) {
-  CurBuf = Buf;
+void AsmLexer::setBuffer(const MemoryBuffer *buf, const char *ptr) {
+  CurBuf = buf;
 
   if (ptr)
     CurPtr = ptr;
   else
-    CurPtr = CurBuf.begin();
+    CurPtr = CurBuf->getBufferStart();
 
-  TokStart = nullptr;
+  TokStart = 0;
 }
 
 /// ReturnError - Set the error to the specified string at the specified
@@ -57,7 +57,7 @@ int AsmLexer::getNextChar() {
   case 0:
     // A nul character in the stream is either the end of the current buffer or
     // a random nul in the file.  Disambiguate that here.
-    if (CurPtr - 1 != CurBuf.end())
+    if (CurPtr-1 != CurBuf->getBufferEnd())
       return 0;  // Just whitespace.
 
     // Otherwise, return end of file.
@@ -91,57 +91,9 @@ AsmToken AsmLexer::LexFloatLiteral() {
                   StringRef(TokStart, CurPtr - TokStart));
 }
 
-/// LexHexFloatLiteral matches essentially (.[0-9a-fA-F]*)?[pP][+-]?[0-9a-fA-F]+
-/// while making sure there are enough actual digits around for the constant to
-/// be valid.
-///
-/// The leading "0x[0-9a-fA-F]*" (i.e. integer part) has already been consumed
-/// before we get here.
-AsmToken AsmLexer::LexHexFloatLiteral(bool NoIntDigits) {
-  assert((*CurPtr == 'p' || *CurPtr == 'P' || *CurPtr == '.') &&
-         "unexpected parse state in floating hex");
-  bool NoFracDigits = true;
-
-  // Skip the fractional part if there is one
-  if (*CurPtr == '.') {
-    ++CurPtr;
-
-    const char *FracStart = CurPtr;
-    while (isxdigit(*CurPtr))
-      ++CurPtr;
-
-    NoFracDigits = CurPtr == FracStart;
-  }
-
-  if (NoIntDigits && NoFracDigits)
-    return ReturnError(TokStart, "invalid hexadecimal floating-point constant: "
-                                 "expected at least one significand digit");
-
-  // Make sure we do have some kind of proper exponent part
-  if (*CurPtr != 'p' && *CurPtr != 'P')
-    return ReturnError(TokStart, "invalid hexadecimal floating-point constant: "
-                                 "expected exponent part 'p'");
-  ++CurPtr;
-
-  if (*CurPtr == '+' || *CurPtr == '-')
-    ++CurPtr;
-
-  // N.b. exponent digits are *not* hex
-  const char *ExpStart = CurPtr;
-  while (isdigit(*CurPtr))
-    ++CurPtr;
-
-  if (CurPtr == ExpStart)
-    return ReturnError(TokStart, "invalid hexadecimal floating-point constant: "
-                                 "expected at least one exponent digit");
-
-  return AsmToken(AsmToken::Real, StringRef(TokStart, CurPtr - TokStart));
-}
-
-/// LexIdentifier: [a-zA-Z_.][a-zA-Z0-9_$.@?]*
-static bool IsIdentifierChar(char c, bool AllowAt) {
-  return isalnum(c) || c == '_' || c == '$' || c == '.' ||
-         (c == '@' && AllowAt) || c == '?';
+/// LexIdentifier: [a-zA-Z_.][a-zA-Z0-9_$.@]*
+static bool IsIdentifierChar(char c) {
+  return isalnum(c) || c == '_' || c == '$' || c == '.' || c == '@';
 }
 AsmToken AsmLexer::LexIdentifier() {
   // Check for floating point literals.
@@ -149,12 +101,11 @@ AsmToken AsmLexer::LexIdentifier() {
     // Disambiguate a .1243foo identifier from a floating literal.
     while (isdigit(*CurPtr))
       ++CurPtr;
-    if (*CurPtr == 'e' || *CurPtr == 'E' ||
-        !IsIdentifierChar(*CurPtr, AllowAtInIdentifier))
+    if (*CurPtr == 'e' || *CurPtr == 'E' || !IsIdentifierChar(*CurPtr))
       return LexFloatLiteral();
   }
 
-  while (IsIdentifierChar(*CurPtr, AllowAtInIdentifier))
+  while (IsIdentifierChar(*CurPtr))
     ++CurPtr;
 
   // Handle . as a special case.
@@ -200,8 +151,8 @@ AsmToken AsmLexer::LexLineComment() {
     CurChar = getNextChar();
 
   if (CurChar == EOF)
-    return AsmToken(AsmToken::Eof, StringRef(TokStart, 0));
-  return AsmToken(AsmToken::EndOfStatement, StringRef(TokStart, 0));
+    return AsmToken(AsmToken::Eof, StringRef(CurPtr, 0));
+  return AsmToken(AsmToken::EndOfStatement, StringRef(CurPtr, 0));
 }
 
 static void SkipIgnoredIntegerSuffix(const char *&CurPtr) {
@@ -217,7 +168,7 @@ static void SkipIgnoredIntegerSuffix(const char *&CurPtr) {
 // Look ahead to search for first non-hex digit, if it's [hH], then we treat the
 // integer as a hexadecimal, possibly with leading zeroes.
 static unsigned doLookAhead(const char *&CurPtr, unsigned DefaultRadix) {
-  const char *FirstHex = nullptr;
+  const char *FirstHex = 0;
   const char *LookAhead = CurPtr;
   while (1) {
     if (isdigit(*LookAhead)) {
@@ -235,13 +186,6 @@ static unsigned doLookAhead(const char *&CurPtr, unsigned DefaultRadix) {
   if (isHex)
     return 16;
   return DefaultRadix;
-}
-
-static AsmToken intToken(StringRef Ref, APInt &Value)
-{
-  if (Value.isIntN(64))
-    return AsmToken(AsmToken::Integer, Ref, Value);
-  return AsmToken(AsmToken::BigNum, Ref, Value);
 }
 
 /// LexDigit: First character is [0-9].
@@ -264,10 +208,16 @@ AsmToken AsmLexer::LexDigit() {
 
     StringRef Result(TokStart, CurPtr - TokStart);
 
-    APInt Value(128, 0, true);
-    if (Result.getAsInteger(Radix, Value))
-      return ReturnError(TokStart, !isHex ? "invalid decimal number" :
+    long long Value;
+    if (Result.getAsInteger(Radix, Value)) {
+      // Allow positive values that are too large to fit into a signed 64-bit
+      // integer, but that do fit in an unsigned one, we just convert them over.
+      unsigned long long UValue;
+      if (Result.getAsInteger(Radix, UValue))
+        return ReturnError(TokStart, !isHex ? "invalid decimal number" :
                            "invalid hexdecimal number");
+      Value = (long long)UValue;
+    }
 
     // Consume the [bB][hH].
     if (Radix == 2 || Radix == 16)
@@ -277,7 +227,7 @@ AsmToken AsmLexer::LexDigit() {
     // suffices on integer literals.
     SkipIgnoredIntegerSuffix(CurPtr);
 
-    return intToken(Result, Value);
+    return AsmToken(AsmToken::Integer, Result, Value);
   }
 
   if (*CurPtr == 'b') {
@@ -298,7 +248,7 @@ AsmToken AsmLexer::LexDigit() {
 
     StringRef Result(TokStart, CurPtr - TokStart);
 
-    APInt Value(128, 0, true);
+    long long Value;
     if (Result.substr(2).getAsInteger(2, Value))
       return ReturnError(TokStart, "invalid binary number");
 
@@ -306,7 +256,7 @@ AsmToken AsmLexer::LexDigit() {
     // suffixes on integer literals.
     SkipIgnoredIntegerSuffix(CurPtr);
 
-    return intToken(Result, Value);
+    return AsmToken(AsmToken::Integer, Result, Value);
   }
 
   if (*CurPtr == 'x') {
@@ -315,16 +265,11 @@ AsmToken AsmLexer::LexDigit() {
     while (isxdigit(CurPtr[0]))
       ++CurPtr;
 
-    // "0x.0p0" is valid, and "0x0p0" (but not "0xp0" for example, which will be
-    // diagnosed by LexHexFloatLiteral).
-    if (CurPtr[0] == '.' || CurPtr[0] == 'p' || CurPtr[0] == 'P')
-      return LexHexFloatLiteral(NumStart == CurPtr);
-
-    // Otherwise requires at least one hex digit.
+    // Requires at least one hex digit.
     if (CurPtr == NumStart)
       return ReturnError(CurPtr-2, "invalid hexadecimal number");
 
-    APInt Result(128, 0);
+    unsigned long long Result;
     if (StringRef(TokStart, CurPtr - TokStart).getAsInteger(0, Result))
       return ReturnError(TokStart, "invalid hexadecimal number");
 
@@ -336,11 +281,12 @@ AsmToken AsmLexer::LexDigit() {
     // suffixes on integer literals.
     SkipIgnoredIntegerSuffix(CurPtr);
 
-    return intToken(StringRef(TokStart, CurPtr - TokStart), Result);
+    return AsmToken(AsmToken::Integer, StringRef(TokStart, CurPtr - TokStart),
+                    (int64_t)Result);
   }
 
   // Either octal or hexadecimal.
-  APInt Value(128, 0, true);
+  long long Value;
   unsigned Radix = doLookAhead(CurPtr, 8);
   bool isHex = Radix == 16;
   StringRef Result(TokStart, CurPtr - TokStart);
@@ -356,7 +302,7 @@ AsmToken AsmLexer::LexDigit() {
   // suffixes on integer literals.
   SkipIgnoredIntegerSuffix(CurPtr);
 
-  return intToken(Result, Value);
+  return AsmToken(AsmToken::Integer, Result, Value);
 }
 
 /// LexSingleQuote: Integer: 'b'
@@ -419,8 +365,9 @@ StringRef AsmLexer::LexUntilEndOfStatement() {
 
   while (!isAtStartOfComment(*CurPtr) &&    // Start of line comment.
          !isAtStatementSeparator(CurPtr) && // End of statement marker.
-         *CurPtr != '\n' && *CurPtr != '\r' &&
-         (*CurPtr != 0 || CurPtr != CurBuf.end())) {
+         *CurPtr != '\n' &&
+         *CurPtr != '\r' &&
+         (*CurPtr != 0 || CurPtr != CurBuf->getBufferEnd())) {
     ++CurPtr;
   }
   return StringRef(TokStart, CurPtr-TokStart);
@@ -429,33 +376,12 @@ StringRef AsmLexer::LexUntilEndOfStatement() {
 StringRef AsmLexer::LexUntilEndOfLine() {
   TokStart = CurPtr;
 
-  while (*CurPtr != '\n' && *CurPtr != '\r' &&
-         (*CurPtr != 0 || CurPtr != CurBuf.end())) {
+  while (*CurPtr != '\n' &&
+         *CurPtr != '\r' &&
+         (*CurPtr != 0 || CurPtr != CurBuf->getBufferEnd())) {
     ++CurPtr;
   }
   return StringRef(TokStart, CurPtr-TokStart);
-}
-
-const AsmToken AsmLexer::peekTok(bool ShouldSkipSpace) {
-  const char *SavedTokStart = TokStart;
-  const char *SavedCurPtr = CurPtr;
-  bool SavedAtStartOfLine = isAtStartOfLine;
-  bool SavedSkipSpace = SkipSpace;
-
-  std::string SavedErr = getErr();
-  SMLoc SavedErrLoc = getErrLoc();
-
-  SkipSpace = ShouldSkipSpace;
-  AsmToken Token = LexToken();
-
-  SetError(SavedErrLoc, SavedErr);
-
-  SkipSpace = SavedSkipSpace;
-  isAtStartOfLine = SavedAtStartOfLine;
-  CurPtr = SavedCurPtr;
-  TokStart = SavedTokStart;
-
-  return Token;
 }
 
 bool AsmLexer::isAtStartOfComment(char Char) {

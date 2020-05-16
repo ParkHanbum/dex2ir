@@ -13,16 +13,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "ctags-emitter"
+
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
+#include "llvm/TableGen/TableGenBackend.h"
 #include <algorithm>
 #include <string>
 #include <vector>
 using namespace llvm;
-
-#define DEBUG_TYPE "ctags-emitter"
 
 namespace llvm { extern SourceMgr SrcMgr; }
 
@@ -37,8 +38,8 @@ public:
       : Id(&Name), Loc(Location) {}
   int operator<(const Tag &B) const { return *Id < *B.Id; }
   void emit(raw_ostream &OS) const {
-    const MemoryBuffer *CurMB =
-        SrcMgr.getMemoryBuffer(SrcMgr.FindBufferContainingLoc(Loc));
+    int BufferID = SrcMgr.FindBufferContainingLoc(Loc);
+    MemoryBuffer *CurMB = SrcMgr.getBufferInfo(BufferID).Buffer;
     const char *BufferName = CurMB->getBufferIdentifier();
     std::pair<unsigned, unsigned> LineAndColumn = SrcMgr.getLineAndColumn(Loc);
     OS << *Id << "\t" << BufferName << "\t" << LineAndColumn.first << "\n";

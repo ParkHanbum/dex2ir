@@ -12,71 +12,56 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "jit"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ExecutionEngine/JITMemoryManager.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
-#include "llvm/ExecutionEngine/JITMemoryManager.h"
-#include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/IR/ValueHandle.h"
-#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MutexGuard.h"
 #include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cmath>
 #include <cstring>
 using namespace llvm;
 
-#define DEBUG_TYPE "jit"
-
 STATISTIC(NumInitBytes, "Number of bytes of global vars initialized");
 STATISTIC(NumGlobals  , "Number of global vars initialized");
-
-// Pin the vtable to this file.
-void ObjectCache::anchor() {}
-void ObjectBuffer::anchor() {}
-void ObjectBufferStream::anchor() {}
 
 ExecutionEngine *(*ExecutionEngine::JITCtor)(
   Module *M,
   std::string *ErrorStr,
   JITMemoryManager *JMM,
   bool GVsWithCode,
-  TargetMachine *TM) = nullptr;
+  TargetMachine *TM) = 0;
 ExecutionEngine *(*ExecutionEngine::MCJITCtor)(
   Module *M,
   std::string *ErrorStr,
   RTDyldMemoryManager *MCJMM,
   bool GVsWithCode,
-  TargetMachine *TM) = nullptr;
+  TargetMachine *TM) = 0;
 ExecutionEngine *(*ExecutionEngine::InterpCtor)(Module *M,
-                                                std::string *ErrorStr) =nullptr;
+                                                std::string *ErrorStr) = 0;
 
 ExecutionEngine::ExecutionEngine(Module *M)
   : EEState(*this),
-    LazyFunctionCreator(nullptr) {
+    LazyFunctionCreator(0),
+    ExceptionTableRegister(0),
+    ExceptionTableDeregister(0) {
   CompilingLazily         = false;
   GVCompilationDisabled   = false;
   SymbolSearchingDisabled = false;
-
-  // IR module verification is enabled by default in debug builds, and disabled
-  // by default in release builds.
-#ifndef NDEBUG
-  VerifyModules = true;
-#else
-  VerifyModules = false;
-#endif
-
   Modules.push_back(M);
   assert(M && "Module is null?");
 }
@@ -85,6 +70,16 @@ ExecutionEngine::~ExecutionEngine() {
   clearAllGlobalMappings();
   for (unsigned i = 0, e = Modules.size(); i != e; ++i)
     delete Modules[i];
+}
+
+void ExecutionEngine::DeregisterAllTables() {
+  if (ExceptionTableDeregister) {
+    DenseMap<const Function*, void*>::iterator it = AllExceptionTables.begin();
+    DenseMap<const Function*, void*>::iterator ite = AllExceptionTables.end();
+    for (; it != ite; ++it)
+      ExceptionTableDeregister(it->second);
+    AllExceptionTables.clear();
+  }
 }
 
 namespace {
@@ -108,7 +103,7 @@ public:
     return static_cast<char*>(RawMemory) + sizeof(GVMemoryBlock);
   }
 
-  void deleted() override {
+  virtual void deleted() {
     // We allocated with operator new and with some extra memory hanging off the
     // end, so don't just delete this.  I'm not sure if this is actually
     // required.
@@ -120,10 +115,6 @@ public:
 
 char *ExecutionEngine::getMemoryForGV(const GlobalVariable *GV) {
   return GVMemoryBlock::Create(GV, *getDataLayout());
-}
-
-void ExecutionEngine::addObjectFile(std::unique_ptr<object::ObjectFile> O) {
-  llvm_unreachable("ExecutionEngine subclass doesn't implement addObjectFile.");
 }
 
 bool ExecutionEngine::removeModule(Module *M) {
@@ -144,18 +135,19 @@ Function *ExecutionEngine::FindFunctionNamed(const char *FnName) {
     if (Function *F = Modules[i]->getFunction(FnName))
       return F;
   }
-  return nullptr;
+  return 0;
 }
 
 
-void *ExecutionEngineState::RemoveMapping(const GlobalValue *ToUnmap) {
+void *ExecutionEngineState::RemoveMapping(const MutexGuard &,
+                                          const GlobalValue *ToUnmap) {
   GlobalAddressMapTy::iterator I = GlobalAddressMap.find(ToUnmap);
   void *OldVal;
 
   // FIXME: This is silly, we shouldn't end up with a mapping -> 0 in the
   // GlobalAddressMap.
   if (I == GlobalAddressMap.end())
-    OldVal = nullptr;
+    OldVal = 0;
   else {
     OldVal = I->second;
     GlobalAddressMap.erase(I);
@@ -170,15 +162,15 @@ void ExecutionEngine::addGlobalMapping(const GlobalValue *GV, void *Addr) {
 
   DEBUG(dbgs() << "JIT: Map \'" << GV->getName()
         << "\' to [" << Addr << "]\n";);
-  void *&CurVal = EEState.getGlobalAddressMap()[GV];
-  assert((!CurVal || !Addr) && "GlobalMapping already established!");
+  void *&CurVal = EEState.getGlobalAddressMap(locked)[GV];
+  assert((CurVal == 0 || Addr == 0) && "GlobalMapping already established!");
   CurVal = Addr;
 
   // If we are using the reverse mapping, add it too.
-  if (!EEState.getGlobalAddressReverseMap().empty()) {
+  if (!EEState.getGlobalAddressReverseMap(locked).empty()) {
     AssertingVH<const GlobalValue> &V =
-      EEState.getGlobalAddressReverseMap()[Addr];
-    assert((!V || !GV) && "GlobalMapping already established!");
+      EEState.getGlobalAddressReverseMap(locked)[Addr];
+    assert((V == 0 || GV == 0) && "GlobalMapping already established!");
     V = GV;
   }
 }
@@ -186,42 +178,42 @@ void ExecutionEngine::addGlobalMapping(const GlobalValue *GV, void *Addr) {
 void ExecutionEngine::clearAllGlobalMappings() {
   MutexGuard locked(lock);
 
-  EEState.getGlobalAddressMap().clear();
-  EEState.getGlobalAddressReverseMap().clear();
+  EEState.getGlobalAddressMap(locked).clear();
+  EEState.getGlobalAddressReverseMap(locked).clear();
 }
 
 void ExecutionEngine::clearGlobalMappingsFromModule(Module *M) {
   MutexGuard locked(lock);
 
   for (Module::iterator FI = M->begin(), FE = M->end(); FI != FE; ++FI)
-    EEState.RemoveMapping(FI);
+    EEState.RemoveMapping(locked, FI);
   for (Module::global_iterator GI = M->global_begin(), GE = M->global_end();
        GI != GE; ++GI)
-    EEState.RemoveMapping(GI);
+    EEState.RemoveMapping(locked, GI);
 }
 
 void *ExecutionEngine::updateGlobalMapping(const GlobalValue *GV, void *Addr) {
   MutexGuard locked(lock);
 
   ExecutionEngineState::GlobalAddressMapTy &Map =
-    EEState.getGlobalAddressMap();
+    EEState.getGlobalAddressMap(locked);
 
   // Deleting from the mapping?
-  if (!Addr)
-    return EEState.RemoveMapping(GV);
+  if (Addr == 0)
+    return EEState.RemoveMapping(locked, GV);
 
   void *&CurVal = Map[GV];
   void *OldVal = CurVal;
 
-  if (CurVal && !EEState.getGlobalAddressReverseMap().empty())
-    EEState.getGlobalAddressReverseMap().erase(CurVal);
+  if (CurVal && !EEState.getGlobalAddressReverseMap(locked).empty())
+    EEState.getGlobalAddressReverseMap(locked).erase(CurVal);
   CurVal = Addr;
 
   // If we are using the reverse mapping, add it too.
-  if (!EEState.getGlobalAddressReverseMap().empty()) {
+  if (!EEState.getGlobalAddressReverseMap(locked).empty()) {
     AssertingVH<const GlobalValue> &V =
-      EEState.getGlobalAddressReverseMap()[Addr];
-    assert((!V || !GV) && "GlobalMapping already established!");
+      EEState.getGlobalAddressReverseMap(locked)[Addr];
+    assert((V == 0 || GV == 0) && "GlobalMapping already established!");
     V = GV;
   }
   return OldVal;
@@ -231,25 +223,25 @@ void *ExecutionEngine::getPointerToGlobalIfAvailable(const GlobalValue *GV) {
   MutexGuard locked(lock);
 
   ExecutionEngineState::GlobalAddressMapTy::iterator I =
-    EEState.getGlobalAddressMap().find(GV);
-  return I != EEState.getGlobalAddressMap().end() ? I->second : nullptr;
+    EEState.getGlobalAddressMap(locked).find(GV);
+  return I != EEState.getGlobalAddressMap(locked).end() ? I->second : 0;
 }
 
 const GlobalValue *ExecutionEngine::getGlobalValueAtAddress(void *Addr) {
   MutexGuard locked(lock);
 
   // If we haven't computed the reverse mapping yet, do so first.
-  if (EEState.getGlobalAddressReverseMap().empty()) {
+  if (EEState.getGlobalAddressReverseMap(locked).empty()) {
     for (ExecutionEngineState::GlobalAddressMapTy::iterator
-         I = EEState.getGlobalAddressMap().begin(),
-         E = EEState.getGlobalAddressMap().end(); I != E; ++I)
-      EEState.getGlobalAddressReverseMap().insert(std::make_pair(
+         I = EEState.getGlobalAddressMap(locked).begin(),
+         E = EEState.getGlobalAddressMap(locked).end(); I != E; ++I)
+      EEState.getGlobalAddressReverseMap(locked).insert(std::make_pair(
                                                           I->second, I->first));
   }
 
   std::map<void *, AssertingVH<const GlobalValue> >::iterator I =
-    EEState.getGlobalAddressReverseMap().find(Addr);
-  return I != EEState.getGlobalAddressReverseMap().end() ? I->second : nullptr;
+    EEState.getGlobalAddressReverseMap(locked).find(Addr);
+  return I != EEState.getGlobalAddressReverseMap(locked).end() ? I->second : 0;
 }
 
 namespace {
@@ -257,11 +249,11 @@ class ArgvArray {
   char *Array;
   std::vector<char*> Values;
 public:
-  ArgvArray() : Array(nullptr) {}
+  ArgvArray() : Array(NULL) {}
   ~ArgvArray() { clear(); }
   void clear() {
     delete[] Array;
-    Array = nullptr;
+    Array = NULL;
     for (size_t I = 0, E = Values.size(); I != E; ++I) {
       delete[] Values[I];
     }
@@ -297,7 +289,7 @@ void *ArgvArray::reset(LLVMContext &C, ExecutionEngine *EE,
   }
 
   // Null terminate it
-  EE->StoreValueToMemory(PTOGV(nullptr),
+  EE->StoreValueToMemory(PTOGV(0),
                          (GenericValue*)(Array+InputArgv.size()*PtrSize),
                          SBytePtr);
   return Array;
@@ -317,11 +309,11 @@ void ExecutionEngine::runStaticConstructorsDestructors(Module *module,
   // Should be an array of '{ i32, void ()* }' structs.  The first value is
   // the init priority, which we ignore.
   ConstantArray *InitList = dyn_cast<ConstantArray>(GV->getInitializer());
-  if (!InitList)
+  if (InitList == 0)
     return;
   for (unsigned i = 0, e = InitList->getNumOperands(); i != e; ++i) {
     ConstantStruct *CS = dyn_cast<ConstantStruct>(InitList->getOperand(i));
-    if (!CS) continue;
+    if (CS == 0) continue;
 
     Constant *FP = CS->getOperand(1);
     if (FP->isNullValue())
@@ -411,14 +403,13 @@ ExecutionEngine *ExecutionEngine::create(Module *M,
                                          std::string *ErrorStr,
                                          CodeGenOpt::Level OptLevel,
                                          bool GVsWithCode) {
-
-  EngineBuilder EB =
-      EngineBuilder(M)
-          .setEngineKind(ForceInterpreter ? EngineKind::Interpreter
-                                          : EngineKind::Either)
-          .setErrorStr(ErrorStr)
-          .setOptLevel(OptLevel)
-          .setAllocateGVsWithCode(GVsWithCode);
+  EngineBuilder EB =  EngineBuilder(M)
+      .setEngineKind(ForceInterpreter
+                     ? EngineKind::Interpreter
+                     : EngineKind::JIT)
+      .setErrorStr(ErrorStr)
+      .setOptLevel(OptLevel)
+      .setAllocateGVsWithCode(GVsWithCode);
 
   return EB.create();
 }
@@ -433,10 +424,10 @@ ExecutionEngine *ExecutionEngine::createJIT(Module *M,
                                             bool GVsWithCode,
                                             Reloc::Model RM,
                                             CodeModel::Model CMM) {
-  if (!ExecutionEngine::JITCtor) {
+  if (ExecutionEngine::JITCtor == 0) {
     if (ErrorStr)
       *ErrorStr = "JIT has not been linked in.";
-    return nullptr;
+    return 0;
   }
 
   // Use the defaults for extra parameters.  Users can use EngineBuilder to
@@ -452,39 +443,18 @@ ExecutionEngine *ExecutionEngine::createJIT(Module *M,
 
   // TODO: permit custom TargetOptions here
   TargetMachine *TM = EB.selectTarget();
-  if (!TM || (ErrorStr && ErrorStr->length() > 0)) return nullptr;
+  if (!TM || (ErrorStr && ErrorStr->length() > 0)) return 0;
 
   return ExecutionEngine::JITCtor(M, ErrorStr, JMM, GVsWithCode, TM);
 }
 
-void EngineBuilder::InitEngine() {
-  WhichEngine = EngineKind::Either;
-  ErrorStr = nullptr;
-  OptLevel = CodeGenOpt::Default;
-  MCJMM = nullptr;
-  JMM = nullptr;
-  Options = TargetOptions();
-  AllocateGVsWithCode = false;
-  RelocModel = Reloc::Default;
-  CMModel = CodeModel::JITDefault;
-  UseMCJIT = false;
-
-// IR module verification is enabled by default in debug builds, and disabled
-// by default in release builds.
-#ifndef NDEBUG
-  VerifyModules = true;
-#else
-  VerifyModules = false;
-#endif
-}
-
 ExecutionEngine *EngineBuilder::create(TargetMachine *TM) {
-  std::unique_ptr<TargetMachine> TheTM(TM); // Take ownership.
+  OwningPtr<TargetMachine> TheTM(TM); // Take ownership.
 
   // Make sure we can resolve symbols in the program as well. The zero arg
   // to the function tells DynamicLibrary to load the program, not a library.
-  if (sys::DynamicLibrary::LoadLibraryPermanently(nullptr, ErrorStr))
-    return nullptr;
+  if (sys::DynamicLibrary::LoadLibraryPermanently(0, ErrorStr))
+    return 0;
 
   assert(!(JMM && MCJMM));
   
@@ -497,7 +467,7 @@ ExecutionEngine *EngineBuilder::create(TargetMachine *TM) {
     else {
       if (ErrorStr)
         *ErrorStr = "Cannot create an interpreter with a memory manager.";
-      return nullptr;
+      return 0;
     }
   }
   
@@ -506,7 +476,7 @@ ExecutionEngine *EngineBuilder::create(TargetMachine *TM) {
       *ErrorStr =
         "Cannot create a legacy JIT with a runtime dyld memory "
         "manager.";
-    return nullptr;
+    return 0;
   }
 
   // Unless the interpreter was explicitly selected or the JIT is not linked,
@@ -519,17 +489,16 @@ ExecutionEngine *EngineBuilder::create(TargetMachine *TM) {
              << " a different -march switch.\n";
     }
 
-    ExecutionEngine *EE = nullptr;
-    if (UseMCJIT && ExecutionEngine::MCJITCtor)
-      EE = ExecutionEngine::MCJITCtor(M, ErrorStr, MCJMM ? MCJMM : JMM,
-                                      AllocateGVsWithCode, TheTM.release());
-    else if (ExecutionEngine::JITCtor)
-      EE = ExecutionEngine::JITCtor(M, ErrorStr, JMM,
-                                    AllocateGVsWithCode, TheTM.release());
-
-    if (EE) {
-      EE->setVerifyModules(VerifyModules);
-      return EE;
+    if (UseMCJIT && ExecutionEngine::MCJITCtor) {
+      ExecutionEngine *EE =
+        ExecutionEngine::MCJITCtor(M, ErrorStr, MCJMM ? MCJMM : JMM,
+                                   AllocateGVsWithCode, TheTM.take());
+      if (EE) return EE;
+    } else if (ExecutionEngine::JITCtor) {
+      ExecutionEngine *EE =
+        ExecutionEngine::JITCtor(M, ErrorStr, JMM,
+                                 AllocateGVsWithCode, TheTM.take());
+      if (EE) return EE;
     }
   }
 
@@ -540,16 +509,16 @@ ExecutionEngine *EngineBuilder::create(TargetMachine *TM) {
       return ExecutionEngine::InterpCtor(M, ErrorStr);
     if (ErrorStr)
       *ErrorStr = "Interpreter has not been linked in.";
-    return nullptr;
+    return 0;
   }
 
-  if ((WhichEngine & EngineKind::JIT) && !ExecutionEngine::JITCtor &&
-      !ExecutionEngine::MCJITCtor) {
+  if ((WhichEngine & EngineKind::JIT) && ExecutionEngine::JITCtor == 0 &&
+      ExecutionEngine::MCJITCtor == 0) {
     if (ErrorStr)
       *ErrorStr = "JIT has not been linked in.";
   }
 
-  return nullptr;
+  return 0;
 }
 
 void *ExecutionEngine::getPointerToGlobal(const GlobalValue *GV) {
@@ -557,7 +526,7 @@ void *ExecutionEngine::getPointerToGlobal(const GlobalValue *GV) {
     return getPointerToFunction(F);
 
   MutexGuard locked(lock);
-  if (void *P = EEState.getGlobalAddressMap()[GV])
+  if (void *P = EEState.getGlobalAddressMap(locked)[GV])
     return P;
 
   // Global variable might have been added since interpreter started.
@@ -567,7 +536,7 @@ void *ExecutionEngine::getPointerToGlobal(const GlobalValue *GV) {
   else
     llvm_unreachable("Global hasn't had an address allocated yet!");
 
-  return EEState.getGlobalAddressMap()[GV];
+  return EEState.getGlobalAddressMap(locked)[GV];
 }
 
 /// \brief Converts a Constant* into a GenericValue, including handling of
@@ -587,24 +556,6 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       // with the correct bit width.
       Result.IntVal = APInt(C->getType()->getPrimitiveSizeInBits(), 0);
       break;
-    case Type::StructTyID: {
-      // if the whole struct is 'undef' just reserve memory for the value.
-      if(StructType *STy = dyn_cast<StructType>(C->getType())) {
-        unsigned int elemNum = STy->getNumElements();
-        Result.AggregateVal.resize(elemNum);
-        for (unsigned int i = 0; i < elemNum; ++i) {
-          Type *ElemTy = STy->getElementType(i);
-          if (ElemTy->isIntegerTy())
-            Result.AggregateVal[i].IntVal = 
-              APInt(ElemTy->getPrimitiveSizeInBits(), 0);
-          else if (ElemTy->isAggregateType()) {
-              const Constant *ElemUndef = UndefValue::get(ElemTy);
-              Result.AggregateVal[i] = getConstantValue(ElemUndef);
-            }
-          }
-        }
-      }
-      break;
     case Type::VectorTyID:
       // if the whole vector is 'undef' just reserve memory for the value.
       const VectorType* VTy = dyn_cast<VectorType>(C->getType());
@@ -613,7 +564,7 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       Result.AggregateVal.resize(elemNum);
       if (ElemTy->isIntegerTy())
         for (unsigned int i = 0; i < elemNum; ++i)
-          Result.AggregateVal[i].IntVal =
+          Result.AggregateVal[i].IntVal = 
             APInt(ElemTy->getPrimitiveSizeInBits(), 0);
       break;
     }
@@ -627,8 +578,8 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
     case Instruction::GetElementPtr: {
       // Compute the index
       GenericValue Result = getConstantValue(Op0);
-      APInt Offset(DL->getPointerSizeInBits(), 0);
-      cast<GEPOperator>(CE)->accumulateConstantOffset(*DL, Offset);
+      APInt Offset(TD->getPointerSizeInBits(), 0);
+      cast<GEPOperator>(CE)->accumulateConstantOffset(*TD, Offset);
 
       char* tmp = (char*) Result.PointerVal;
       Result = PTOGV(tmp + Offset.getSExtValue());
@@ -715,16 +666,16 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
     }
     case Instruction::PtrToInt: {
       GenericValue GV = getConstantValue(Op0);
-      uint32_t PtrWidth = DL->getTypeSizeInBits(Op0->getType());
+      uint32_t PtrWidth = TD->getTypeSizeInBits(Op0->getType());
       assert(PtrWidth <= 64 && "Bad pointer width");
       GV.IntVal = APInt(PtrWidth, uintptr_t(GV.PointerVal));
-      uint32_t IntWidth = DL->getTypeSizeInBits(CE->getType());
+      uint32_t IntWidth = TD->getTypeSizeInBits(CE->getType());
       GV.IntVal = GV.IntVal.zextOrTrunc(IntWidth);
       return GV;
     }
     case Instruction::IntToPtr: {
       GenericValue GV = getConstantValue(Op0);
-      uint32_t PtrWidth = DL->getTypeSizeInBits(CE->getType());
+      uint32_t PtrWidth = TD->getTypeSizeInBits(CE->getType());
       GV.IntVal = GV.IntVal.zextOrTrunc(PtrWidth);
       assert(GV.IntVal.getBitWidth() <= 64 && "Bad pointer width");
       GV.PointerVal = PointerTy(uintptr_t(GV.IntVal.getZExtValue()));
@@ -885,7 +836,7 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
     break;
   case Type::PointerTyID:
     if (isa<ConstantPointerNull>(C))
-      Result.PointerVal = nullptr;
+      Result.PointerVal = 0;
     else if (const Function *F = dyn_cast<Function>(C))
       Result = PTOGV(getPointerToFunctionOrStub(const_cast<Function*>(F)));
     else if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(C))
@@ -1230,29 +1181,33 @@ void ExecutionEngine::emitGlobals() {
   if (Modules.size() != 1) {
     for (unsigned m = 0, e = Modules.size(); m != e; ++m) {
       Module &M = *Modules[m];
-      for (const auto &GV : M.globals()) {
-        if (GV.hasLocalLinkage() || GV.isDeclaration() ||
-            GV.hasAppendingLinkage() || !GV.hasName())
+      for (Module::const_global_iterator I = M.global_begin(),
+           E = M.global_end(); I != E; ++I) {
+        const GlobalValue *GV = I;
+        if (GV->hasLocalLinkage() || GV->isDeclaration() ||
+            GV->hasAppendingLinkage() || !GV->hasName())
           continue;// Ignore external globals and globals with internal linkage.
 
         const GlobalValue *&GVEntry =
-          LinkedGlobalsMap[std::make_pair(GV.getName(), GV.getType())];
+          LinkedGlobalsMap[std::make_pair(GV->getName(), GV->getType())];
 
         // If this is the first time we've seen this global, it is the canonical
         // version.
         if (!GVEntry) {
-          GVEntry = &GV;
+          GVEntry = GV;
           continue;
         }
 
         // If the existing global is strong, never replace it.
-        if (GVEntry->hasExternalLinkage())
+        if (GVEntry->hasExternalLinkage() ||
+            GVEntry->hasDLLImportLinkage() ||
+            GVEntry->hasDLLExportLinkage())
           continue;
 
         // Otherwise, we know it's linkonce/weak, replace it if this is a strong
         // symbol.  FIXME is this right for common?
-        if (GV.hasExternalLinkage() || GVEntry->hasExternalWeakLinkage())
-          GVEntry = &GV;
+        if (GV->hasExternalLinkage() || GVEntry->hasExternalWeakLinkage())
+          GVEntry = GV;
       }
     }
   }
@@ -1260,30 +1215,31 @@ void ExecutionEngine::emitGlobals() {
   std::vector<const GlobalValue*> NonCanonicalGlobals;
   for (unsigned m = 0, e = Modules.size(); m != e; ++m) {
     Module &M = *Modules[m];
-    for (const auto &GV : M.globals()) {
+    for (Module::const_global_iterator I = M.global_begin(), E = M.global_end();
+         I != E; ++I) {
       // In the multi-module case, see what this global maps to.
       if (!LinkedGlobalsMap.empty()) {
         if (const GlobalValue *GVEntry =
-              LinkedGlobalsMap[std::make_pair(GV.getName(), GV.getType())]) {
+              LinkedGlobalsMap[std::make_pair(I->getName(), I->getType())]) {
           // If something else is the canonical global, ignore this one.
-          if (GVEntry != &GV) {
-            NonCanonicalGlobals.push_back(&GV);
+          if (GVEntry != &*I) {
+            NonCanonicalGlobals.push_back(I);
             continue;
           }
         }
       }
 
-      if (!GV.isDeclaration()) {
-        addGlobalMapping(&GV, getMemoryForGV(&GV));
+      if (!I->isDeclaration()) {
+        addGlobalMapping(I, getMemoryForGV(I));
       } else {
         // External variable reference. Try to use the dynamic loader to
         // get a pointer to it.
         if (void *SymAddr =
-            sys::DynamicLibrary::SearchForAddressOfSymbol(GV.getName()))
-          addGlobalMapping(&GV, SymAddr);
+            sys::DynamicLibrary::SearchForAddressOfSymbol(I->getName()))
+          addGlobalMapping(I, SymAddr);
         else {
           report_fatal_error("Could not resolve external global address: "
-                            +GV.getName());
+                            +I->getName());
         }
       }
     }
@@ -1303,15 +1259,16 @@ void ExecutionEngine::emitGlobals() {
 
     // Now that all of the globals are set up in memory, loop through them all
     // and initialize their contents.
-    for (const auto &GV : M.globals()) {
-      if (!GV.isDeclaration()) {
+    for (Module::const_global_iterator I = M.global_begin(), E = M.global_end();
+         I != E; ++I) {
+      if (!I->isDeclaration()) {
         if (!LinkedGlobalsMap.empty()) {
           if (const GlobalValue *GVEntry =
-                LinkedGlobalsMap[std::make_pair(GV.getName(), GV.getType())])
-            if (GVEntry != &GV)  // Not the canonical variable.
+                LinkedGlobalsMap[std::make_pair(I->getName(), I->getType())])
+            if (GVEntry != &*I)  // Not the canonical variable.
               continue;
         }
-        EmitGlobalVariable(&GV);
+        EmitGlobalVariable(I);
       }
     }
   }
@@ -1323,13 +1280,9 @@ void ExecutionEngine::emitGlobals() {
 void ExecutionEngine::EmitGlobalVariable(const GlobalVariable *GV) {
   void *GA = getPointerToGlobalIfAvailable(GV);
 
-  if (!GA) {
+  if (GA == 0) {
     // If it's not already specified, allocate memory for the global.
     GA = getMemoryForGV(GV);
-
-    // If we failed to allocate memory for this global, return.
-    if (!GA) return;
-
     addGlobalMapping(GV, GA);
   }
 

@@ -1,7 +1,6 @@
 ; This test makes sure that these instructions are properly eliminated.
 
-; RUN: opt < %s -instcombine -S | FileCheck %s
-; CHECK-NOT: select
+; RUN: opt < %s -instcombine -S | not grep select
 
 
 define i41 @test1(i1 %C) {
@@ -38,7 +37,7 @@ define i41 @test5(i41 %X) {
 
 define i1023 @test6(i1023 %X) {
     ;; ((X & 27) ? 27 : 0)
-    %Y = and i1023 %X, 64
+    %Y = and i1023 %X, 64 
     %t = icmp ne i1023 %Y, 0
     %V = select i1 %t, i1023 64, i1023 0
     ret i1023 %V

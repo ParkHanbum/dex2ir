@@ -11,8 +11,7 @@ define i32 @exchange_and_add(i32* %mem, i32 %val) nounwind {
 define i32 @exchange_and_cmp(i32* %mem) nounwind {
 ; CHECK-LABEL: exchange_and_cmp:
 ; CHECK: lwarx
-  %tmppair = cmpxchg i32* %mem, i32 0, i32 1 monotonic monotonic
-  %tmp = extractvalue { i32, i1 } %tmppair, 0
+  %tmp = cmpxchg i32* %mem, i32 0, i32 1 monotonic
 ; CHECK: stwcx.
 ; CHECK: stwcx.
   ret i32 %tmp

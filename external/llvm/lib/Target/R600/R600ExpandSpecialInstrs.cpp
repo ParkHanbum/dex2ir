@@ -33,16 +33,16 @@ private:
   static char ID;
   const R600InstrInfo *TII;
 
-  void SetFlagInNewMI(MachineInstr *NewMI, const MachineInstr *OldMI,
-      unsigned Op);
+  bool ExpandInputPerspective(MachineInstr& MI);
+  bool ExpandInputConstant(MachineInstr& MI);
 
 public:
   R600ExpandSpecialInstrsPass(TargetMachine &tm) : MachineFunctionPass(ID),
-    TII(nullptr) { }
+    TII(0) { }
 
-  bool runOnMachineFunction(MachineFunction &MF) override;
+  virtual bool runOnMachineFunction(MachineFunction &MF);
 
-  const char *getPassName() const override {
+  const char *getPassName() const {
     return "R600 Expand special instructions pass";
   }
 };
@@ -53,15 +53,6 @@ char R600ExpandSpecialInstrsPass::ID = 0;
 
 FunctionPass *llvm::createR600ExpandSpecialInstrsPass(TargetMachine &TM) {
   return new R600ExpandSpecialInstrsPass(TM);
-}
-
-void R600ExpandSpecialInstrsPass::SetFlagInNewMI(MachineInstr *NewMI,
-    const MachineInstr *OldMI, unsigned Op) {
-  int OpIdx = TII->getOperandIdx(*OldMI, Op);
-  if (OpIdx > -1) {
-    uint64_t Val = OldMI->getOperand(OpIdx).getImm();
-    TII->setImmOperand(NewMI, Op, Val);
-  }
 }
 
 bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
@@ -75,24 +66,7 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
     MachineBasicBlock::iterator I = MBB.begin();
     while (I != MBB.end()) {
       MachineInstr &MI = *I;
-      I = std::next(I);
-
-      // Expand LDS_*_RET instructions
-      if (TII->isLDSRetInstr(MI.getOpcode())) {
-        int DstIdx = TII->getOperandIdx(MI.getOpcode(), AMDGPU::OpName::dst);
-        assert(DstIdx != -1);
-        MachineOperand &DstOp = MI.getOperand(DstIdx);
-        MachineInstr *Mov = TII->buildMovInstr(&MBB, I,
-                                               DstOp.getReg(), AMDGPU::OQAP);
-        DstOp.setReg(AMDGPU::OQAP);
-        int LDSPredSelIdx = TII->getOperandIdx(MI.getOpcode(),
-                                           AMDGPU::OpName::pred_sel);
-        int MovPredSelIdx = TII->getOperandIdx(Mov->getOpcode(),
-                                           AMDGPU::OpName::pred_sel);
-        // Copy the pred_sel bit
-        Mov->getOperand(MovPredSelIdx).setReg(
-            MI.getOperand(LDSPredSelIdx).getReg());
-      }
+      I = llvm::next(I);
 
       switch (MI.getOpcode()) {
       default: break;
@@ -334,12 +308,6 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
         if (NotLast) {
           TII->addFlag(NewMI, 0, MO_FLAG_NOT_LAST);
         }
-        SetFlagInNewMI(NewMI, &MI, AMDGPU::OpName::clamp);
-        SetFlagInNewMI(NewMI, &MI, AMDGPU::OpName::literal);
-        SetFlagInNewMI(NewMI, &MI, AMDGPU::OpName::src0_abs);
-        SetFlagInNewMI(NewMI, &MI, AMDGPU::OpName::src1_abs);
-        SetFlagInNewMI(NewMI, &MI, AMDGPU::OpName::src0_neg);
-        SetFlagInNewMI(NewMI, &MI, AMDGPU::OpName::src1_neg);
       }
       MI.eraseFromParent();
     }

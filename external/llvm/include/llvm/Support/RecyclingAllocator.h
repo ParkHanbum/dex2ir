@@ -60,10 +60,9 @@ public:
 }
 
 template<class AllocatorType, class T, size_t Size, size_t Align>
-inline void *operator new(size_t size,
+inline void *operator new(size_t,
                           llvm::RecyclingAllocator<AllocatorType,
                                                    T, Size, Align> &Allocator) {
-  assert(size <= Size && "allocation size exceeded");
   return Allocator.Allocate();
 }
 

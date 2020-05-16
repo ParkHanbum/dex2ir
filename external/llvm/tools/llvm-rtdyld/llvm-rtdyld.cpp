@@ -11,31 +11,19 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/DebugInfo/DIContext.h"
 #include "llvm/ExecutionEngine/ObjectBuffer.h"
 #include "llvm/ExecutionEngine/ObjectImage.h"
 #include "llvm/ExecutionEngine/RuntimeDyld.h"
-#include "llvm/ExecutionEngine/RuntimeDyldChecker.h"
-#include "llvm/MC/MCAsmInfo.h"
-#include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCDisassembler.h"
-#include "llvm/MC/MCInstrInfo.h"
-#include "llvm/MC/MCInstPrinter.h"
-#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/Signals.h"
-#include "llvm/Support/TargetRegistry.h"
-#include "llvm/Support/TargetSelect.h"
-#include <system_error>
-
+#include "llvm/Support/system_error.h"
 using namespace llvm;
 using namespace llvm::object;
 
@@ -45,8 +33,7 @@ InputFileList(cl::Positional, cl::ZeroOrMore,
 
 enum ActionType {
   AC_Execute,
-  AC_PrintLineInfo,
-  AC_Verify
+  AC_PrintLineInfo
 };
 
 static cl::opt<ActionType>
@@ -56,27 +43,12 @@ Action(cl::desc("Action to perform:"),
                              "Load, link, and execute the inputs."),
                   clEnumValN(AC_PrintLineInfo, "printline",
                              "Load, link, and print line information for each function."),
-                  clEnumValN(AC_Verify, "verify",
-                             "Load, link and verify the resulting memory image."),
                   clEnumValEnd));
 
 static cl::opt<std::string>
 EntryPoint("entry",
            cl::desc("Function to call as entry point."),
            cl::init("_main"));
-
-static cl::list<std::string>
-Dylibs("dylib",
-       cl::desc("Add library."),
-       cl::ZeroOrMore);
-
-static cl::opt<std::string>
-TripleName("triple", cl::desc("Target triple for disassembler"));
-
-static cl::list<std::string>
-CheckFiles("check",
-           cl::desc("File containing RuntimeDyld verifier checks."),
-           cl::ZeroOrMore);
 
 /* *** */
 
@@ -88,18 +60,16 @@ public:
   SmallVector<sys::MemoryBlock, 16> DataMemory;
 
   uint8_t *allocateCodeSection(uintptr_t Size, unsigned Alignment,
-                               unsigned SectionID,
-                               StringRef SectionName) override;
+                               unsigned SectionID);
   uint8_t *allocateDataSection(uintptr_t Size, unsigned Alignment,
-                               unsigned SectionID, StringRef SectionName,
-                               bool IsReadOnly) override;
+                               unsigned SectionID, bool IsReadOnly);
 
-  void *getPointerToNamedFunction(const std::string &Name,
-                                  bool AbortOnFailure = true) override {
-    return nullptr;
+  virtual void *getPointerToNamedFunction(const std::string &Name,
+                                          bool AbortOnFailure = true) {
+    return 0;
   }
 
-  bool finalizeMemory(std::string *ErrMsg) override { return false; }
+  bool finalizeMemory(std::string *ErrMsg) { return false; }
 
   // Invalidate instruction cache for sections with execute permissions.
   // Some platforms with separate data cache and instruction cache require
@@ -110,9 +80,8 @@ public:
 
 uint8_t *TrivialMemoryManager::allocateCodeSection(uintptr_t Size,
                                                    unsigned Alignment,
-                                                   unsigned SectionID,
-                                                   StringRef SectionName) {
-  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, nullptr, nullptr);
+                                                   unsigned SectionID) {
+  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, 0, 0);
   FunctionMemory.push_back(MB);
   return (uint8_t*)MB.base();
 }
@@ -120,9 +89,8 @@ uint8_t *TrivialMemoryManager::allocateCodeSection(uintptr_t Size,
 uint8_t *TrivialMemoryManager::allocateDataSection(uintptr_t Size,
                                                    unsigned Alignment,
                                                    unsigned SectionID,
-                                                   StringRef SectionName,
                                                    bool IsReadOnly) {
-  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, nullptr, nullptr);
+  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, 0, 0);
   DataMemory.push_back(MB);
   return (uint8_t*)MB.base();
 }
@@ -148,24 +116,9 @@ static int Error(const Twine &Msg) {
   return 1;
 }
 
-static void loadDylibs() {
-  for (const std::string &Dylib : Dylibs) {
-    if (sys::fs::is_regular_file(Dylib)) {
-      std::string ErrMsg;
-      if (sys::DynamicLibrary::LoadLibraryPermanently(Dylib.c_str(), &ErrMsg))
-        llvm::errs() << "Error loading '" << Dylib << "': "
-                     << ErrMsg << "\n";
-    } else
-      llvm::errs() << "Dylib not found: '" << Dylib << "'.\n";
-  }
-}
-
 /* *** */
 
 static int printLineInfoForInput() {
-  // Load any dylibs requested on the command line.
-  loadDylibs();
-
   // If we don't have any input files, read from stdin.
   if (!InputFileList.size())
     InputFileList.push_back("-");
@@ -175,16 +128,14 @@ static int printLineInfoForInput() {
     RuntimeDyld Dyld(&MemMgr);
 
     // Load the input memory buffer.
+    OwningPtr<MemoryBuffer> InputBuffer;
+    OwningPtr<ObjectImage>  LoadedObject;
+    if (error_code ec = MemoryBuffer::getFileOrSTDIN(InputFileList[i],
+                                                     InputBuffer))
+      return Error("unable to read input: '" + ec.message() + "'");
 
-    ErrorOr<std::unique_ptr<MemoryBuffer>> InputBuffer =
-        MemoryBuffer::getFileOrSTDIN(InputFileList[i]);
-    if (std::error_code EC = InputBuffer.getError())
-      return Error("unable to read input: '" + EC.message() + "'");
-
-    std::unique_ptr<ObjectImage> LoadedObject;
     // Load the object file
-    LoadedObject.reset(
-        Dyld.loadObject(new ObjectBuffer(InputBuffer.get().release())));
+    LoadedObject.reset(Dyld.loadObject(new ObjectBuffer(InputBuffer.take())));
     if (!LoadedObject) {
       return Error(Dyld.getErrorString());
     }
@@ -192,13 +143,14 @@ static int printLineInfoForInput() {
     // Resolve all the relocations we can.
     Dyld.resolveRelocations();
 
-    std::unique_ptr<DIContext> Context(
-        DIContext::getDWARFContext(LoadedObject->getObjectFile()));
+    OwningPtr<DIContext> Context(DIContext::getDWARFContext(LoadedObject->getObjectFile()));
 
     // Use symbol info to iterate functions in the object.
+    error_code ec;
     for (object::symbol_iterator I = LoadedObject->begin_symbols(),
                                  E = LoadedObject->end_symbols();
-         I != E; ++I) {
+                          I != E && !ec;
+                          I.increment(ec)) {
       object::SymbolRef::Type SymType;
       if (I->getType(SymType)) continue;
       if (SymType == object::SymbolRef::ST_Function) {
@@ -216,7 +168,8 @@ static int printLineInfoForInput() {
         DILineInfoTable::iterator  End = Lines.end();
         for (DILineInfoTable::iterator It = Begin; It != End; ++It) {
           outs() << "  Line info @ " << It->first - Addr << ": "
-                 << It->second.FileName << ", line:" << It->second.Line << "\n";
+                 << It->second.getFileName()
+                 << ", line:" << It->second.getLine() << "\n";
         }
       }
     }
@@ -226,9 +179,6 @@ static int printLineInfoForInput() {
 }
 
 static int executeInput() {
-  // Load any dylibs requested on the command line.
-  loadDylibs();
-
   // Instantiate a dynamic linker.
   TrivialMemoryManager MemMgr;
   RuntimeDyld Dyld(&MemMgr);
@@ -238,14 +188,14 @@ static int executeInput() {
     InputFileList.push_back("-");
   for(unsigned i = 0, e = InputFileList.size(); i != e; ++i) {
     // Load the input memory buffer.
-    ErrorOr<std::unique_ptr<MemoryBuffer>> InputBuffer =
-        MemoryBuffer::getFileOrSTDIN(InputFileList[i]);
-    if (std::error_code EC = InputBuffer.getError())
-      return Error("unable to read input: '" + EC.message() + "'");
-    std::unique_ptr<ObjectImage> LoadedObject;
+    OwningPtr<MemoryBuffer> InputBuffer;
+    OwningPtr<ObjectImage>  LoadedObject;
+    if (error_code ec = MemoryBuffer::getFileOrSTDIN(InputFileList[i],
+                                                     InputBuffer))
+      return Error("unable to read input: '" + ec.message() + "'");
+
     // Load the object file
-    LoadedObject.reset(
-        Dyld.loadObject(new ObjectBuffer(InputBuffer.get().release())));
+    LoadedObject.reset(Dyld.loadObject(new ObjectBuffer(InputBuffer.take())));
     if (!LoadedObject) {
       return Error(Dyld.getErrorString());
     }
@@ -260,7 +210,7 @@ static int executeInput() {
 
   // Get the address of the entry point (_main by default).
   void *MainAddress = Dyld.getSymbolAddress(EntryPoint);
-  if (!MainAddress)
+  if (MainAddress == 0)
     return Error("no definition for '" + EntryPoint + "'");
 
   // Invalidate the instruction cache for each loaded function.
@@ -281,110 +231,13 @@ static int executeInput() {
   const char **Argv = new const char*[2];
   // Use the name of the first input object module as argv[0] for the target.
   Argv[0] = InputFileList[0].c_str();
-  Argv[1] = nullptr;
+  Argv[1] = 0;
   return Main(1, Argv);
 }
 
-static int checkAllExpressions(RuntimeDyldChecker &Checker) {
-  for (const auto& CheckerFileName : CheckFiles) {
-    ErrorOr<std::unique_ptr<MemoryBuffer>> CheckerFileBuf =
-        MemoryBuffer::getFileOrSTDIN(CheckerFileName);
-    if (std::error_code EC = CheckerFileBuf.getError())
-      return Error("unable to read input '" + CheckerFileName + "': " +
-                   EC.message());
-
-    if (!Checker.checkAllRulesInBuffer("# rtdyld-check:",
-                                       CheckerFileBuf.get().get()))
-      return Error("some checks in '" + CheckerFileName + "' failed");
-  }
-  return 0;
-}
-
-static int linkAndVerify() {
-
-  // Check for missing triple.
-  if (TripleName == "") {
-    llvm::errs() << "Error: -triple required when running in -verify mode.\n";
-    return 1;
-  }
-
-  // Look up the target and build the disassembler.
-  Triple TheTriple(Triple::normalize(TripleName));
-  std::string ErrorStr;
-  const Target *TheTarget =
-    TargetRegistry::lookupTarget("", TheTriple, ErrorStr);
-  if (!TheTarget) {
-    llvm::errs() << "Error accessing target '" << TripleName << "': "
-                 << ErrorStr << "\n";
-    return 1;
-  }
-  TripleName = TheTriple.getTriple();
-
-  std::unique_ptr<MCSubtargetInfo> STI(
-    TheTarget->createMCSubtargetInfo(TripleName, "", ""));
-  assert(STI && "Unable to create subtarget info!");
-
-  std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
-  assert(MRI && "Unable to create target register info!");
-
-  std::unique_ptr<MCAsmInfo> MAI(TheTarget->createMCAsmInfo(*MRI, TripleName));
-  assert(MAI && "Unable to create target asm info!");
-
-  MCContext Ctx(MAI.get(), MRI.get(), nullptr);
-
-  std::unique_ptr<MCDisassembler> Disassembler(
-    TheTarget->createMCDisassembler(*STI, Ctx));
-  assert(Disassembler && "Unable to create disassembler!");
-
-  std::unique_ptr<MCInstrInfo> MII(TheTarget->createMCInstrInfo());
-
-  std::unique_ptr<MCInstPrinter> InstPrinter(
-    TheTarget->createMCInstPrinter(0, *MAI, *MII, *MRI, *STI));
-
-  // Load any dylibs requested on the command line.
-  loadDylibs();
-
-  // Instantiate a dynamic linker.
-  TrivialMemoryManager MemMgr;
-  RuntimeDyld Dyld(&MemMgr);
-
-  // If we don't have any input files, read from stdin.
-  if (!InputFileList.size())
-    InputFileList.push_back("-");
-  for(unsigned i = 0, e = InputFileList.size(); i != e; ++i) {
-    // Load the input memory buffer.
-    ErrorOr<std::unique_ptr<MemoryBuffer>> InputBuffer =
-        MemoryBuffer::getFileOrSTDIN(InputFileList[i]);
-    if (std::error_code EC = InputBuffer.getError())
-      return Error("unable to read input: '" + EC.message() + "'");
-
-    std::unique_ptr<ObjectImage> LoadedObject;
-    // Load the object file
-    LoadedObject.reset(
-        Dyld.loadObject(new ObjectBuffer(InputBuffer.get().release())));
-    if (!LoadedObject) {
-      return Error(Dyld.getErrorString());
-    }
-  }
-
-  // Resolve all the relocations we can.
-  Dyld.resolveRelocations();
-
-  RuntimeDyldChecker Checker(Dyld, Disassembler.get(), InstPrinter.get(),
-                             llvm::dbgs());
-  return checkAllExpressions(Checker);
-}
-
 int main(int argc, char **argv) {
-  sys::PrintStackTraceOnErrorSignal();
-  PrettyStackTraceProgram X(argc, argv);
-
   ProgramName = argv[0];
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
-
-  llvm::InitializeAllTargetInfos();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllDisassemblers();
 
   cl::ParseCommandLineOptions(argc, argv, "llvm MC-JIT tool\n");
 
@@ -393,7 +246,5 @@ int main(int argc, char **argv) {
     return executeInput();
   case AC_PrintLineInfo:
     return printLineInfoForInput();
-  case AC_Verify:
-    return linkAndVerify();
   }
 }

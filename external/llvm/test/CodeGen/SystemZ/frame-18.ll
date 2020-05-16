@@ -1,7 +1,6 @@
-; Test spilling of GPRs.  The tests here assume z10 register pressure,
-; without the high words being available.
+; Test spilling of GPRs.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 ; We need to allocate a 4-byte spill slot, rounded to 8 bytes.  The frame
 ; size should be exactly 160 + 8 = 168.

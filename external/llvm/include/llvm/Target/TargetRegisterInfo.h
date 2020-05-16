@@ -901,7 +901,6 @@ static inline raw_ostream &operator<<(raw_ostream &OS, const PrintReg &PR) {
 /// Usage: OS << PrintRegUnit(Unit, TRI) << '\n';
 ///
 class PrintRegUnit {
-protected:
   const TargetRegisterInfo *TRI;
   unsigned Unit;
 public:
@@ -911,21 +910,6 @@ public:
 };
 
 static inline raw_ostream &operator<<(raw_ostream &OS, const PrintRegUnit &PR) {
-  PR.print(OS);
-  return OS;
-}
-
-/// PrintVRegOrUnit - It is often convenient to track virtual registers and
-/// physical register units in the same list.
-class PrintVRegOrUnit : protected PrintRegUnit {
-public:
-  PrintVRegOrUnit(unsigned VRegOrUnit, const TargetRegisterInfo *tri)
-    : PrintRegUnit(VRegOrUnit, tri) {}
-  void print(raw_ostream&) const;
-};
-
-static inline raw_ostream &operator<<(raw_ostream &OS,
-                                      const PrintVRegOrUnit &PR) {
   PR.print(OS);
   return OS;
 }

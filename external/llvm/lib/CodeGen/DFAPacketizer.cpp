@@ -108,7 +108,7 @@ public:
   DefaultVLIWScheduler(MachineFunction &MF, MachineLoopInfo &MLI,
                    MachineDominatorTree &MDT, bool IsPostRA);
   // Schedule - Actual scheduling work.
-  void schedule() override;
+  void schedule();
 };
 }
 
@@ -121,7 +121,7 @@ DefaultVLIWScheduler::DefaultVLIWScheduler(
 
 void DefaultVLIWScheduler::schedule() {
   // Build the scheduling graph.
-  buildSchedGraph(nullptr);
+  buildSchedGraph(0);
 }
 
 // VLIWPacketizerList Ctor
@@ -129,7 +129,7 @@ VLIWPacketizerList::VLIWPacketizerList(
   MachineFunction &MF, MachineLoopInfo &MLI, MachineDominatorTree &MDT,
   bool IsPostRA) : TM(MF.getTarget()), MF(MF)  {
   TII = TM.getInstrInfo();
-  ResourceTracker = TII->CreateTargetScheduleState(&TM, nullptr);
+  ResourceTracker = TII->CreateTargetScheduleState(&TM, 0);
   VLIWScheduler = new DefaultVLIWScheduler(MF, MLI, MDT, IsPostRA);
 }
 
@@ -160,8 +160,7 @@ void VLIWPacketizerList::PacketizeMIs(MachineBasicBlock *MBB,
                                       MachineBasicBlock::iterator EndItr) {
   assert(VLIWScheduler && "VLIW Scheduler is not initialized!");
   VLIWScheduler->startBlock(MBB);
-  VLIWScheduler->enterRegion(MBB, BeginItr, EndItr,
-                             std::distance(BeginItr, EndItr));
+  VLIWScheduler->enterRegion(MBB, BeginItr, EndItr, MBB->size());
   VLIWScheduler->schedule();
 
   // Generate MI -> SU map.

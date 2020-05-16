@@ -12,12 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/FileSystem.h"
+
+#include "Windows.h"
 #include <algorithm>
 #include <stdio.h>
 #include <vector>
-
-// The Windows.h header must be after LLVM and standard headers.
-#include "WindowsSupport.h"
 
 #ifdef __MINGW32__
  #include <imagehlp.h>
@@ -136,7 +135,7 @@ typedef PVOID (WINAPI *fpSymFunctionTableAccess64)(HANDLE, DWORD64);
 static fpSymFunctionTableAccess64 SymFunctionTableAccess64;
 
 static bool load64BitDebugHelp(void) {
-  HMODULE hLib = ::LoadLibraryW(L"Dbghelp.dll");
+  HMODULE hLib = ::LoadLibrary("Dbghelp.dll");
   if (hLib) {
     StackWalk64 = (fpStackWalk64)
                       ::GetProcAddress(hLib, "StackWalk64");
@@ -318,7 +317,8 @@ static void Cleanup() {
 
   if (FilesToRemove != NULL)
     while (!FilesToRemove->empty()) {
-      llvm::sys::fs::remove(FilesToRemove->back());
+      bool Existed;
+      llvm::sys::fs::remove(FilesToRemove->back(), Existed);
       FilesToRemove->pop_back();
     }
 

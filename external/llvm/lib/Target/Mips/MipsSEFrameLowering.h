@@ -20,26 +20,27 @@ namespace llvm {
 
 class MipsSEFrameLowering : public MipsFrameLowering {
 public:
-  explicit MipsSEFrameLowering(const MipsSubtarget &STI);
+  explicit MipsSEFrameLowering(const MipsSubtarget &STI)
+    : MipsFrameLowering(STI, STI.hasMips64() ? 16 : 8) {}
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.
-  void emitPrologue(MachineFunction &MF) const override;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
+  void emitPrologue(MachineFunction &MF) const;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                  MachineBasicBlock &MBB,
-                                  MachineBasicBlock::iterator I) const override;
+                                     MachineBasicBlock &MBB,
+                                     MachineBasicBlock::iterator I) const;
 
   bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator MI,
                                  const std::vector<CalleeSavedInfo> &CSI,
-                                 const TargetRegisterInfo *TRI) const override;
+                                 const TargetRegisterInfo *TRI) const;
 
-  bool hasReservedCallFrame(const MachineFunction &MF) const override;
+  bool hasReservedCallFrame(const MachineFunction &MF) const;
 
   void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                            RegScavenger *RS) const override;
+                                            RegScavenger *RS) const;
   unsigned ehDataReg(unsigned I) const;
 };
 

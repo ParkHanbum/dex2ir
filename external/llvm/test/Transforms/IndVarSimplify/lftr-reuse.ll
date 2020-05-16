@@ -38,16 +38,17 @@ for.end:
   ret void
 }
 
-; This test checks that SCEVExpander can handle an outer loop that has been
-; simplified, and as a result the inner loop's exit test will be rewritten.
+; It would be nice if SCEV and any loop analysis could assume that
+; preheaders exist. Unfortunately it is not always the case. This test
+; checks that SCEVExpander can handle an outer loop that has not yet
+; been simplified. As a result, the inner loop's exit test will not be
+; rewritten.
 define void @expandOuterRecurrence(i32 %arg) nounwind {
 entry:
   %sub1 = sub nsw i32 %arg, 1
   %cmp1 = icmp slt i32 0, %sub1
   br i1 %cmp1, label %outer, label %exit
 
-; CHECK: outer:
-; CHECK: icmp slt
 outer:
   %i = phi i32 [ 0, %entry ], [ %i.inc, %outer.inc ]
   %sub2 = sub nsw i32 %arg, %i
@@ -59,6 +60,7 @@ inner.ph:
   br label %inner
 
 ; CHECK: inner:
+; CHECK: icmp slt
 ; CHECK: br i1
 inner:
   %j = phi i32 [ 0, %inner.ph ], [ %j.inc, %inner ]

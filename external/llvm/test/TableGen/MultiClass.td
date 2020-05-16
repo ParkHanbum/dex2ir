@@ -1,9 +1,4 @@
-// RUN: llvm-tblgen %s | FileCheck %s
-// XFAIL: vg_leak
-
-// CHECK: zing = 4
-// CHECK: zing = 4
-// CHECK-NOT: zing = 4
+// RUN: llvm-tblgen %s | grep "zing = 4" | count 2
 
 class C1<int A, string B> { 
   int bar = A;

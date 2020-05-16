@@ -11,7 +11,6 @@
 #define LLVM_MC_TARGETPARSER_H
 
 #include "llvm/MC/MCParser/MCAsmParserExtension.h"
-#include "llvm/MC/MCExpr.h"
 
 namespace llvm {
 class MCStreamer;
@@ -175,14 +174,6 @@ public:
 
   virtual void convertToMapAndConstraints(unsigned Kind,
                       const SmallVectorImpl<MCParsedAsmOperand*> &Operands) = 0;
-
-  virtual const MCExpr *applyModifierToExpr(const MCExpr *E,
-                                            MCSymbolRefExpr::VariantKind,
-                                            MCContext &Ctx) {
-    return 0;
-  }
-
-  virtual void onLabelParsed(MCSymbol *Symbol) { };
 };
 
 } // End llvm namespace

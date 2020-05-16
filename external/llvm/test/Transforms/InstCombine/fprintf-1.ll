@@ -1,7 +1,7 @@
 ; Test that the fprintf library call simplifier works correctly.
 ;
 ; RUN: opt < %s -instcombine -S | FileCheck %s
-; RUN: opt < %s -mtriple xcore-xmos-elf -instcombine -S | FileCheck %s -check-prefix=CHECK-IPRINTF
+; RUN: opt < %s -mtriple xcore-xmos-elf -instcombine -S | FileCheck %s -check-prefix=IPRINTF
 
 target datalayout = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:32:64-v64:64:64-v128:128:128-a0:0:64-f80:128:128"
 
@@ -56,18 +56,18 @@ define void @test_simplify4(%FILE* %fp) {
 ; CHECK-IPRINTF-LABEL: @test_simplify4(
   %fmt = getelementptr [3 x i8]* @percent_d, i32 0, i32 0
   call i32 (%FILE*, i8*, ...)* @fprintf(%FILE* %fp, i8* %fmt, i32 187)
-; CHECK-IPRINTF-NEXT: call i32 (%FILE*, i8*, ...)* @fiprintf(%FILE* %fp, i8* getelementptr inbounds ([3 x i8]* @percent_d, i32 0, i32 0), i32 187)
+; CHECK-NEXT-IPRINTF: call i32 (%FILE*, i8*, ...)* @fiprintf(%FILE* %fp, i8* getelementptr inbounds ([3 x i8]* @percent_d, i32 0, i32 0), i32 187)
   ret void
-; CHECK-IPRINTF-NEXT: ret void
+; CHECK-NEXT-IPRINTF: ret void
 }
 
 define void @test_no_simplify1(%FILE* %fp) {
 ; CHECK-IPRINTF-LABEL: @test_no_simplify1(
   %fmt = getelementptr [3 x i8]* @percent_f, i32 0, i32 0
   call i32 (%FILE*, i8*, ...)* @fprintf(%FILE* %fp, i8* %fmt, double 1.87)
-; CHECK-IPRINTF-NEXT: call i32 (%FILE*, i8*, ...)* @fprintf(%FILE* %fp, i8* getelementptr inbounds ([3 x i8]* @percent_f, i32 0, i32 0), double 1.870000e+00)
+; CHECK-NEXT-IPRINTF: call i32 (%FILE*, i8*, ...)* @fprintf(%FILE* %fp, i8* getelementptr inbounds ([3 x i8]* @percent_f, i32 0, i32 0), double 1.870000e+00)
   ret void
-; CHECK-IPRINTF-NEXT: ret void
+; CHECK-NEXT-IPRINTF: ret void
 }
 
 define void @test_no_simplify2(%FILE* %fp, double %d) {

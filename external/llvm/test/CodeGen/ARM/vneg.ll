@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 
 define <8 x i8> @vnegs8(<8 x i8>* %A) nounwind {
 ;CHECK-LABEL: vnegs8:

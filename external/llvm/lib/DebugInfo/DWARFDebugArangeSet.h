@@ -10,7 +10,6 @@
 #ifndef LLVM_DEBUGINFO_DWARFDEBUGARANGESET_H
 #define LLVM_DEBUGINFO_DWARFDEBUGARANGESET_H
 
-#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/DataExtractor.h"
 #include <vector>
 
@@ -45,7 +44,8 @@ public:
 
 private:
   typedef std::vector<Descriptor> DescriptorColl;
-  typedef iterator_range<DescriptorColl::const_iterator> desc_iterator_range;
+  typedef DescriptorColl::iterator DescriptorIter;
+  typedef DescriptorColl::const_iterator DescriptorConstIter;
 
   uint32_t Offset;
   Header HeaderData;
@@ -54,14 +54,19 @@ private:
 public:
   DWARFDebugArangeSet() { clear(); }
   void clear();
+  void compact();
   bool extract(DataExtractor data, uint32_t *offset_ptr);
   void dump(raw_ostream &OS) const;
 
   uint32_t getCompileUnitDIEOffset() const { return HeaderData.CuOffset; }
-
-  desc_iterator_range descriptors() const {
-    return desc_iterator_range(ArangeDescriptors.begin(),
-                               ArangeDescriptors.end());
+  uint32_t getOffsetOfNextEntry() const { return Offset + HeaderData.Length + 4; }
+  uint32_t findAddress(uint64_t address) const;
+  uint32_t getNumDescriptors() const { return ArangeDescriptors.size(); }
+  const struct Header &getHeader() const { return HeaderData; }
+  const Descriptor *getDescriptor(uint32_t i) const {
+    if (i < ArangeDescriptors.size())
+      return &ArangeDescriptors[i];
+    return NULL;
   }
 };
 

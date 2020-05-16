@@ -15,6 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "bypass-slow-division"
 #include "llvm/Transforms/Utils/BypassSlowDivision.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/Function.h"
@@ -22,8 +23,6 @@
 #include "llvm/IR/Instructions.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "bypass-slow-division"
 
 namespace {
   struct DivOpInfo {
@@ -54,11 +53,11 @@ namespace llvm {
     }
 
     static DivOpInfo getEmptyKey() {
-      return DivOpInfo(false, nullptr, nullptr);
+      return DivOpInfo(false, 0, 0);
     }
 
     static DivOpInfo getTombstoneKey() {
-      return DivOpInfo(true, nullptr, nullptr);
+      return DivOpInfo(true, 0, 0);
     }
 
     static unsigned getHashValue(const DivOpInfo &Val) {

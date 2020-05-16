@@ -6,15 +6,14 @@ declare void @foo() noreturn
 
 ; Check a case where a separate branch is needed and where the original
 ; order should be reversed.
-define i32 @f1(i32 %a, i32 *%bptr) {
+define i32 @f1(i32 %a, i32 %b) {
 ; CHECK-LABEL: f1:
-; CHECK: cl %r2, 0(%r3)
+; CHECK: clr %r2, %r3
 ; CHECK: jl .L[[LABEL:.*]]
 ; CHECK: br %r14
 ; CHECK: .L[[LABEL]]:
 ; CHECK: brasl %r14, foo@PLT
 entry:
-  %b = load i32 *%bptr
   %cmp = icmp ult i32 %a, %b
   br i1 %cmp, label %callit, label %return
 

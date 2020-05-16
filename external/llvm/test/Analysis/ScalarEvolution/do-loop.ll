@@ -1,7 +1,5 @@
-; RUN: opt < %s -analyze -scalar-evolution | FileCheck %s
+; RUN: opt < %s -analyze -scalar-evolution | grep smax
 ; PR1614
-
-; CHECK: smax
 
 define i32 @f(i32 %x, i32 %y) {
 entry:

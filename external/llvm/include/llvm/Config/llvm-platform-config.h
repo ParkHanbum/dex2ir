@@ -89,31 +89,6 @@
 /* LLVM name for the native target MC init function, if available */
 #define LLVM_NATIVE_TARGETMC LLVMInitializeMipsTargetMC
 
-#elif defined(__aarch64__)
-
-/* LLVM architecture name for the native architecture, if available */
-#define LLVM_NATIVE_ARCH AArch64
-
-/* Host triple LLVM will be executed on */
-#define LLVM_HOST_TRIPLE "aarch64-none-linux-gnu"
-
-/* LLVM name for the native AsmParser init function, if available */
-#define LLVM_NATIVE_ASMPARSER LLVMInitializeAArch64AsmParser
-
-/* LLVM name for the native AsmPrinter init function, if available */
-#define LLVM_NATIVE_ASMPRINTER LLVMInitializeAArch64AsmPrinter
-
-/* LLVM name for the native Disassembler init function, if available */
-#define LLVM_NATIVE_DISASSEMBLER LLVMInitializeAArch64Disassembler
-
-/* LLVM name for the native Target init function, if available */
-#define LLVM_NATIVE_TARGET LLVMInitializeAArch64Target
-
-/* LLVM name for the native TargetInfo init function, if available */
-#define LLVM_NATIVE_TARGETINFO LLVMInitializeAArch64TargetInfo
-
-/* LLVM name for the native target MC init function, if available */
-#define LLVM_NATIVE_TARGETMC LLVMInitializeAArch64TargetMC
 
 #else
 

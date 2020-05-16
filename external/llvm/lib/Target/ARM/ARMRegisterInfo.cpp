@@ -12,6 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMRegisterInfo.h"
+#include "ARM.h"
+#include "ARMBaseInstrInfo.h"
 using namespace llvm;
 
 void ARMRegisterInfo::anchor() { }

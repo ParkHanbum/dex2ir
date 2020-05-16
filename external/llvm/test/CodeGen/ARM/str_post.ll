@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | FileCheck %s
 
 define i16 @test1(i32* %X, i16* %A) {
 ; CHECK-LABEL: test1:

@@ -89,6 +89,7 @@ namespace llvm {
 
     AsmWriterInst(const CodeGenInstruction &CGI,
                   unsigned Variant,
+                  int FirstOperandColumn,
                   int OperandSpacing);
 
     /// MatchesAllButOneOp - If this instruction is exactly identical to the

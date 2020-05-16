@@ -12,6 +12,7 @@
 
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
 
@@ -19,33 +20,25 @@ namespace llvm {
   /// x86-64.
   class X86_64MachoTargetObjectFile : public TargetLoweringObjectFileMachO {
   public:
-    const MCExpr *
-    getTTypeGlobalReference(const GlobalValue *GV, unsigned Encoding,
-                            Mangler &Mang, const TargetMachine &TM,
-                            MachineModuleInfo *MMI,
-                            MCStreamer &Streamer) const override;
+    virtual const MCExpr *
+    getTTypeGlobalReference(const GlobalValue *GV, Mangler *Mang,
+                            MachineModuleInfo *MMI, unsigned Encoding,
+                            MCStreamer &Streamer) const;
 
     // getCFIPersonalitySymbol - The symbol that gets passed to
     // .cfi_personality.
-    MCSymbol *getCFIPersonalitySymbol(const GlobalValue *GV, Mangler &Mang,
-                                      const TargetMachine &TM,
-                                      MachineModuleInfo *MMI) const override;
+    virtual MCSymbol *
+    getCFIPersonalitySymbol(const GlobalValue *GV, Mangler *Mang,
+                            MachineModuleInfo *MMI) const;
   };
 
   /// X86LinuxTargetObjectFile - This implementation is used for linux x86
   /// and x86-64.
   class X86LinuxTargetObjectFile : public TargetLoweringObjectFileELF {
-    void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
+    virtual void Initialize(MCContext &Ctx, const TargetMachine &TM);
 
     /// \brief Describe a TLS variable address within debug info.
-    const MCExpr *getDebugThreadLocalSymbol(const MCSymbol *Sym) const override;
-  };
-
-  /// \brief This implementation is used for Windows targets on x86 and x86-64.
-  class X86WindowsTargetObjectFile : public TargetLoweringObjectFileCOFF {
-    const MCExpr *
-    getExecutableRelativeSymbol(const ConstantExpr *CE, Mangler &Mang,
-                                const TargetMachine &TM) const override;
+    virtual const MCExpr *getDebugThreadLocalSymbol(const MCSymbol *Sym) const;
   };
 
 } // end namespace llvm

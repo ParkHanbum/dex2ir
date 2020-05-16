@@ -632,11 +632,6 @@ def f64imm : Operand<f64>;
 ///
 def zero_reg;
 
-/// All operands which the MC layer classifies as predicates should inherit from
-/// this class in some manner. This is already handled for the most commonly
-/// used PredicateOperand, but may be useful in other circumstances.
-class PredicateOp;
-
 /// OperandWithDefaultOps - This Operand class can be used as the parent class
 /// for an Operand that needs to be initialized with a default value if
 /// no value is supplied in a pattern.  This class can be used to simplify the
@@ -652,7 +647,7 @@ class OperandWithDefaultOps<ValueType ty, dag defaultops>
 /// AlwaysVal specifies the value of this predicate when set to "always
 /// execute".
 class PredicateOperand<ValueType ty, dag OpTypes, dag AlwaysVal>
-  : OperandWithDefaultOps<ty, AlwaysVal>, PredicateOp {
+  : OperandWithDefaultOps<ty, AlwaysVal> {
   let MIOperandInfo = OpTypes;
 }
 
@@ -799,19 +794,6 @@ def LIFETIME_END : Instruction {
   let InOperandList = (ins i32imm:$id);
   let AsmString = "LIFETIME_END";
   let neverHasSideEffects = 1;
-}
-def STACKMAP : Instruction {
-  let OutOperandList = (outs);
-  let InOperandList = (ins i32imm:$id, i32imm:$nbytes, variable_ops);
-  let isCall = 1;
-  let mayLoad = 1;
-}
-def PATCHPOINT : Instruction {
-  let OutOperandList = (outs unknown:$dst);
-  let InOperandList = (ins i32imm:$id, i32imm:$nbytes, unknown:$callee,
-                       i32imm:$nargs, i32imm:$cc, variable_ops);
-  let isCall = 1;
-  let mayLoad = 1;
 }
 }
 
@@ -1021,17 +1003,6 @@ class SubtargetFeature<string n, string a,  string v, string d,
   // features isn't set, then this one shouldn't be set either.
   //
   list<SubtargetFeature> Implies = i;
-}
-
-/// Specifies a Subtarget feature that this instruction is deprecated on.
-class Deprecated<SubtargetFeature dep> {
-  SubtargetFeature DeprecatedFeatureMask = dep;
-}
-
-/// A custom predicate used to determine if an instruction is
-/// deprecated or not.
-class ComplexDeprecationPredicate<string dep> {
-  string ComplexDeprecationPredicate = dep;
 }
 
 //===----------------------------------------------------------------------===//

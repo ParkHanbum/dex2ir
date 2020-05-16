@@ -25,15 +25,12 @@
 
 using namespace llvm;
 
-namespace llvm {
-  void initializeR600EmitClauseMarkersPass(PassRegistry&);
-}
-
 namespace {
 
-class R600EmitClauseMarkers : public MachineFunctionPass {
+class R600EmitClauseMarkersPass : public MachineFunctionPass {
 
 private:
+  static char ID;
   const R600InstrInfo *TII;
   int Address;
 
@@ -49,11 +46,6 @@ private:
     default:
       break;
     }
-
-    // These will be expanded to two ALU instructions in the
-    // ExpandSpecialInstructions pass.
-    if (TII->isLDSRetInstr(MI->getOpcode()))
-      return 2;
 
     if(TII->isVector(*MI) ||
         TII->isCubeOp(MI->getOpcode()) ||
@@ -92,7 +84,6 @@ private:
     switch (MI->getOpcode()) {
     case AMDGPU::KILL:
     case AMDGPU::RETURN:
-    case AMDGPU::IMPLICIT_DEF:
       return true;
     default:
       return false;
@@ -114,13 +105,8 @@ private:
   }
 
   bool SubstituteKCacheBank(MachineInstr *MI,
-      std::vector<std::pair<unsigned, unsigned> > &CachedConsts,
-      bool UpdateInstr = true) const {
+      std::vector<std::pair<unsigned, unsigned> > &CachedConsts) const {
     std::vector<std::pair<unsigned, unsigned> > UsedKCache;
-
-    if (!TII->isALUInstr(MI->getOpcode()) && MI->getOpcode() != AMDGPU::DOT_4)
-      return true;
-
     const SmallVectorImpl<std::pair<MachineOperand *, int64_t> > &Consts =
         TII->getSrcs(MI);
     assert((TII->isALUInstr(MI->getOpcode()) ||
@@ -153,9 +139,6 @@ private:
       return false;
     }
 
-    if (!UpdateInstr)
-      return true;
-
     for (unsigned i = 0, j = 0, n = Consts.size(); i < n; ++i) {
       if (Consts[i].first->getReg() != AMDGPU::ALU_CONST)
         continue;
@@ -176,52 +159,6 @@ private:
     return true;
   }
 
-  bool canClauseLocalKillFitInClause(
-                        unsigned AluInstCount,
-                        std::vector<std::pair<unsigned, unsigned> > KCacheBanks,
-                        MachineBasicBlock::iterator Def,
-                        MachineBasicBlock::iterator BBEnd) {
-    const R600RegisterInfo &TRI = TII->getRegisterInfo();
-    for (MachineInstr::const_mop_iterator
-           MOI = Def->operands_begin(),
-           MOE = Def->operands_end(); MOI != MOE; ++MOI) {
-      if (!MOI->isReg() || !MOI->isDef() ||
-          TRI.isPhysRegLiveAcrossClauses(MOI->getReg()))
-        continue;
-
-      // Def defines a clause local register, so check that its use will fit
-      // in the clause.
-      unsigned LastUseCount = 0;
-      for (MachineBasicBlock::iterator UseI = Def; UseI != BBEnd; ++UseI) {
-        AluInstCount += OccupiedDwords(UseI);
-        // Make sure we won't need to end the clause due to KCache limitations.
-        if (!SubstituteKCacheBank(UseI, KCacheBanks, false))
-          return false;
-
-        // We have reached the maximum instruction limit before finding the
-        // use that kills this register, so we cannot use this def in the
-        // current clause.
-        if (AluInstCount >= TII->getMaxAlusPerClause())
-          return false;
-
-        // Register kill flags have been cleared by the time we get to this
-        // pass, but it is safe to assume that all uses of this register
-        // occur in the same basic block as its definition, because
-        // it is illegal for the scheduler to schedule them in
-        // different blocks.
-        if (UseI->findRegisterUseOperandIdx(MOI->getReg()))
-          LastUseCount = AluInstCount;
-
-        if (UseI != Def && UseI->findRegisterDefOperandIdx(MOI->getReg()) != -1)
-          break;
-      }
-      if (LastUseCount)
-        return LastUseCount <= TII->getMaxAlusPerClause();
-      llvm_unreachable("Clause local register live at end of clause.");
-    }
-    return true;
-  }
-
   MachineBasicBlock::iterator
   MakeALUClause(MachineBasicBlock &MBB, MachineBasicBlock::iterator I) {
     MachineBasicBlock::iterator ClauseHead = I;
@@ -236,14 +173,6 @@ private:
       if (AluInstCount > TII->getMaxAlusPerClause())
         break;
       if (I->getOpcode() == AMDGPU::PRED_X) {
-        // We put PRED_X in its own clause to ensure that ifcvt won't create
-        // clauses with more than 128 insts.
-        // IfCvt is indeed checking that "then" and "else" branches of an if
-        // statement have less than ~60 insts thus converted clauses can't be
-        // bigger than ~121 insts (predicate setter needs to be in the same
-        // clause as predicated alus).
-        if (AluInstCount > 0)
-          break;
         if (TII->getFlagOp(I).getImm() & MO_FLAG_PUSH)
           PushBeforeModifier = true;
         AluInstCount ++;
@@ -260,13 +189,11 @@ private:
         I++;
         break;
       }
-
-      // If this instruction defines a clause local register, make sure
-      // its use can fit in this clause.
-      if (!canClauseLocalKillFitInClause(AluInstCount, KCacheBanks, I, E))
+      if (TII->isALUInstr(I->getOpcode()) &&
+          !SubstituteKCacheBank(I, KCacheBanks))
         break;
-
-      if (!SubstituteKCacheBank(I, KCacheBanks))
+      if (I->getOpcode() == AMDGPU::DOT_4 &&
+          !SubstituteKCacheBank(I, KCacheBanks))
         break;
       AluInstCount += OccupiedDwords(I);
     }
@@ -290,13 +217,10 @@ private:
   }
 
 public:
-  static char ID;
-  R600EmitClauseMarkers() : MachineFunctionPass(ID), TII(nullptr), Address(0) {
+  R600EmitClauseMarkersPass(TargetMachine &tm) : MachineFunctionPass(ID),
+    TII(0), Address(0) { }
 
-    initializeR600EmitClauseMarkersPass(*PassRegistry::getPassRegistry());
-  }
-
-  bool runOnMachineFunction(MachineFunction &MF) override {
+  virtual bool runOnMachineFunction(MachineFunction &MF) {
     TII = static_cast<const R600InstrInfo *>(MF.getTarget().getInstrInfo());
 
     for (MachineFunction::iterator BB = MF.begin(), BB_E = MF.end();
@@ -315,21 +239,17 @@ public:
     return false;
   }
 
-  const char *getPassName() const override {
+  const char *getPassName() const {
     return "R600 Emit Clause Markers Pass";
   }
 };
 
-char R600EmitClauseMarkers::ID = 0;
+char R600EmitClauseMarkersPass::ID = 0;
 
 } // end anonymous namespace
 
-INITIALIZE_PASS_BEGIN(R600EmitClauseMarkers, "emitclausemarkers",
-                      "R600 Emit Clause Markters", false, false)
-INITIALIZE_PASS_END(R600EmitClauseMarkers, "emitclausemarkers",
-                      "R600 Emit Clause Markters", false, false)
 
-llvm::FunctionPass *llvm::createR600EmitClauseMarkers() {
-  return new R600EmitClauseMarkers();
+llvm::FunctionPass *llvm::createR600EmitClauseMarkers(TargetMachine &TM) {
+  return new R600EmitClauseMarkersPass(TM);
 }
 

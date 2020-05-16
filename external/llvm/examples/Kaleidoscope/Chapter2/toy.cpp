@@ -1,4 +1,3 @@
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -75,7 +74,7 @@ static int gettok() {
 //===----------------------------------------------------------------------===//
 // Abstract Syntax Tree (aka Parse Tree)
 //===----------------------------------------------------------------------===//
-namespace {
+
 /// ExprAST - Base class for all expression nodes.
 class ExprAST {
 public:
@@ -127,7 +126,6 @@ class FunctionAST {
 public:
   FunctionAST(PrototypeAST *proto, ExprAST *body) {}
 };
-} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // Parser
@@ -159,6 +157,7 @@ static int GetTokPrecedence() {
 /// Error* - These are little helper functions for error handling.
 ExprAST *Error(const char *Str) { fprintf(stderr, "Error: %s\n", Str);return 0;}
 PrototypeAST *ErrorP(const char *Str) { Error(Str); return 0; }
+FunctionAST *ErrorF(const char *Str) { Error(Str); return 0; }
 
 static ExprAST *ParseExpression();
 

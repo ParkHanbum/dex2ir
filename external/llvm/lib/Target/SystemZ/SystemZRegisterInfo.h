@@ -19,38 +19,44 @@
 namespace llvm {
 
 namespace SystemZ {
-// Return the subreg to use for referring to the even and odd registers
-// in a GR128 pair.  Is32Bit says whether we want a GR32 or GR64.
-inline unsigned even128(bool Is32bit) {
-  return Is32bit ? subreg_hl32 : subreg_h64;
+  // Return the subreg to use for referring to the even and odd registers
+  // in a GR128 pair.  Is32Bit says whether we want a GR32 or GR64.
+  inline unsigned even128(bool Is32bit) {
+    return Is32bit ? subreg_32bit : subreg_high;
+  }
+  inline unsigned odd128(bool Is32bit) {
+    return Is32bit ? subreg_low32 : subreg_low;
+  }
 }
-inline unsigned odd128(bool Is32bit) {
-  return Is32bit ? subreg_l32 : subreg_l64;
-}
-} // end namespace SystemZ
+
+class SystemZSubtarget;
+class SystemZInstrInfo;
 
 struct SystemZRegisterInfo : public SystemZGenRegisterInfo {
+private:
+  SystemZTargetMachine &TM;
+
 public:
-  SystemZRegisterInfo();
+  SystemZRegisterInfo(SystemZTargetMachine &tm);
 
   // Override TargetRegisterInfo.h.
-  bool requiresRegisterScavenging(const MachineFunction &MF) const override {
+  virtual bool requiresRegisterScavenging(const MachineFunction &MF) const
+    LLVM_OVERRIDE {
     return true;
   }
-  bool requiresFrameIndexScavenging(const MachineFunction &MF) const override {
+  virtual bool requiresFrameIndexScavenging(const MachineFunction &MF) const
+    LLVM_OVERRIDE {
     return true;
   }
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override {
-    return true;
-  }
-  const MCPhysReg *getCalleeSavedRegs(const MachineFunction *MF = nullptr) const
-    override;
-  const uint32_t *getCallPreservedMask(CallingConv::ID CC) const override;
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
-  void eliminateFrameIndex(MachineBasicBlock::iterator MI,
-                           int SPAdj, unsigned FIOperandNum,
-                           RegScavenger *RS) const override;
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  virtual const uint16_t *getCalleeSavedRegs(const MachineFunction *MF = 0)
+    const LLVM_OVERRIDE;
+  virtual BitVector getReservedRegs(const MachineFunction &MF)
+    const LLVM_OVERRIDE;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator MI,
+                                   int SPAdj, unsigned FIOperandNum,
+                                   RegScavenger *RS) const LLVM_OVERRIDE;
+  virtual unsigned getFrameRegister(const MachineFunction &MF) const
+    LLVM_OVERRIDE;
 };
 
 } // end namespace llvm

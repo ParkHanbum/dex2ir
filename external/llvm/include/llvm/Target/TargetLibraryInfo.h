@@ -46,10 +46,6 @@ namespace llvm {
       Znwm,
       /// void *new(unsigned long, nothrow);
       ZnwmRKSt9nothrow_t,
-      /// double __cospi(double x);
-      cospi,
-      /// float __cospif(float x);
-      cospif,
       /// int __cxa_atexit(void (*f)(void *), void *p, void *d);
       cxa_atexit,
       /// void __cxa_guard_abort(guard_t *guard);
@@ -65,14 +61,6 @@ namespace llvm {
       dunder_isoc99_sscanf,
       /// void *__memcpy_chk(void *s1, const void *s2, size_t n, size_t s1size);
       memcpy_chk,
-      /// double __sincospi_stret(double x);
-      sincospi_stret,
-      /// float __sincospi_stretf(float x);
-      sincospi_stretf,
-      /// double __sinpi(double x);
-      sinpi,
-      /// float __sinpif(float x);
-      sinpif,
       /// double __sqrt_finite(double x);
       sqrt_finite,
       /// float __sqrt_finite(float x);
@@ -707,13 +695,10 @@ public:
     case LibFunc::nearbyint: case LibFunc::nearbyintf: case LibFunc::nearbyintl:
     case LibFunc::ceil:      case LibFunc::ceilf:      case LibFunc::ceill:
     case LibFunc::rint:      case LibFunc::rintf:      case LibFunc::rintl:
-    case LibFunc::round:     case LibFunc::roundf:     case LibFunc::roundl:
     case LibFunc::trunc:     case LibFunc::truncf:     case LibFunc::truncl:
     case LibFunc::log2:      case LibFunc::log2f:      case LibFunc::log2l:
     case LibFunc::exp2:      case LibFunc::exp2f:      case LibFunc::exp2l:
-    case LibFunc::memcmp:    case LibFunc::strcmp:     case LibFunc::strcpy:
-    case LibFunc::stpcpy:    case LibFunc::strlen:     case LibFunc::strnlen:
-    case LibFunc::memchr:
+    case LibFunc::memcmp:
       return true;
     }
     return false;

@@ -27,7 +27,7 @@ namespace llvm {
                                 const MCRegisterInfo &MRI)
       : MCInstPrinter(MAI, MII, MRI), MII(MII) {}
 
-    void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot) override;
+    virtual void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot);
     void printInst(const HexagonMCInst *MI, raw_ostream &O, StringRef Annot);
     virtual StringRef getOpcodeName(unsigned Opcode) const;
     void printInstruction(const MCInst *MI, raw_ostream &O);

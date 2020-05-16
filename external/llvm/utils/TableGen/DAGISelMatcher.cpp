@@ -43,7 +43,7 @@ Matcher *Matcher::unlinkNode(Matcher *Other) {
   for (; Cur && Cur->getNext() != Other; Cur = Cur->getNext())
     /*empty*/;
 
-  if (!Cur) return nullptr;
+  if (Cur == 0) return 0;
   Cur->takeNext();
   Cur->setNext(Other->takeNext());
   return this;
@@ -63,7 +63,7 @@ bool Matcher::canMoveBefore(const Matcher *Other) const {
   }
 }
 
-/// canMoveBeforeNode - Return true if it is safe to move the current matcher
+/// canMoveBefore - Return true if it is safe to move the current matcher
 /// across the specified one.
 bool Matcher::canMoveBeforeNode(const Matcher *Other) const {
   // We can move simple predicates before record nodes.
@@ -84,15 +84,6 @@ ScopeMatcher::~ScopeMatcher() {
     delete Children[i];
 }
 
-SwitchOpcodeMatcher::~SwitchOpcodeMatcher() {
-  for (unsigned i = 0, e = Cases.size(); i != e; ++i)
-    delete Cases[i].second;
-}
-
-SwitchTypeMatcher::~SwitchTypeMatcher() {
-  for (unsigned i = 0, e = Cases.size(); i != e; ++i)
-    delete Cases[i].second;
-}
 
 CheckPredicateMatcher::CheckPredicateMatcher(const TreePredicateFn &pred)
   : Matcher(CheckPredicate), Pred(pred.getOrigPatFragRecord()) {}
@@ -108,7 +99,7 @@ TreePredicateFn CheckPredicateMatcher::getPredicate() const {
 void ScopeMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
   OS.indent(indent) << "Scope\n";
   for (unsigned i = 0, e = getNumChildren(); i != e; ++i) {
-    if (!getChild(i))
+    if (getChild(i) == 0)
       OS.indent(indent+1) << "NULL POINTER\n";
     else
       getChild(i)->print(OS, indent+2);
@@ -141,10 +132,6 @@ void MoveParentMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
 
 void CheckSameMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
   OS.indent(indent) << "CheckSame " << MatchNumber << '\n';
-}
-
-void CheckChildSameMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
-  OS.indent(indent) << "CheckChild" << ChildNo << "Same\n";
 }
 
 void CheckPatternPredicateMatcher::
@@ -192,11 +179,6 @@ void CheckChildTypeMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
 
 void CheckIntegerMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
   OS.indent(indent) << "CheckInteger " << Value << '\n';
-}
-
-void CheckChildIntegerMatcher::printImpl(raw_ostream &OS,
-                                         unsigned indent) const {
-  OS.indent(indent) << "CheckChildInteger " << ChildNo << " " << Value << '\n';
 }
 
 void CheckCondCodeMatcher::printImpl(raw_ostream &OS, unsigned indent) const {
@@ -422,18 +404,6 @@ bool CheckChildTypeMatcher::isContradictoryImpl(const Matcher *M) const {
 bool CheckIntegerMatcher::isContradictoryImpl(const Matcher *M) const {
   if (const CheckIntegerMatcher *CIM = dyn_cast<CheckIntegerMatcher>(M))
     return CIM->getValue() != getValue();
-  return false;
-}
-
-bool CheckChildIntegerMatcher::isContradictoryImpl(const Matcher *M) const {
-  if (const CheckChildIntegerMatcher *CCIM = dyn_cast<CheckChildIntegerMatcher>(M)) {
-    // If the two checks are about different nodes, we don't know if they
-    // conflict!
-    if (CCIM->getChildNo() != getChildNo())
-      return false;
-
-    return CCIM->getValue() != getValue();
-  }
   return false;
 }
 

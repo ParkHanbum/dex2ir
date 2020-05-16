@@ -35,6 +35,10 @@ namespace llvm {
       // should be divided by 4.
       reloc_arm_vfp_cp_entry,
 
+      // reloc_arm_so_imm - Same as reloc_arm_cp_entry except contant should be
+      // encoded as so_imm value.
+      reloc_arm_so_imm_cp_entry,
+
       // reloc_arm_machine_cp_entry - Relocation of a ARM machine constantpool
       // entry.
       reloc_arm_machine_cp_entry,

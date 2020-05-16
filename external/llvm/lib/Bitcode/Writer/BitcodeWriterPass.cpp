@@ -1,4 +1,4 @@
-//===- BitcodeWriterPass.cpp - Bitcode writing pass -----------------------===//
+//===--- Bitcode/Writer/BitcodeWriterPass.cpp - Bitcode Writer ------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,17 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
 using namespace llvm;
-
-PreservedAnalyses BitcodeWriterPass::run(Module *M) {
-  WriteBitcodeToFile(M, OS);
-  return PreservedAnalyses::all();
-}
 
 namespace {
   class WriteBitcodePass : public ModulePass {
@@ -31,9 +23,9 @@ namespace {
     explicit WriteBitcodePass(raw_ostream &o)
       : ModulePass(ID), OS(o) {}
 
-    const char *getPassName() const override { return "Bitcode Writer"; }
+    const char *getPassName() const { return "Bitcode Writer"; }
 
-    bool runOnModule(Module &M) override {
+    bool runOnModule(Module &M) {
       WriteBitcodeToFile(&M, OS);
       return false;
     }
@@ -42,6 +34,8 @@ namespace {
 
 char WriteBitcodePass::ID = 0;
 
+/// createBitcodeWriterPass - Create and return a pass that writes the module
+/// to the specified ostream.
 ModulePass *llvm::createBitcodeWriterPass(raw_ostream &Str) {
   return new WriteBitcodePass(Str);
 }

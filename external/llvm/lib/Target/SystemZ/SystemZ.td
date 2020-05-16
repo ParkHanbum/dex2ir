@@ -53,10 +53,20 @@ def SystemZAsmParser : AsmParser {
 }
 
 //===----------------------------------------------------------------------===//
+// Assembly writer
+//===----------------------------------------------------------------------===//
+
+def SystemZAsmWriter : AsmWriter {
+  string AsmWriterClassName = "InstPrinter";
+  bit isMCAsmWriter = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // Top-level target declaration
 //===----------------------------------------------------------------------===//
 
 def SystemZ : Target {
   let InstructionSet = SystemZInstrInfo;
   let AssemblyParsers = [SystemZAsmParser];
+  let AssemblyWriters = [SystemZAsmWriter];
 }

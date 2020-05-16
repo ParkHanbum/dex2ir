@@ -24,28 +24,40 @@ namespace llvm {
 class TargetInstrInfo;
 
 struct XCoreRegisterInfo : public XCoreGenRegisterInfo {
+private:
+  void loadConstant(MachineBasicBlock &MBB,
+                  MachineBasicBlock::iterator I,
+                  unsigned DstReg, int64_t Value, DebugLoc dl) const;
+
+  void storeToStack(MachineBasicBlock &MBB,
+                  MachineBasicBlock::iterator I,
+                  unsigned SrcReg, int Offset, DebugLoc dl) const;
+
+  void loadFromStack(MachineBasicBlock &MBB,
+                  MachineBasicBlock::iterator I,
+                  unsigned DstReg, int Offset, DebugLoc dl) const;
+
 public:
   XCoreRegisterInfo();
 
   /// Code Generation virtual methods...
 
-  const MCPhysReg *
-  getCalleeSavedRegs(const MachineFunction *MF =nullptr) const override;
+  const uint16_t *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
+  BitVector getReservedRegs(const MachineFunction &MF) const;
   
-  bool requiresRegisterScavenging(const MachineFunction &MF) const override;
+  bool requiresRegisterScavenging(const MachineFunction &MF) const;
 
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override;
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const;
 
-  bool useFPForScavengingIndex(const MachineFunction &MF) const override;
+  bool useFPForScavengingIndex(const MachineFunction &MF) const;
 
   void eliminateFrameIndex(MachineBasicBlock::iterator II,
                            int SPAdj, unsigned FIOperandNum,
-                           RegScavenger *RS = nullptr) const override;
+                           RegScavenger *RS = NULL) const;
 
   // Debug information queries.
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  unsigned getFrameRegister(const MachineFunction &MF) const;
 
   //! Return whether to emit frame moves
   static bool needsFrameMoves(const MachineFunction &MF);

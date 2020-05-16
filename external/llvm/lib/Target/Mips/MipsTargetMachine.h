@@ -14,9 +14,16 @@
 #ifndef MIPSTARGETMACHINE_H
 #define MIPSTARGETMACHINE_H
 
+#include "MipsFrameLowering.h"
+#include "MipsISelLowering.h"
+#include "MipsInstrInfo.h"
+#include "MipsJITInfo.h"
+#include "MipsSelectionDAGInfo.h"
 #include "MipsSubtarget.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -26,47 +33,69 @@ class MipsRegisterInfo;
 
 class MipsTargetMachine : public LLVMTargetMachine {
   MipsSubtarget       Subtarget;
+  const DataLayout    DL; // Calculates type size & alignment
+  OwningPtr<const MipsInstrInfo> InstrInfo;
+  OwningPtr<const MipsFrameLowering> FrameLowering;
+  OwningPtr<const MipsTargetLowering> TLInfo;
+  OwningPtr<const MipsInstrInfo> InstrInfo16;
+  OwningPtr<const MipsFrameLowering> FrameLowering16;
+  OwningPtr<const MipsTargetLowering> TLInfo16;
+  OwningPtr<const MipsInstrInfo> InstrInfoSE;
+  OwningPtr<const MipsFrameLowering> FrameLoweringSE;
+  OwningPtr<const MipsTargetLowering> TLInfoSE;
+  MipsSelectionDAGInfo TSInfo;
+  const InstrItineraryData &InstrItins;
+  MipsJITInfo JITInfo;
 
 public:
-  MipsTargetMachine(const Target &T, StringRef TT, StringRef CPU, StringRef FS,
-                    const TargetOptions &Options, Reloc::Model RM,
-                    CodeModel::Model CM, CodeGenOpt::Level OL, bool isLittle);
+  MipsTargetMachine(const Target &T, StringRef TT,
+                    StringRef CPU, StringRef FS, const TargetOptions &Options,
+                    Reloc::Model RM, CodeModel::Model CM,
+                    CodeGenOpt::Level OL,
+                    bool isLittle);
 
   virtual ~MipsTargetMachine() {}
 
-  void addAnalysisPasses(PassManagerBase &PM) override;
+  virtual void addAnalysisPasses(PassManagerBase &PM);
 
-  const MipsInstrInfo *getInstrInfo() const override {
-    return getSubtargetImpl()->getInstrInfo();
+  virtual const MipsInstrInfo *getInstrInfo() const
+  { return InstrInfo.get(); }
+  virtual const TargetFrameLowering *getFrameLowering() const
+  { return FrameLowering.get(); }
+  virtual const MipsSubtarget *getSubtargetImpl() const
+  { return &Subtarget; }
+  virtual const DataLayout *getDataLayout()    const
+  { return &DL;}
+
+  virtual const InstrItineraryData *getInstrItineraryData() const {
+    return Subtarget.inMips16Mode() ? 0 : &InstrItins;
   }
-  const TargetFrameLowering *getFrameLowering() const override {
-    return getSubtargetImpl()->getFrameLowering();
+
+  virtual MipsJITInfo *getJITInfo()
+  { return &JITInfo; }
+
+  virtual const MipsRegisterInfo *getRegisterInfo()  const {
+    return &InstrInfo->getRegisterInfo();
   }
-  const MipsSubtarget *getSubtargetImpl() const override { return &Subtarget; }
-  const InstrItineraryData *getInstrItineraryData() const override {
-    return Subtarget.inMips16Mode()
-               ? nullptr
-               : &getSubtargetImpl()->getInstrItineraryData();
+
+  virtual const MipsTargetLowering *getTargetLowering() const {
+    return TLInfo.get();
   }
-  MipsJITInfo *getJITInfo() override {
-    return Subtarget.getJITInfo();
-  }
-  const MipsRegisterInfo *getRegisterInfo()  const override {
-    return getSubtargetImpl()->getRegisterInfo();
-  }
-  const MipsTargetLowering *getTargetLowering() const override {
-    return getSubtargetImpl()->getTargetLowering();
-  }
-  const DataLayout *getDataLayout() const override {
-    return getSubtargetImpl()->getDataLayout();
-  }
-  const MipsSelectionDAGInfo* getSelectionDAGInfo() const override {
-    return getSubtargetImpl()->getSelectionDAGInfo();
+
+  virtual const MipsSelectionDAGInfo* getSelectionDAGInfo() const {
+    return &TSInfo;
   }
 
   // Pass Pipeline Configuration
-  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
-  bool addCodeEmitter(PassManagerBase &PM, JITCodeEmitter &JCE) override;
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
+  virtual bool addCodeEmitter(PassManagerBase &PM, JITCodeEmitter &JCE);
+
+  // Set helper classes
+  void setHelperClassesMips16();
+
+  void setHelperClassesMipsSE();
+
+
 };
 
 /// MipsebTargetMachine - Mips32/64 big endian target machine.

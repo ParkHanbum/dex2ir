@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 //----------------------------------------------------------------------------//
-//                         Hexagon Instruction Flags
+//                         Hexagon Intruction Flags +
 //
 //                        *** Must match BaseInfo.h ***
 //----------------------------------------------------------------------------//
@@ -22,30 +22,30 @@ def TypeNV     : IType<10>;
 def TypePREFIX : IType<30>;
 
 //----------------------------------------------------------------------------//
-//                         Instruction Classes Definitions
+//                         Intruction Classes Definitions +
 //----------------------------------------------------------------------------//
 
 //
 // NV type instructions.
 //
 class NVInst<dag outs, dag ins, string asmstr, list<dag> pattern = [],
-             string cstr = "", InstrItinClass itin = NCJ_tc_3or4stall_SLOT0>
-  : InstHexagon<outs, ins, asmstr, pattern, cstr, itin, TypeNV>;
+             string cstr = "">
+  : InstHexagon<outs, ins, asmstr, pattern, cstr, NV_V4, TypeNV>;
 
 class NVInst_V4<dag outs, dag ins, string asmstr, list<dag> pattern = [],
-                string cstr = "", InstrItinClass itin = NCJ_tc_3or4stall_SLOT0>
-  : NVInst<outs, ins, asmstr, pattern, cstr, itin>;
+                string cstr = "">
+  : NVInst<outs, ins, asmstr, pattern, cstr>;
 
 // Definition of Post increment new value store.
 class NVInstPost_V4<dag outs, dag ins, string asmstr, list<dag> pattern = [],
-               string cstr = "", InstrItinClass itin = ST_tc_st_SLOT0>
-  : NVInst<outs, ins, asmstr, pattern, cstr, itin>;
+               string cstr = "">
+  : NVInst<outs, ins, asmstr, pattern, cstr>;
 
 // Post increment ST Instruction.
 let mayStore = 1 in
 class NVInstPI_V4<dag outs, dag ins, string asmstr, list<dag> pattern = [],
-               string cstr = "", InstrItinClass itin = ST_tc_st_SLOT0>
-  : NVInst<outs, ins, asmstr, pattern, cstr, itin>;
+               string cstr = "">
+  : NVInst<outs, ins, asmstr, pattern, cstr>;
 
 // New-value conditional branch.
 class NCJInst<dag outs, dag ins, string asmstr, list<dag> pattern = [],
@@ -54,14 +54,13 @@ class NCJInst<dag outs, dag ins, string asmstr, list<dag> pattern = [],
 
 let mayLoad = 1, mayStore = 1 in
 class MEMInst<dag outs, dag ins, string asmstr, list<dag> pattern = [],
-              string cstr = "", InstrItinClass itin = V4LDST_tc_st_SLOT0>
-  : InstHexagon<outs, ins, asmstr, pattern, cstr, itin, TypeMEMOP>;
+              string cstr = "">
+  : InstHexagon<outs, ins, asmstr, pattern, cstr, MEM_V4, TypeMEMOP>;
 
 class MEMInst_V4<dag outs, dag ins, string asmstr, list<dag> pattern = [],
-                 string cstr = "", InstrItinClass itin = V4LDST_tc_st_SLOT0>
-  : MEMInst<outs, ins, asmstr, pattern, cstr, itin>;
+                 string cstr = "">
+  : MEMInst<outs, ins, asmstr, pattern, cstr>;
 
 let isCodeGenOnly = 1 in
 class EXTENDERInst<dag outs, dag ins, string asmstr, list<dag> pattern = []>
-  : InstHexagon<outs, ins, asmstr, pattern, "", EXTENDER_tc_1_SLOT0123,
-                TypePREFIX>;
+  : InstHexagon<outs, ins, asmstr, pattern, "", PREFIX, TypePREFIX>;

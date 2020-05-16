@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 
 declare i32 @printf(i8*, ...)
 

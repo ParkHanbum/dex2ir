@@ -50,8 +50,13 @@ std::string AsmWriterOperand::getCode() const {
 ///
 AsmWriterInst::AsmWriterInst(const CodeGenInstruction &CGI,
                              unsigned Variant,
+                             int FirstOperandColumn,
                              int OperandSpacing) {
   this->CGI = &CGI;
+
+  // This is the number of tabs we've seen if we're doing columnar layout.
+  unsigned CurColumn = 0;
+
 
   // NOTE: Any extensions to this code need to be mirrored in the
   // AsmPrinter::printInlineAsm code that executes as compile time (assuming
@@ -71,7 +76,20 @@ AsmWriterInst::AsmWriterInst(const CodeGenInstruction &CGI,
             AddLiteralString("\\n");
             break;
           case '\t':
-            AddLiteralString("\\t");
+            // If the asm writer is not using a columnar layout, \t is not
+            // magic.
+            if (FirstOperandColumn == -1 || OperandSpacing == -1) {
+              AddLiteralString("\\t");
+            } else {
+              // We recognize a tab as an operand delimeter.
+              unsigned DestColumn = FirstOperandColumn +
+              CurColumn++ * OperandSpacing;
+              Operands.push_back(
+                AsmWriterOperand(
+                  "O.PadToColumn(" +
+                  utostr(DestColumn) + ");\n",
+                  AsmWriterOperand::isLiteralStatementOperand));
+            }
             break;
           case '"':
             AddLiteralString("\\\"");
@@ -88,7 +106,20 @@ AsmWriterInst::AsmWriterInst(const CodeGenInstruction &CGI,
         if (AsmString[DollarPos+1] == 'n') {
           AddLiteralString("\\n");
         } else if (AsmString[DollarPos+1] == 't') {
-          AddLiteralString("\\t");
+          // If the asm writer is not using a columnar layout, \t is not
+          // magic.
+          if (FirstOperandColumn == -1 || OperandSpacing == -1) {
+            AddLiteralString("\\t");
+            break;
+          }
+
+          // We recognize a tab as an operand delimeter.
+          unsigned DestColumn = FirstOperandColumn +
+          CurColumn++ * OperandSpacing;
+          Operands.push_back(
+            AsmWriterOperand("O.PadToColumn(" + utostr(DestColumn) + ");\n",
+                             AsmWriterOperand::isLiteralStatementOperand));
+          break;
         } else if (std::string("${|}\\").find(AsmString[DollarPos+1])
                    != std::string::npos) {
           AddLiteralString(std::string(1, AsmString[DollarPos+1]));

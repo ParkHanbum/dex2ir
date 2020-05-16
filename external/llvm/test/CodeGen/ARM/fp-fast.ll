@@ -1,5 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mcpu=cortex-a9 -mattr=+vfp4 -enable-unsafe-fp-math %s -o - \
-; RUN:  | FileCheck %s
+; RUN: llc -march=arm -mcpu=cortex-a9 -mattr=+vfp4 -enable-unsafe-fp-math < %s | FileCheck %s
 
 ; CHECK: test1
 define float @test1(float %x) {

@@ -175,7 +175,7 @@ namespace llvm {
     /// transform one of the given strings into the other. If zero,
     /// the strings are identical.
     unsigned edit_distance(StringRef Other, bool AllowReplacements = true,
-                           unsigned MaxEditDistance = 0) const;
+                           unsigned MaxEditDistance = 0);
 
     /// str - Get the contents as an std::string.
     std::string str() const {
@@ -210,17 +210,11 @@ namespace llvm {
              compareMemory(Data, Prefix.Data, Prefix.Length) == 0;
     }
 
-    /// Check if this string starts with the given \p Prefix, ignoring case.
-    bool startswith_lower(StringRef Prefix) const;
-
     /// Check if this string ends with the given \p Suffix.
     bool endswith(StringRef Suffix) const {
       return Length >= Suffix.Length &&
         compareMemory(end() - Suffix.Length, Suffix.Data, Suffix.Length) == 0;
     }
-
-    /// Check if this string ends with the given \p Suffix, ignoring case.
-    bool endswith_lower(StringRef Suffix) const;
 
     /// @}
     /// @name String Searching

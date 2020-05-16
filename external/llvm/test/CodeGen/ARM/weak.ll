@@ -1,4 +1,5 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm | grep .weak.*f
+; RUN: llc < %s -march=arm | grep .weak.*h
 
 define weak i32 @f() {
 entry:
@@ -12,7 +13,4 @@ entry:
 }
 
 declare extern_weak void @h()
-
-; CHECK: {{.}}weak{{.*}}f
-; CHECK: {{.}}weak{{.*}}h
 

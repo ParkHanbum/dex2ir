@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 ; PR2589
 
 define void @main({ i32 }*) {

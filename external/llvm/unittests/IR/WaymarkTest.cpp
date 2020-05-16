@@ -9,7 +9,6 @@
 
 // we perform white-box tests
 //
-#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
@@ -31,7 +30,7 @@ TEST(WaymarkTest, NativeArray) {
   FunctionType *FT = FunctionType::get(Type::getVoidTy(getGlobalContext()), true);
   Function *F = Function::Create(FT, GlobalValue::ExternalLinkage);
   const CallInst *A = CallInst::Create(F, makeArrayRef(values));
-  ASSERT_NE(A, (const CallInst*)nullptr);
+  ASSERT_NE(A, (const CallInst*)NULL);
   ASSERT_EQ(1U + 22, A->getNumOperands());
   const Use *U = &A->getOperandUse(0);
   const Use *Ue = &A->getOperandUse(22);

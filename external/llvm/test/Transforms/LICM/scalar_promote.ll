@@ -24,8 +24,7 @@ Loop:   ; preds = %Loop, %0
 Out:
   ret void
 ; CHECK: Out:
-; CHECK-NEXT:   %[[LCSSAPHI:.*]] = phi i32 [ %x2
-; CHECK-NEXT:   store i32 %[[LCSSAPHI]], i32* @X
+; CHECK-NEXT:   store i32 %x2, i32* @X
 ; CHECK-NEXT:   ret void
 
 }
@@ -49,8 +48,7 @@ Loop:   ; preds = %Loop, %0
 Exit:   ; preds = %Loop
   ret void
 ; CHECK: Exit:
-; CHECK-NEXT:   %[[LCSSAPHI:.*]] = phi i32 [ %V
-; CHECK-NEXT:   store i32 %[[LCSSAPHI]], i32* getelementptr inbounds (i32* @X, i64 1)
+; CHECK-NEXT:   store i32 %V, i32* getelementptr inbounds (i32* @X, i64 1)
 ; CHECK-NEXT:   ret void
 }
 
@@ -144,8 +142,7 @@ Loop:   ; preds = %Loop, %0
 Out:
   ret void
 ; CHECK: Out:
-; CHECK-NEXT:   %[[LCSSAPHI:.*]] = phi i32 [ %x2
-; CHECK-NEXT:   store i32 %[[LCSSAPHI]], i32* @X
+; CHECK-NEXT:   store i32 %x2, i32* @X
 ; CHECK-NEXT:   ret void
 
 }
@@ -181,13 +178,10 @@ for.end:                                          ; preds = %for.cond.for.end_cr
 ; CHECK: for.body.lr.ph:
 ; CHECK-NEXT:  %gi.promoted = load i32* %gi, align 4, !tbaa !0
 ; CHECK: for.cond.for.end_crit_edge:
-; CHECK-NEXT:  %[[LCSSAPHI:.*]] = phi i32 [ %inc
-; CHECK-NEXT:  store i32 %[[LCSSAPHI]], i32* %gi, align 4, !tbaa !0
+; CHECK-NEXT:  store i32 %inc, i32* %gi, align 4, !tbaa !0
 }
 
-!0 = metadata !{metadata !4, metadata !4, i64 0}
+!0 = metadata !{metadata !"int", metadata !1}
 !1 = metadata !{metadata !"omnipotent char", metadata !2}
 !2 = metadata !{metadata !"Simple C/C++ TBAA"}
-!3 = metadata !{metadata !5, metadata !5, i64 0}
-!4 = metadata !{metadata !"int", metadata !1}
-!5 = metadata !{metadata !"float", metadata !1}
+!3 = metadata !{metadata !"float", metadata !1}

@@ -35,9 +35,6 @@
  *	@(#)regex2.h	8.4 (Berkeley) 3/20/94
  */
 
-#ifndef LLVM_SUPPORT_REGEX2_H
-#define LLVM_SUPPORT_REGEX2_H
-
 /*
  * internals of regex_t
  */
@@ -158,5 +155,3 @@ struct re_guts {
 /* misc utilities */
 #define	OUT	(CHAR_MAX+1)	/* a non-character value */
 #define	ISWORD(c)	(isalnum(c&0xff) || (c) == '_')
-
-#endif

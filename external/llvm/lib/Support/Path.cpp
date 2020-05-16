@@ -11,12 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/Errc.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Process.h"
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -28,18 +26,16 @@
 #include <io.h>
 #endif
 
-using namespace llvm;
-
 namespace {
   using llvm::StringRef;
   using llvm::sys::path::is_separator;
 
 #ifdef LLVM_ON_WIN32
   const char *separators = "\\/";
-  const char preferred_separator = '\\';
+  const char  prefered_separator = '\\';
 #else
   const char  separators = '/';
-  const char preferred_separator = '/';
+  const char  prefered_separator = '/';
 #endif
 
   StringRef find_first_component(StringRef path) {
@@ -81,7 +77,7 @@ namespace {
       return path.substr(0, 1);
 
     // * {file,directory}name
-    size_t end = path.find_first_of(separators);
+    size_t end = path.find_first_of(separators, 2);
     return path.substr(0, end);
   }
 
@@ -165,76 +161,10 @@ enum FSEntity {
 };
 
 // Implemented in Unix/Path.inc and Windows/Path.inc.
-static std::error_code TempDir(SmallVectorImpl<char> &result);
-
-static std::error_code createUniqueEntity(const Twine &Model, int &ResultFD,
-                                          SmallVectorImpl<char> &ResultPath,
-                                          bool MakeAbsolute, unsigned Mode,
-                                          FSEntity Type) {
-  SmallString<128> ModelStorage;
-  Model.toVector(ModelStorage);
-
-  if (MakeAbsolute) {
-    // Make model absolute by prepending a temp directory if it's not already.
-    if (!sys::path::is_absolute(Twine(ModelStorage))) {
-      SmallString<128> TDir;
-      if (std::error_code EC = TempDir(TDir))
-        return EC;
-      sys::path::append(TDir, Twine(ModelStorage));
-      ModelStorage.swap(TDir);
-    }
-  }
-
-  // From here on, DO NOT modify model. It may be needed if the randomly chosen
-  // path already exists.
-  ResultPath = ModelStorage;
-  // Null terminate.
-  ResultPath.push_back(0);
-  ResultPath.pop_back();
-
-retry_random_path:
-  // Replace '%' with random chars.
-  for (unsigned i = 0, e = ModelStorage.size(); i != e; ++i) {
-    if (ModelStorage[i] == '%')
-      ResultPath[i] = "0123456789abcdef"[sys::Process::GetRandomNumber() & 15];
-  }
-
-  // Try to open + create the file.
-  switch (Type) {
-  case FS_File: {
-    if (std::error_code EC =
-            sys::fs::openFileForWrite(Twine(ResultPath.begin()), ResultFD,
-                                      sys::fs::F_RW | sys::fs::F_Excl, Mode)) {
-      if (EC == errc::file_exists)
-        goto retry_random_path;
-      return EC;
-    }
-
-    return std::error_code();
-  }
-
-  case FS_Name: {
-    bool Exists;
-    std::error_code EC = sys::fs::exists(ResultPath.begin(), Exists);
-    if (EC)
-      return EC;
-    if (Exists)
-      goto retry_random_path;
-    return std::error_code();
-  }
-
-  case FS_Dir: {
-    if (std::error_code EC =
-            sys::fs::create_directory(ResultPath.begin(), false)) {
-      if (EC == errc::file_exists)
-        goto retry_random_path;
-      return EC;
-    }
-    return std::error_code();
-  }
-  }
-  llvm_unreachable("Invalid Type");
-}
+static llvm::error_code
+createUniqueEntity(const llvm::Twine &Model, int &ResultFD,
+                   llvm::SmallVectorImpl<char> &ResultPath,
+                   bool MakeAbsolute, unsigned Mode, FSEntity Type);
 
 namespace llvm {
 namespace sys  {
@@ -309,18 +239,21 @@ const_iterator &const_iterator::operator++() {
 }
 
 const_iterator &const_iterator::operator--() {
-  // If we're at the end and the previous char was a '/', return '.' unless
-  // we are the root path.
-  size_t root_dir_pos = root_dir_start(Path);
+  // If we're at the end and the previous char was a '/', return '.'.
   if (Position == Path.size() &&
-      Path.size() > root_dir_pos + 1 &&
-      is_separator(Path[Position - 1])) {
+      Path.size() > 1 &&
+      is_separator(Path[Position - 1])
+#ifdef LLVM_ON_WIN32
+      && Path[Position - 2] != ':'
+#endif
+      ) {
     --Position;
     Component = ".";
     return *this;
   }
 
   // Skip separators unless it's the root directory.
+  size_t root_dir_pos = root_dir_start(Path);
   size_t end_pos = Position;
 
   while(end_pos > 0 &&
@@ -470,7 +403,7 @@ void append(SmallVectorImpl<char> &path, const Twine &a,
 
     if (!component_has_sep && !(path.empty() || is_root_name)) {
       // Add a separator.
-      path.push_back(preferred_separator);
+      path.push_back(prefered_separator);
     }
 
     path.append(i->begin(), i->end());
@@ -516,18 +449,23 @@ void replace_extension(SmallVectorImpl<char> &path, const Twine &extension) {
 }
 
 void native(const Twine &path, SmallVectorImpl<char> &result) {
-  assert((!path.isSingleStringRef() ||
-          path.getSingleStringRef().data() != result.data()) &&
-         "path and result are not allowed to overlap!");
   // Clear result.
   result.clear();
-  path.toVector(result);
-  native(result);
-}
-
-void native(SmallVectorImpl<char> &path) {
 #ifdef LLVM_ON_WIN32
-  std::replace(path.begin(), path.end(), '/', '\\');
+  SmallString<128> path_storage;
+  StringRef p = path.toStringRef(path_storage);
+  result.reserve(p.size());
+  for (StringRef::const_iterator i = p.begin(),
+                                 e = p.end();
+                                 i != e;
+                                 ++i) {
+    if (*i == '/')
+      result.push_back('\\');
+    else
+      result.push_back(*i);
+  }
+#else
+  path.toVector(result);
 #endif
 }
 
@@ -571,21 +509,14 @@ bool is_separator(char value) {
   }
 }
 
-static const char preferred_separator_string[] = { preferred_separator, '\0' };
-
-const StringRef get_separator() {
-  return preferred_separator_string;
-}
-
 void system_temp_directory(bool erasedOnReboot, SmallVectorImpl<char> &result) {
   result.clear();
 
-#if defined(_CS_DARWIN_USER_TEMP_DIR) && defined(_CS_DARWIN_USER_CACHE_DIR)
+#ifdef __APPLE__
   // On Darwin, use DARWIN_USER_TEMP_DIR or DARWIN_USER_CACHE_DIR.
-  // macros defined in <unistd.h> on darwin >= 9
   int ConfName = erasedOnReboot? _CS_DARWIN_USER_TEMP_DIR
                                : _CS_DARWIN_USER_CACHE_DIR;
-  size_t ConfLen = confstr(ConfName, nullptr, 0);
+  size_t ConfLen = confstr(ConfName, 0, 0);
   if (ConfLen > 0) {
     do {
       result.resize(ConfLen);
@@ -707,30 +638,29 @@ bool is_relative(const Twine &path) {
 
 namespace fs {
 
-std::error_code getUniqueID(const Twine Path, UniqueID &Result) {
+error_code getUniqueID(const Twine Path, UniqueID &Result) {
   file_status Status;
-  std::error_code EC = status(Path, Status);
+  error_code EC = status(Path, Status);
   if (EC)
     return EC;
   Result = Status.getUniqueID();
-  return std::error_code();
+  return error_code::success();
 }
 
-std::error_code createUniqueFile(const Twine &Model, int &ResultFd,
-                                 SmallVectorImpl<char> &ResultPath,
-                                 unsigned Mode) {
+error_code createUniqueFile(const Twine &Model, int &ResultFd,
+                            SmallVectorImpl<char> &ResultPath, unsigned Mode) {
   return createUniqueEntity(Model, ResultFd, ResultPath, false, Mode, FS_File);
 }
 
-std::error_code createUniqueFile(const Twine &Model,
-                                 SmallVectorImpl<char> &ResultPath) {
+error_code createUniqueFile(const Twine &Model,
+                            SmallVectorImpl<char> &ResultPath) {
   int Dummy;
   return createUniqueEntity(Model, Dummy, ResultPath, false, 0, FS_Name);
 }
 
-static std::error_code
-createTemporaryFile(const Twine &Model, int &ResultFD,
-                    llvm::SmallVectorImpl<char> &ResultPath, FSEntity Type) {
+static error_code createTemporaryFile(const Twine &Model, int &ResultFD,
+                                      llvm::SmallVectorImpl<char> &ResultPath,
+                                      FSEntity Type) {
   SmallString<128> Storage;
   StringRef P = Model.toNullTerminatedStringRef(Storage);
   assert(P.find_first_of(separators) == StringRef::npos &&
@@ -740,22 +670,24 @@ createTemporaryFile(const Twine &Model, int &ResultFD,
                             true, owner_read | owner_write, Type);
 }
 
-static std::error_code
+static error_code
 createTemporaryFile(const Twine &Prefix, StringRef Suffix, int &ResultFD,
-                    llvm::SmallVectorImpl<char> &ResultPath, FSEntity Type) {
+                    llvm::SmallVectorImpl<char> &ResultPath,
+                    FSEntity Type) {
   const char *Middle = Suffix.empty() ? "-%%%%%%" : "-%%%%%%.";
   return createTemporaryFile(Prefix + Middle + Suffix, ResultFD, ResultPath,
                              Type);
 }
 
-std::error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
-                                    int &ResultFD,
-                                    SmallVectorImpl<char> &ResultPath) {
+
+error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
+                               int &ResultFD,
+                               SmallVectorImpl<char> &ResultPath) {
   return createTemporaryFile(Prefix, Suffix, ResultFD, ResultPath, FS_File);
 }
 
-std::error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
-                                    SmallVectorImpl<char> &ResultPath) {
+error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
+                               SmallVectorImpl<char> &ResultPath) {
   int Dummy;
   return createTemporaryFile(Prefix, Suffix, Dummy, ResultPath, FS_Name);
 }
@@ -763,14 +695,14 @@ std::error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
 
 // This is a mkdtemp with a different pattern. We use createUniqueEntity mostly
 // for consistency. We should try using mkdtemp.
-std::error_code createUniqueDirectory(const Twine &Prefix,
-                                      SmallVectorImpl<char> &ResultPath) {
+error_code createUniqueDirectory(const Twine &Prefix,
+                                 SmallVectorImpl<char> &ResultPath) {
   int Dummy;
   return createUniqueEntity(Prefix + "-%%%%%%", Dummy, ResultPath,
                             true, 0, FS_Dir);
 }
 
-std::error_code make_absolute(SmallVectorImpl<char> &path) {
+error_code make_absolute(SmallVectorImpl<char> &path) {
   StringRef p(path.data(), path.size());
 
   bool rootDirectory = path::has_root_directory(p),
@@ -782,12 +714,11 @@ std::error_code make_absolute(SmallVectorImpl<char> &path) {
 
   // Already absolute.
   if (rootName && rootDirectory)
-    return std::error_code();
+    return error_code::success();
 
   // All of the following conditions will need the current directory.
   SmallString<128> current_dir;
-  if (std::error_code ec = current_path(current_dir))
-    return ec;
+  if (error_code ec = current_path(current_dir)) return ec;
 
   // Relative path. Prepend the current directory.
   if (!rootName && !rootDirectory) {
@@ -795,7 +726,7 @@ std::error_code make_absolute(SmallVectorImpl<char> &path) {
     path::append(current_dir, p);
     // Set path to the result.
     path.swap(current_dir);
-    return std::error_code();
+    return error_code::success();
   }
 
   if (!rootName && rootDirectory) {
@@ -804,7 +735,7 @@ std::error_code make_absolute(SmallVectorImpl<char> &path) {
     path::append(curDirRootName, p);
     // Set path to the result.
     path.swap(curDirRootName);
-    return std::error_code();
+    return error_code::success();
   }
 
   if (rootName && !rootDirectory) {
@@ -816,68 +747,27 @@ std::error_code make_absolute(SmallVectorImpl<char> &path) {
     SmallString<128> res;
     path::append(res, pRootName, bRootDirectory, bRelativePath, pRelativePath);
     path.swap(res);
-    return std::error_code();
+    return error_code::success();
   }
 
   llvm_unreachable("All rootName and rootDirectory combinations should have "
                    "occurred above!");
 }
 
-std::error_code create_directories(const Twine &Path, bool IgnoreExisting) {
-  SmallString<128> PathStorage;
-  StringRef P = Path.toStringRef(PathStorage);
+error_code create_directories(const Twine &path, bool &existed) {
+  SmallString<128> path_storage;
+  StringRef p = path.toStringRef(path_storage);
 
-  // Be optimistic and try to create the directory
-  std::error_code EC = create_directory(P, IgnoreExisting);
-  // If we succeeded, or had any error other than the parent not existing, just
-  // return it.
-  if (EC != errc::no_such_file_or_directory)
-    return EC;
+  StringRef parent = path::parent_path(p);
+  if (!parent.empty()) {
+    bool parent_exists;
+    if (error_code ec = fs::exists(parent, parent_exists)) return ec;
 
-  // We failed because of a no_such_file_or_directory, try to create the
-  // parent.
-  StringRef Parent = path::parent_path(P);
-  if (Parent.empty())
-    return EC;
-
-  if ((EC = create_directories(Parent)))
-      return EC;
-
-  return create_directory(P, IgnoreExisting);
-}
-
-std::error_code copy_file(const Twine &From, const Twine &To) {
-  int ReadFD, WriteFD;
-  if (std::error_code EC = openFileForRead(From, ReadFD))
-    return EC;
-  if (std::error_code EC = openFileForWrite(To, WriteFD, F_None)) {
-    close(ReadFD);
-    return EC;
+    if (!parent_exists)
+      if (error_code ec = create_directories(parent, existed)) return ec;
   }
 
-  const size_t BufSize = 4096;
-  char *Buf = new char[BufSize];
-  int BytesRead = 0, BytesWritten = 0;
-  for (;;) {
-    BytesRead = read(ReadFD, Buf, BufSize);
-    if (BytesRead <= 0)
-      break;
-    while (BytesRead) {
-      BytesWritten = write(WriteFD, Buf, BytesRead);
-      if (BytesWritten < 0)
-        break;
-      BytesRead -= BytesWritten;
-    }
-    if (BytesWritten < 0)
-      break;
-  }
-  close(ReadFD);
-  close(WriteFD);
-  delete[] Buf;
-
-  if (BytesRead < 0 || BytesWritten < 0)
-    return std::error_code(errno, std::generic_category());
-  return std::error_code();
+  return create_directory(p, existed);
 }
 
 bool exists(file_status status) {
@@ -892,30 +782,43 @@ bool is_directory(file_status status) {
   return status.type() == file_type::directory_file;
 }
 
-std::error_code is_directory(const Twine &path, bool &result) {
+error_code is_directory(const Twine &path, bool &result) {
   file_status st;
-  if (std::error_code ec = status(path, st))
+  if (error_code ec = status(path, st))
     return ec;
   result = is_directory(st);
-  return std::error_code();
+  return error_code::success();
 }
 
 bool is_regular_file(file_status status) {
   return status.type() == file_type::regular_file;
 }
 
-std::error_code is_regular_file(const Twine &path, bool &result) {
+error_code is_regular_file(const Twine &path, bool &result) {
   file_status st;
-  if (std::error_code ec = status(path, st))
+  if (error_code ec = status(path, st))
     return ec;
   result = is_regular_file(st);
-  return std::error_code();
+  return error_code::success();
+}
+
+bool is_symlink(file_status status) {
+  return status.type() == file_type::symlink_file;
+}
+
+error_code is_symlink(const Twine &path, bool &result) {
+  file_status st;
+  if (error_code ec = status(path, st))
+    return ec;
+  result = is_symlink(st);
+  return error_code::success();
 }
 
 bool is_other(file_status status) {
   return exists(status) &&
          !is_regular_file(status) &&
-         !is_directory(status);
+         !is_directory(status) &&
+         !is_symlink(status);
 }
 
 void directory_entry::replace_filename(const Twine &filename, file_status st) {
@@ -926,26 +829,29 @@ void directory_entry::replace_filename(const Twine &filename, file_status st) {
   Status = st;
 }
 
+error_code has_magic(const Twine &path, const Twine &magic, bool &result) {
+  SmallString<32>  MagicStorage;
+  StringRef Magic = magic.toStringRef(MagicStorage);
+  SmallString<32> Buffer;
+
+  if (error_code ec = get_magic(path, Magic.size(), Buffer)) {
+    if (ec == errc::value_too_large) {
+      // Magic.size() > file_size(Path).
+      result = false;
+      return error_code::success();
+    }
+    return ec;
+  }
+
+  result = Magic == Buffer;
+  return error_code::success();
+}
+
 /// @brief Identify the magic in magic.
-file_magic identify_magic(StringRef Magic) {
+  file_magic identify_magic(StringRef Magic) {
   if (Magic.size() < 4)
     return file_magic::unknown;
   switch ((unsigned char)Magic[0]) {
-    case 0x00: {
-      // COFF short import library file
-      if (Magic[1] == (char)0x00 && Magic[2] == (char)0xff &&
-          Magic[3] == (char)0xff)
-        return file_magic::coff_import_library;
-      // Windows resource file
-      const char Expected[] = { 0, 0, 0, 0, '\x20', 0, 0, 0, '\xff' };
-      if (Magic.size() >= sizeof(Expected) &&
-          memcmp(Magic.data(), Expected, sizeof(Expected)) == 0)
-        return file_magic::windows_resource;
-      // 0x0000 = COFF unknown machine type
-      if (Magic[1] == 0)
-        return file_magic::coff_object;
-      break;
-    }
     case 0xDE:  // 0x0B17C0DE = BC wraper
       if (Magic[1] == (char)0xC0 && Magic[2] == (char)0x17 &&
           Magic[3] == (char)0x0B)
@@ -1027,7 +933,6 @@ file_magic identify_magic(StringRef Magic) {
     case 0x66: // MPS R4000 Windows
     case 0x50: // mc68K
     case 0x4c: // 80386 Windows
-    case 0xc4: // ARMNT Windows
       if (Magic[1] == 0x01)
         return file_magic::coff_object;
 
@@ -1058,21 +963,56 @@ file_magic identify_magic(StringRef Magic) {
   return file_magic::unknown;
 }
 
-std::error_code identify_magic(const Twine &Path, file_magic &Result) {
-  int FD;
-  if (std::error_code EC = openFileForRead(Path, FD))
-    return EC;
+error_code identify_magic(const Twine &path, file_magic &result) {
+  SmallString<32> Magic;
+  error_code ec = get_magic(path, Magic.capacity(), Magic);
+  if (ec && ec != errc::value_too_large)
+    return ec;
 
-  char Buffer[32];
-  int Length = read(FD, Buffer, sizeof(Buffer));
-  if (close(FD) != 0 || Length < 0)
-    return std::error_code(errno, std::generic_category());
-
-  Result = identify_magic(StringRef(Buffer, Length));
-  return std::error_code();
+  result = identify_magic(Magic);
+  return error_code::success();
 }
 
-std::error_code directory_entry::status(file_status &result) const {
+namespace {
+error_code remove_all_r(StringRef path, file_type ft, uint32_t &count) {
+  if (ft == file_type::directory_file) {
+    // This code would be a lot better with exceptions ;/.
+    error_code ec;
+    directory_iterator i(path, ec);
+    if (ec) return ec;
+    for (directory_iterator e; i != e; i.increment(ec)) {
+      if (ec) return ec;
+      file_status st;
+      if (error_code ec = i->status(st)) return ec;
+      if (error_code ec = remove_all_r(i->path(), st.type(), count)) return ec;
+    }
+    bool obviously_this_exists;
+    if (error_code ec = remove(path, obviously_this_exists)) return ec;
+    assert(obviously_this_exists);
+    ++count; // Include the directory itself in the items removed.
+  } else {
+    bool obviously_this_exists;
+    if (error_code ec = remove(path, obviously_this_exists)) return ec;
+    assert(obviously_this_exists);
+    ++count;
+  }
+
+  return error_code::success();
+}
+} // end unnamed namespace
+
+error_code remove_all(const Twine &path, uint32_t &num_removed) {
+  SmallString<128> path_storage;
+  StringRef p = path.toStringRef(path_storage);
+
+  file_status fs;
+  if (error_code ec = status(path, fs))
+    return ec;
+  num_removed = 0;
+  return remove_all_r(p, fs.type(), num_removed);
+}
+
+error_code directory_entry::status(file_status &result) const {
   return fs::status(Path, result);
 }
 

@@ -1,7 +1,6 @@
-; Test 128-bit floating-point comparison.  The tests assume a z10 implementation
-; of select, using conditional branches rather than LOCGR.
+; Test 128-bit floating-point comparison.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 ; There is no memory form of 128-bit comparison.
 define i64 @f1(i64 %a, i64 %b, fp128 *%ptr, float %f2) {

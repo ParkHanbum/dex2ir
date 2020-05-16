@@ -37,26 +37,26 @@ class MipsJITInfo : public TargetJITInfo {
     /// overwriting OLD with a branch to NEW.  This is used for self-modifying
     /// code.
     ///
-    void replaceMachineCodeForFunction(void *Old, void *New) override;
+    virtual void replaceMachineCodeForFunction(void *Old, void *New);
 
     // getStubLayout - Returns the size and alignment of the largest call stub
     // on Mips.
-    StubLayout getStubLayout() override;
+    virtual StubLayout getStubLayout();
 
     /// emitFunctionStub - Use the specified JITCodeEmitter object to emit a
     /// small native function that simply calls the function at the specified
     /// address.
-    void *emitFunctionStub(const Function *F, void *Fn,
-                           JITCodeEmitter &JCE) override;
+    virtual void *emitFunctionStub(const Function *F, void *Fn,
+                                   JITCodeEmitter &JCE);
 
     /// getLazyResolverFunction - Expose the lazy resolver to the JIT.
-    LazyResolverFn getLazyResolverFunction(JITCompilerFn) override;
+    virtual LazyResolverFn getLazyResolverFunction(JITCompilerFn);
 
     /// relocate - Before the JIT can run a block of code that has been emitted,
     /// it must rewrite the code to contain the actual addresses of any
     /// referenced global symbols.
-    void relocate(void *Function, MachineRelocation *MR,
-                  unsigned NumRelocs, unsigned char *GOTBase) override;
+    virtual void relocate(void *Function, MachineRelocation *MR,
+                          unsigned NumRelocs, unsigned char *GOTBase);
 
     /// Initialize - Initialize internal stage for the function being JITted.
     void Initialize(const MachineFunction &MF, bool isPIC,

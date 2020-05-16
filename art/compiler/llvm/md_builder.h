@@ -20,6 +20,7 @@
 #include "backend_types.h"
 
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstring>
 
@@ -36,7 +37,7 @@ typedef ::llvm::MDBuilder LLVMMDBuilder;
 class MDBuilder : public LLVMMDBuilder {
  public:
   explicit MDBuilder(::llvm::LLVMContext& context)
-     : LLVMMDBuilder(context), tbaa_root_(createTBAARoot("Art TBAA Root")) {
+     : LLVMMDBuilder(context), tbaa_root_(createTBAARoot(::llvm::StringRef("Art TBAA Root"))) {
     std::memset(tbaa_special_type_, 0, sizeof(tbaa_special_type_));
     std::memset(tbaa_memory_jtype_, 0, sizeof(tbaa_memory_jtype_));
 

@@ -25,87 +25,49 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "mem2reg"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasSetTracker.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/IR/CFG.h"
+#include "llvm/DIBuilder.h"
+#include "llvm/DebugInfo.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/DIBuilder.h"
-#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/InstVisitor.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include <algorithm>
 #include <queue>
 using namespace llvm;
-
-#define DEBUG_TYPE "mem2reg"
 
 STATISTIC(NumLocalPromoted, "Number of alloca's promoted within one block");
 STATISTIC(NumSingleStore,   "Number of alloca's promoted with a single store");
 STATISTIC(NumDeadAlloca,    "Number of dead alloca's removed");
 STATISTIC(NumPHIInsert,     "Number of PHI nodes inserted");
 
-bool llvm::isAllocaPromotable(const AllocaInst *AI) {
-  // FIXME: If the memory unit is of pointer or integer type, we can permit
-  // assignments to subsections of the memory unit.
-  unsigned AS = AI->getType()->getAddressSpace();
-
-  // Only allow direct and non-volatile loads and stores...
-  for (const User *U : AI->users()) {
-    if (const LoadInst *LI = dyn_cast<LoadInst>(U)) {
-      // Note that atomic loads can be transformed; atomic semantics do
-      // not have any meaning for a local alloca.
-      if (LI->isVolatile())
-        return false;
-    } else if (const StoreInst *SI = dyn_cast<StoreInst>(U)) {
-      if (SI->getOperand(0) == AI)
-        return false; // Don't allow a store OF the AI, only INTO the AI.
-      // Note that atomic stores can be transformed; atomic semantics do
-      // not have any meaning for a local alloca.
-      if (SI->isVolatile())
-        return false;
-    } else if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(U)) {
-      if (II->getIntrinsicID() != Intrinsic::lifetime_start &&
-          II->getIntrinsicID() != Intrinsic::lifetime_end)
-        return false;
-    } else if (const BitCastInst *BCI = dyn_cast<BitCastInst>(U)) {
-      if (BCI->getType() != Type::getInt8PtrTy(U->getContext(), AS))
-        return false;
-      if (!onlyUsedByLifetimeMarkers(BCI))
-        return false;
-    } else if (const GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(U)) {
-      if (GEPI->getType() != Type::getInt8PtrTy(U->getContext(), AS))
-        return false;
-      if (!GEPI->hasAllZeroIndices())
-        return false;
-      if (!onlyUsedByLifetimeMarkers(GEPI))
-        return false;
-    } else {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 namespace {
 
-struct AllocaInfo {
+struct AllocaInfo : private InstVisitor<AllocaInfo, bool> {
+  const DataLayout *DL;
+
   SmallVector<BasicBlock *, 32> DefiningBlocks;
   SmallVector<BasicBlock *, 32> UsingBlocks;
+  SmallVector<Instruction *, 8> DeadInsts;
 
+  Type *AllocaTy;
   StoreInst *OnlyStore;
   BasicBlock *OnlyBlock;
   bool OnlyUsedInOneBlock;
@@ -113,50 +75,132 @@ struct AllocaInfo {
   Value *AllocaPointerVal;
   DbgDeclareInst *DbgDeclare;
 
+  AllocaInfo(const DataLayout *DL) : DL(DL) {}
+
   void clear() {
     DefiningBlocks.clear();
     UsingBlocks.clear();
-    OnlyStore = nullptr;
-    OnlyBlock = nullptr;
+    DeadInsts.clear();
+    AllocaTy = 0;
+    OnlyStore = 0;
+    OnlyBlock = 0;
     OnlyUsedInOneBlock = true;
-    AllocaPointerVal = nullptr;
-    DbgDeclare = nullptr;
+    AllocaPointerVal = 0;
+    DbgDeclare = 0;
   }
 
   /// Scan the uses of the specified alloca, filling in the AllocaInfo used
   /// by the rest of the pass to reason about the uses of this alloca.
-  void AnalyzeAlloca(AllocaInst *AI) {
+  bool analyzeAlloca(AllocaInst &AI) {
     clear();
 
-    // As we scan the uses of the alloca instruction, keep track of stores,
-    // and decide whether all of the loads and stores to the alloca are within
-    // the same basic block.
-    for (auto UI = AI->user_begin(), E = AI->user_end(); UI != E;) {
-      Instruction *User = cast<Instruction>(*UI++);
+    AllocaTy = AI.getAllocatedType();
+    enqueueUsers(AI);
 
-      if (StoreInst *SI = dyn_cast<StoreInst>(User)) {
-        // Remember the basic blocks which define new values for the alloca
-        DefiningBlocks.push_back(SI->getParent());
-        AllocaPointerVal = SI->getOperand(0);
-        OnlyStore = SI;
-      } else {
-        LoadInst *LI = cast<LoadInst>(User);
-        // Otherwise it must be a load instruction, keep track of variable
-        // reads.
-        UsingBlocks.push_back(LI->getParent());
-        AllocaPointerVal = LI;
-      }
+    // Walk queued up uses in the worklist to handle nested uses.
+    while (!UseWorklist.empty()) {
+      U = UseWorklist.pop_back_val();
+      Instruction &I = *cast<Instruction>(U->getUser());
+      if (!visit(I))
+        return false; // Propagate failure to promote up.
 
       if (OnlyUsedInOneBlock) {
-        if (!OnlyBlock)
-          OnlyBlock = User->getParent();
-        else if (OnlyBlock != User->getParent())
+        if (OnlyBlock == 0)
+          OnlyBlock = I.getParent();
+        else if (OnlyBlock != I.getParent())
           OnlyUsedInOneBlock = false;
       }
     }
 
-    DbgDeclare = FindAllocaDbgDeclare(AI);
+    DbgDeclare = FindAllocaDbgDeclare(&AI);
+    return true;
   }
+
+private:
+  // Befriend the base class so it can call through private visitor methods.
+  friend class InstVisitor<AllocaInfo, bool>;
+
+  /// \brief A use pointer that is non-null when visiting uses.
+  Use *U;
+
+  /// \brief A worklist for recursively visiting all uses of an alloca.
+  SmallVector<Use *, 8> UseWorklist;
+
+  /// \brief A set for preventing cyclic visitation.
+  SmallPtrSet<Use *, 8> VisitedUses;
+
+  void enqueueUsers(Instruction &I) {
+    for (Value::use_iterator UI = I.use_begin(), UE = I.use_end(); UI != UE;
+         ++UI)
+      if (VisitedUses.insert(&UI.getUse()))
+        UseWorklist.push_back(&UI.getUse());
+  }
+
+  bool visitLoadInst(LoadInst &LI) {
+    if (LI.isVolatile() || LI.getType() != AllocaTy)
+      return false;
+
+    // Keep track of variable reads.
+    UsingBlocks.push_back(LI.getParent());
+    AllocaPointerVal = &LI;
+    return true;
+  }
+
+  bool visitStoreInst(StoreInst &SI) {
+    if (SI.isVolatile() || SI.getValueOperand() == U->get() ||
+        SI.getValueOperand()->getType() != AllocaTy)
+      return false;
+
+    // Remember the basic blocks which define new values for the alloca
+    DefiningBlocks.push_back(SI.getParent());
+    AllocaPointerVal = SI.getOperand(0);
+    OnlyStore = &SI;
+    return true;
+  }
+
+  bool visitBitCastInst(BitCastInst &BC) {
+    if (BC.use_empty())
+      DeadInsts.push_back(&BC);
+    else
+      enqueueUsers(BC);
+    return true;
+  }
+
+  bool visitGetElementPtrInst(GetElementPtrInst &GEPI) {
+    if (GEPI.use_empty()) {
+      DeadInsts.push_back(&GEPI);
+      return true;
+    }
+
+    enqueueUsers(GEPI);
+
+    return GEPI.hasAllZeroIndices();
+  }
+
+  // We can promote through debug info intrinsics as they don't alter the
+  // value stored in memory.
+  bool visitDbgInfoIntrinsic(DbgInfoIntrinsic &I) {
+    DeadInsts.push_back(&I);
+    return true;
+  }
+
+  bool visitIntrinsicInst(IntrinsicInst &II) {
+    switch (II.getIntrinsicID()) {
+    default:
+      return false;
+
+      // Lifetime intrinsics don't preclude promoting the memory to a register.
+      // FIXME: We should use these to promote to undef when outside of a valid
+      // lifetime.
+    case Intrinsic::lifetime_start:
+    case Intrinsic::lifetime_end:
+      DeadInsts.push_back(&II);
+      return true;
+    }
+  }
+
+  // The fallback is that the alloca cannot be promoted.
+  bool visitInstruction(Instruction &I) { return false; }
 };
 
 // Data package used by RenamePass()
@@ -164,7 +208,7 @@ class RenamePassData {
 public:
   typedef std::vector<Value *> ValVector;
 
-  RenamePassData() : BB(nullptr), Pred(nullptr), Values() {}
+  RenamePassData() : BB(NULL), Pred(NULL), Values() {}
   RenamePassData(BasicBlock *B, BasicBlock *P, const ValVector &V)
       : BB(B), Pred(P), Values(V) {}
   BasicBlock *BB;
@@ -234,6 +278,7 @@ struct PromoteMem2Reg {
   std::vector<AllocaInst *> Allocas;
   DominatorTree &DT;
   DIBuilder DIB;
+  const DataLayout *DL;
 
   /// An AliasSetTracker object to update.  If null, don't update it.
   AliasSetTracker *AST;
@@ -279,9 +324,9 @@ struct PromoteMem2Reg {
 
 public:
   PromoteMem2Reg(ArrayRef<AllocaInst *> Allocas, DominatorTree &DT,
-                 AliasSetTracker *AST)
+                 const DataLayout *DL, AliasSetTracker *AST)
       : Allocas(Allocas.begin(), Allocas.end()), DT(DT),
-        DIB(*DT.getRoot()->getParent()->getParent()), AST(AST) {}
+        DIB(*DT.getRoot()->getParent()->getParent()), DL(DL), AST(AST) {}
 
   void run();
 
@@ -312,25 +357,39 @@ private:
 
 } // end of anonymous namespace
 
-static void removeLifetimeIntrinsicUsers(AllocaInst *AI) {
-  // Knowing that this alloca is promotable, we know that it's safe to kill all
-  // instructions except for load and store.
+/// \brief Walk a small vector of dead instructions and recursively remove them
+/// and subsequently dead instructions.
+///
+/// This is only valid to call on dead instructions using an alloca which is
+/// promotable, as we leverage that assumption to delete them faster.
+static void removeDeadInstructions(AllocaInst *AI,
+                                   SmallVectorImpl<Instruction *> &DeadInsts) {
+  while (!DeadInsts.empty()) {
+    Instruction *I = DeadInsts.pop_back_val();
 
-  for (auto UI = AI->user_begin(), UE = AI->user_end(); UI != UE;) {
-    Instruction *I = cast<Instruction>(*UI);
-    ++UI;
-    if (isa<LoadInst>(I) || isa<StoreInst>(I))
+    // Don't delete the alloca itself.
+    if (I == AI)
       continue;
 
-    if (!I->getType()->isVoidTy()) {
-      // The only users of this bitcast/GEP instruction are lifetime intrinsics.
-      // Follow the use/def chain to erase them now instead of leaving it for
-      // dead code elimination later.
-      for (auto UUI = I->user_begin(), UUE = I->user_end(); UUI != UUE;) {
-        Instruction *Inst = cast<Instruction>(*UUI);
-        ++UUI;
-        Inst->eraseFromParent();
-      }
+    // Note that we open code the deletion algorithm here because we know
+    // apriori that all of the instructions using an alloca that reaches here
+    // are trivially dead when their use list becomes empty (The only risk are
+    // lifetime markers which we specifically want to nuke). By coding it here
+    // we can skip the triviality test and be more efficient.
+    //
+    // Null out all of the instruction's operands to see if any operand becomes
+    // dead as we go.
+    for (User::op_iterator OI = I->op_begin(), OE = I->op_end(); OI != OE;
+         ++OI) {
+      Instruction *Op = dyn_cast<Instruction>(*OI);
+      if (!Op)
+        continue;
+
+      OI->set(0);
+      if (!Op->use_empty())
+        continue;
+
+      DeadInsts.push_back(Op);
     }
     I->eraseFromParent();
   }
@@ -356,7 +415,7 @@ static bool rewriteSingleStoreAlloca(AllocaInst *AI, AllocaInfo &Info,
   // Clear out UsingBlocks.  We will reconstruct it here if needed.
   Info.UsingBlocks.clear();
 
-  for (auto UI = AI->user_begin(), E = AI->user_end(); UI != E;) {
+  for (Value::use_iterator UI = AI->use_begin(), E = AI->use_end(); UI != E;) {
     Instruction *UserInst = cast<Instruction>(*UI++);
     if (!isa<LoadInst>(UserInst)) {
       assert(UserInst == OnlyStore && "Should only have load/stores");
@@ -415,7 +474,6 @@ static bool rewriteSingleStoreAlloca(AllocaInst *AI, AllocaInfo &Info,
     DIBuilder DIB(*AI->getParent()->getParent()->getParent());
     ConvertDebugDeclareToDebugValue(DDI, Info.OnlyStore, DIB);
     DDI->eraseFromParent();
-    LBI.deleteValue(DDI);
   }
   // Remove the (now dead) store and alloca.
   Info.OnlyStore->eraseFromParent();
@@ -426,6 +484,16 @@ static bool rewriteSingleStoreAlloca(AllocaInst *AI, AllocaInfo &Info,
   AI->eraseFromParent();
   LBI.deleteValue(AI);
   return true;
+}
+
+namespace {
+/// This is a helper predicate used to search by the first element of a pair.
+struct StoreIndexSearchPredicate {
+  bool operator()(const std::pair<unsigned, StoreInst *> &LHS,
+                  const std::pair<unsigned, StoreInst *> &RHS) {
+    return LHS.first < RHS.first;
+  }
+};
 }
 
 /// Many allocas are only used within a single basic block.  If this is the
@@ -453,17 +521,19 @@ static void promoteSingleBlockAlloca(AllocaInst *AI, const AllocaInfo &Info,
   typedef SmallVector<std::pair<unsigned, StoreInst *>, 64> StoresByIndexTy;
   StoresByIndexTy StoresByIndex;
 
-  for (User *U : AI->users())
-    if (StoreInst *SI = dyn_cast<StoreInst>(U))
+  for (Value::use_iterator UI = AI->use_begin(), E = AI->use_end(); UI != E;
+       ++UI)
+    if (StoreInst *SI = dyn_cast<StoreInst>(*UI))
       StoresByIndex.push_back(std::make_pair(LBI.getInstructionIndex(SI), SI));
 
   // Sort the stores by their index, making it efficient to do a lookup with a
   // binary search.
-  std::sort(StoresByIndex.begin(), StoresByIndex.end(), less_first());
+  std::sort(StoresByIndex.begin(), StoresByIndex.end(),
+            StoreIndexSearchPredicate());
 
   // Walk all of the loads from this alloca, replacing them with the nearest
   // store above them, if any.
-  for (auto UI = AI->user_begin(), E = AI->user_end(); UI != E;) {
+  for (Value::use_iterator UI = AI->use_begin(), E = AI->use_end(); UI != E;) {
     LoadInst *LI = dyn_cast<LoadInst>(*UI++);
     if (!LI)
       continue;
@@ -473,16 +543,15 @@ static void promoteSingleBlockAlloca(AllocaInst *AI, const AllocaInfo &Info,
     // Find the nearest store that has a lower index than this load.
     StoresByIndexTy::iterator I =
         std::lower_bound(StoresByIndex.begin(), StoresByIndex.end(),
-                         std::make_pair(LoadIdx,
-                                        static_cast<StoreInst *>(nullptr)),
-                         less_first());
+                         std::make_pair(LoadIdx, static_cast<StoreInst *>(0)),
+                         StoreIndexSearchPredicate());
 
     if (I == StoresByIndex.begin())
       // If there is no store before this load, the load takes the undef value.
       LI->replaceAllUsesWith(UndefValue::get(LI->getType()));
     else
       // Otherwise, there was a store before this load, the load takes its value.
-      LI->replaceAllUsesWith(std::prev(I)->second->getOperand(0));
+      LI->replaceAllUsesWith(llvm::prior(I)->second->getOperand(0));
 
     if (AST && LI->getType()->isPointerTy())
       AST->deleteValue(LI);
@@ -492,7 +561,7 @@ static void promoteSingleBlockAlloca(AllocaInst *AI, const AllocaInfo &Info,
 
   // Remove the (now dead) stores and alloca.
   while (!AI->use_empty()) {
-    StoreInst *SI = cast<StoreInst>(AI->user_back());
+    StoreInst *SI = cast<StoreInst>(AI->use_back());
     // Record debuginfo for the store before removing it.
     if (DbgDeclareInst *DDI = Info.DbgDeclare) {
       DIBuilder DIB(*AI->getParent()->getParent()->getParent());
@@ -508,10 +577,8 @@ static void promoteSingleBlockAlloca(AllocaInst *AI, const AllocaInfo &Info,
   LBI.deleteValue(AI);
 
   // The alloca's debuginfo can be removed as well.
-  if (DbgDeclareInst *DDI = Info.DbgDeclare) {
+  if (DbgDeclareInst *DDI = Info.DbgDeclare)
     DDI->eraseFromParent();
-    LBI.deleteValue(DDI);
-  }
 
   ++NumLocalPromoted;
 }
@@ -523,17 +590,23 @@ void PromoteMem2Reg::run() {
     PointerAllocaValues.resize(Allocas.size());
   AllocaDbgDeclares.resize(Allocas.size());
 
-  AllocaInfo Info;
+  AllocaInfo Info(DL);
   LargeBlockInfo LBI;
 
   for (unsigned AllocaNum = 0; AllocaNum != Allocas.size(); ++AllocaNum) {
     AllocaInst *AI = Allocas[AllocaNum];
 
-    assert(isAllocaPromotable(AI) && "Cannot promote non-promotable alloca!");
     assert(AI->getParent()->getParent() == &F &&
            "All allocas should be in the same function, which is same as DF!");
 
-    removeLifetimeIntrinsicUsers(AI);
+    // Calculate the set of read and write-locations for each alloca.  This is
+    // analogous to finding the 'uses' and 'definitions' of each variable.
+    bool Good = Info.analyzeAlloca(*AI);
+    (void)Good;
+    assert(Good && "Cannot promote non-promotable alloca!");
+
+    // Nuke all of the dead instructions.
+    removeDeadInstructions(AI, Info.DeadInsts);
 
     if (AI->use_empty()) {
       // If there are no uses of the alloca, just delete it now.
@@ -546,10 +619,6 @@ void PromoteMem2Reg::run() {
       ++NumDeadAlloca;
       continue;
     }
-
-    // Calculate the set of read and write-locations for each alloca.  This is
-    // analogous to finding the 'uses' and 'definitions' of each variable.
-    Info.AnalyzeAlloca(AI);
 
     // If there is only a single store to this value, replace any loads of
     // it that are directly dominated by the definition with the value stored.
@@ -635,7 +704,7 @@ void PromoteMem2Reg::run() {
   // and inserting the phi nodes we marked as necessary
   //
   std::vector<RenamePassData> RenamePassWorkList;
-  RenamePassWorkList.push_back(RenamePassData(F.begin(), nullptr, Values));
+  RenamePassWorkList.push_back(RenamePassData(F.begin(), 0, Values));
   do {
     RenamePassData RPD;
     RPD.swap(RenamePassWorkList.back());
@@ -676,8 +745,8 @@ void PromoteMem2Reg::run() {
 
     // Iterating over NewPhiNodes is deterministic, so it is safe to try to
     // simplify and RAUW them as we go.  If it was not, we could add uses to
-    // the values we replace with in a non-deterministic order, thus creating
-    // non-deterministic def->use chains.
+    // the values we replace with in a non deterministic order, thus creating
+    // non deterministic def->use chains.
     for (DenseMap<std::pair<unsigned, unsigned>, PHINode *>::iterator
              I = NewPhiNodes.begin(),
              E = NewPhiNodes.end();
@@ -685,7 +754,7 @@ void PromoteMem2Reg::run() {
       PHINode *PN = I->second;
 
       // If this PHI node merges one value and/or undefs, get the value.
-      if (Value *V = SimplifyInstruction(PN, nullptr, nullptr, &DT)) {
+      if (Value *V = SimplifyInstruction(PN, 0, 0, &DT)) {
         if (AST && PN->getType()->isPointerTy())
           AST->deleteValue(PN);
         PN->replaceAllUsesWith(V);
@@ -835,6 +904,16 @@ void PromoteMem2Reg::ComputeLiveInBlocks(
   }
 }
 
+namespace {
+typedef std::pair<DomTreeNode *, unsigned> DomTreeNodePair;
+
+struct DomTreeNodeCompare {
+  bool operator()(const DomTreeNodePair &LHS, const DomTreeNodePair &RHS) {
+    return LHS.second < RHS.second;
+  }
+};
+} // end anonymous namespace
+
 /// At this point, we're committed to promoting the alloca using IDF's, and the
 /// standard SSA construction algorithm.  Determine which blocks need phi nodes
 /// and see if we can optimize out some work by avoiding insertion of dead phi
@@ -852,9 +931,9 @@ void PromoteMem2Reg::DetermineInsertionPoint(AllocaInst *AI, unsigned AllocaNum,
 
   // Use a priority queue keyed on dominator tree level so that inserted nodes
   // are handled from the bottom of the dominator tree upwards.
-  typedef std::pair<DomTreeNode *, unsigned> DomTreeNodePair;
-  typedef std::priority_queue<DomTreeNodePair, SmallVector<DomTreeNodePair, 32>,
-                              less_second> IDFPriorityQueue;
+  typedef std::priority_queue<DomTreeNodePair,
+                              SmallVector<DomTreeNodePair, 32>,
+                              DomTreeNodeCompare> IDFPriorityQueue;
   IDFPriorityQueue PQ;
 
   for (SmallPtrSet<BasicBlock *, 32>::const_iterator I = DefBlocks.begin(),
@@ -993,7 +1072,7 @@ NextIteration:
         // Get the next phi node.
         ++PNI;
         APN = dyn_cast<PHINode>(PNI);
-        if (!APN)
+        if (APN == 0)
           break;
 
         // Verify that it is missing entries.  If not, it is not being inserted
@@ -1066,11 +1145,19 @@ NextIteration:
   goto NextIteration;
 }
 
+bool llvm::isAllocaPromotable(const AllocaInst *AI, const DataLayout *DL) {
+  // We cast away constness because we re-use the non-const analysis that the
+  // actual promotion routine uses. While it is non-const, it doesn't actually
+  // mutate anything at this phase, and we discard the non-const results that
+  // promotion uses to mutate the alloca.
+  return AllocaInfo(DL).analyzeAlloca(*const_cast<AllocaInst *>(AI));
+}
+
 void llvm::PromoteMemToReg(ArrayRef<AllocaInst *> Allocas, DominatorTree &DT,
-                           AliasSetTracker *AST) {
+                           const DataLayout *DL, AliasSetTracker *AST) {
   // If there is nothing to do, bail out...
   if (Allocas.empty())
     return;
 
-  PromoteMem2Reg(Allocas, DT, AST).run();
+  PromoteMem2Reg(Allocas, DT, DL, AST).run();
 }

@@ -1,5 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
-
+; RUN: llc < %s -march=arm
 @handler_installed.6144.b = external global i1          ; <i1*> [#uses=1]
 
 define void @__mf_sigusr1_respond() {

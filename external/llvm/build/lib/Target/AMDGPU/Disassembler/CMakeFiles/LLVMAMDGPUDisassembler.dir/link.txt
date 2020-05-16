@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMAMDGPUDisassembler.a  CMakeFiles/LLVMAMDGPUDisassembler.dir/AMDGPUDisassembler.cpp.o
+/usr/bin/ranlib ../../../libLLVMAMDGPUDisassembler.a

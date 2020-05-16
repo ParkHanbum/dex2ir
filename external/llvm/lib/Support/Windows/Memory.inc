@@ -15,10 +15,9 @@
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
-#include "llvm/Support/WindowsError.h"
 
 // The Windows.h header must be the last one included.
-#include "WindowsSupport.h"
+#include "Windows.h"
 
 namespace {
 
@@ -70,8 +69,8 @@ namespace sys {
 MemoryBlock Memory::allocateMappedMemory(size_t NumBytes,
                                          const MemoryBlock *const NearBlock,
                                          unsigned Flags,
-                                         std::error_code &EC) {
-  EC = std::error_code();
+                                         error_code &EC) {
+  EC = error_code::success();
   if (NumBytes == 0)
     return MemoryBlock();
 
@@ -83,7 +82,7 @@ MemoryBlock Memory::allocateMappedMemory(size_t NumBytes,
 
   uintptr_t Start = NearBlock ? reinterpret_cast<uintptr_t>(NearBlock->base()) +
                                 NearBlock->size()
-                           : 0;
+                           : NULL;
 
   // If the requested address is not aligned to the allocation granularity,
   // round up to get beyond NearBlock. VirtualAlloc would have rounded down.
@@ -100,48 +99,48 @@ MemoryBlock Memory::allocateMappedMemory(size_t NumBytes,
       // Try again without the NearBlock hint
       return allocateMappedMemory(NumBytes, NULL, Flags, EC);
     }
-    EC = mapWindowsError(::GetLastError());
+    EC = error_code(::GetLastError(), system_category());
     return MemoryBlock();
   }
 
   MemoryBlock Result;
   Result.Address = PA;
   Result.Size = NumBlocks*Granularity;
-
+                                 ;
   if (Flags & MF_EXEC)
     Memory::InvalidateInstructionCache(Result.Address, Result.Size);
 
   return Result;
 }
 
-  std::error_code Memory::releaseMappedMemory(MemoryBlock &M) {
+error_code Memory::releaseMappedMemory(MemoryBlock &M) {
   if (M.Address == 0 || M.Size == 0)
-    return std::error_code();
+    return error_code::success();
 
   if (!VirtualFree(M.Address, 0, MEM_RELEASE))
-    return mapWindowsError(::GetLastError());
+    return error_code(::GetLastError(), system_category());
 
   M.Address = 0;
   M.Size = 0;
 
-  return std::error_code();
+  return error_code::success();
 }
 
-  std::error_code Memory::protectMappedMemory(const MemoryBlock &M,
+error_code Memory::protectMappedMemory(const MemoryBlock &M,
                                        unsigned Flags) {
   if (M.Address == 0 || M.Size == 0)
-    return std::error_code();
+    return error_code::success();
 
   DWORD Protect = getWindowsProtectionFlags(Flags);
 
   DWORD OldFlags;
   if (!VirtualProtect(M.Address, M.Size, Protect, &OldFlags))
-    return mapWindowsError(::GetLastError());
+    return error_code(::GetLastError(), system_category());
 
   if (Flags & MF_EXEC)
     Memory::InvalidateInstructionCache(M.Address, M.Size);
 
-  return std::error_code();
+  return error_code::success();
 }
 
 /// InvalidateInstructionCache - Before the JIT can run a block of code
@@ -157,18 +156,18 @@ MemoryBlock Memory::AllocateRWX(size_t NumBytes,
                                 const MemoryBlock *NearBlock,
                                 std::string *ErrMsg) {
   MemoryBlock MB;
-  std::error_code EC;
+  error_code EC;
   MB = allocateMappedMemory(NumBytes, NearBlock,
                             MF_READ|MF_WRITE|MF_EXEC, EC);
-  if (EC != std::error_code() && ErrMsg) {
+  if (EC != error_code::success() && ErrMsg) {
     MakeErrMsg(ErrMsg, EC.message());
   }
   return MB;
 }
 
 bool Memory::ReleaseRWX(MemoryBlock &M, std::string *ErrMsg) {
-  std::error_code EC = releaseMappedMemory(M);
-  if (EC == std::error_code())
+  error_code EC = releaseMappedMemory(M);
+  if (EC == error_code::success())
     return false;
   MakeErrMsg(ErrMsg, EC.message());
   return true;

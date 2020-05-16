@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=thumb-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=thumb | grep tst
 
 define i32 @f(i32 %a) {
 entry:
@@ -15,6 +15,3 @@ entry:
 	%retval = select i1 %0, i32 20, i32 10		; <i32> [#uses=1]
 	ret i32 %retval
 }
-
-; CHECK: tst
-

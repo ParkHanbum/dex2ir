@@ -35,12 +35,14 @@ MCAsmInfo::MCAsmInfo() {
   LinkerRequiresNonEmptyDwarfLines = false;
   MaxInstLength = 4;
   MinInstAlignment = 1;
-  DollarIsPC = false;
+  PCSymbol = "$";
   SeparatorString = ";";
+  CommentColumn = 40;
   CommentString = "#";
   LabelSuffix = ":";
-  UseAssignmentForEHBegin = false;
-  PrivateGlobalPrefix = "L";
+  DebugLabelSuffix = ":";
+  GlobalPrefix = "";
+  PrivateGlobalPrefix = ".";
   LinkerPrivateGlobalPrefix = "";
   InlineAsmStart = "APP";
   InlineAsmEnd = "NO_APP";
@@ -48,7 +50,10 @@ MCAsmInfo::MCAsmInfo() {
   Code32Directive = ".code32";
   Code64Directive = ".code64";
   AssemblerDialect = 0;
-  AllowAtInName = false;
+  AllowQuotesInName = false;
+  AllowNameToStartWithDigit = false;
+  AllowPeriodsInName = true;
+  AllowUTF8 = true;
   UseDataRegionDirectives = false;
   ZeroDirective = "\t.zero\t";
   AsciiDirective = "\t.ascii\t";
@@ -59,10 +64,11 @@ MCAsmInfo::MCAsmInfo() {
   Data64bitsDirective = "\t.quad\t";
   SunStyleELFSectionSwitchSyntax = false;
   UsesELFSectionDirectiveForBSS = false;
+  AlignDirective = "\t.align\t";
   AlignmentIsInBytes = true;
   TextAlignFillValue = 0;
-  GPRel64Directive = nullptr;
-  GPRel32Directive = nullptr;
+  GPRel64Directive = 0;
+  GPRel32Directive = 0;
   GlobalDirective = "\t.globl\t";
   HasSetDirective = true;
   HasAggressiveSymbolFolding = true;
@@ -70,43 +76,49 @@ MCAsmInfo::MCAsmInfo() {
   LCOMMDirectiveAlignmentType = LCOMM::NoAlignment;
   HasDotTypeDotSizeDirective = true;
   HasSingleParameterDotFile = true;
-  HasIdentDirective = false;
   HasNoDeadStrip = false;
-  WeakRefDirective = nullptr;
-  HasWeakDefDirective = false;
-  HasWeakDefCanBeHiddenDirective = false;
-  HasLinkOnceDirective = false;
+  HasSymbolResolver = false;
+  WeakRefDirective = 0;
+  WeakDefDirective = 0;
+  LinkOnceDirective = 0;
   HiddenVisibilityAttr = MCSA_Hidden;
   HiddenDeclarationVisibilityAttr = MCSA_Hidden;
   ProtectedVisibilityAttr = MCSA_Protected;
   HasLEB128 = false;
   SupportsDebugInformation = false;
   ExceptionsType = ExceptionHandling::None;
-  WinEHEncodingType = WinEH::EncodingType::ET_Invalid;
+  DwarfUsesInlineInfoSection = false;
   DwarfUsesRelocationsAcrossSections = true;
-  DwarfFDESymbolsUseAbsDiff = false;
   DwarfRegNumForCFI = false;
+  HasMicrosoftFastStdCallMangling = false;
   NeedsDwarfSectionOffsetDirective = false;
-  UseParensForSymbolVariant = false;
-
-  // FIXME: Clang's logic should be synced with the logic used to initialize
-  //        this member and the two implementations should be merged.
-  // For reference:
-  // - Solaris always enables the integrated assembler by default
-  //   - SparcELFMCAsmInfo and X86ELFMCAsmInfo are handling this case
-  // - Windows always enables the integrated assembler by default
-  //   - MCAsmInfoCOFF is handling this case, should it be MCAsmInfoMicrosoft?
-  // - MachO targets always enables the integrated assembler by default
-  //   - MCAsmInfoDarwin is handling this case
-  // - Generic_GCC toolchains enable the integrated assembler on a per
-  //   architecture basis.
-  //   - The target subclasses for AArch64, ARM, and X86 handle these cases
-  UseIntegratedAssembler = false;
-
-  CompressDebugSections = false;
 }
 
 MCAsmInfo::~MCAsmInfo() {
+}
+
+
+unsigned MCAsmInfo::getULEB128Size(uint64_t Value) {
+  unsigned Size = 0;
+  do {
+    Value >>= 7;
+    Size += sizeof(int8_t);
+  } while (Value);
+  return Size;
+}
+
+unsigned MCAsmInfo::getSLEB128Size(int64_t Value) {
+  unsigned Size = 0;
+  int Sign = Value >> (8 * sizeof(Value) - 1);
+  bool IsMore;
+
+  do {
+    unsigned Byte = Value & 0x7f;
+    Value >>= 7;
+    IsMore = Value != Sign || ((Byte ^ Sign) & 0x40) != 0;
+    Size += sizeof(int8_t);
+  } while (IsMore);
+  return Size;
 }
 
 const MCExpr *

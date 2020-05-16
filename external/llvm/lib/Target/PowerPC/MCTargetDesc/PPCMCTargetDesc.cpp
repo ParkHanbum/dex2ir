@@ -14,19 +14,14 @@
 #include "PPCMCTargetDesc.h"
 #include "InstPrinter/PPCInstPrinter.h"
 #include "PPCMCAsmInfo.h"
-#include "PPCTargetStreamer.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MachineLocation.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/TargetRegistry.h"
-
-using namespace llvm;
 
 #define GET_INSTRINFO_MC_DESC
 #include "PPCGenInstrInfo.inc"
@@ -37,9 +32,7 @@ using namespace llvm;
 #define GET_REGINFO_MC_DESC
 #include "PPCGenRegisterInfo.inc"
 
-// Pin the vtable to this file.
-PPCTargetStreamer::~PPCTargetStreamer() {}
-PPCTargetStreamer::PPCTargetStreamer(MCStreamer &S) : MCTargetStreamer(S) {}
+using namespace llvm;
 
 static MCInstrInfo *createPPCMCInstrInfo() {
   MCInstrInfo *X = new MCInstrInfo();
@@ -73,14 +66,14 @@ static MCAsmInfo *createPPCMCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
 
   MCAsmInfo *MAI;
   if (TheTriple.isOSDarwin())
-    MAI = new PPCMCAsmInfoDarwin(isPPC64, TheTriple);
+    MAI = new PPCMCAsmInfoDarwin(isPPC64);
   else
-    MAI = new PPCLinuxMCAsmInfo(isPPC64, TheTriple);
+    MAI = new PPCLinuxMCAsmInfo(isPPC64);
 
   // Initial state of the frame pointer is R1.
   unsigned Reg = isPPC64 ? PPC::X1 : PPC::R1;
   MCCFIInstruction Inst =
-      MCCFIInstruction::createDefCfa(nullptr, MRI.getDwarfRegNum(Reg, true), 0);
+      MCCFIInstruction::createDefCfa(0, MRI.getDwarfRegNum(Reg, true), 0);
   MAI->addInitialFrameState(Inst);
 
   return MAI;
@@ -108,81 +101,17 @@ static MCCodeGenInfo *createPPCMCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
-namespace {
-class PPCTargetAsmStreamer : public PPCTargetStreamer {
-  formatted_raw_ostream &OS;
-
-public:
-  PPCTargetAsmStreamer(MCStreamer &S, formatted_raw_ostream &OS)
-      : PPCTargetStreamer(S), OS(OS) {}
-  void emitTCEntry(const MCSymbol &S) override {
-    OS << "\t.tc ";
-    OS << S.getName();
-    OS << "[TC],";
-    OS << S.getName();
-    OS << '\n';
-  }
-  void emitMachine(StringRef CPU) override {
-    OS << "\t.machine " << CPU << '\n';
-  }
-};
-
-class PPCTargetELFStreamer : public PPCTargetStreamer {
-public:
-  PPCTargetELFStreamer(MCStreamer &S) : PPCTargetStreamer(S) {}
-  void emitTCEntry(const MCSymbol &S) override {
-    // Creates a R_PPC64_TOC relocation
-    Streamer.EmitSymbolValue(&S, 8);
-  }
-  void emitMachine(StringRef CPU) override {
-    // FIXME: Is there anything to do in here or does this directive only
-    // limit the parser?
-  }
-};
-
-class PPCTargetMachOStreamer : public PPCTargetStreamer {
-public:
-  PPCTargetMachOStreamer(MCStreamer &S) : PPCTargetStreamer(S) {}
-  void emitTCEntry(const MCSymbol &S) override {
-    llvm_unreachable("Unknown pseudo-op: .tc");
-  }
-  void emitMachine(StringRef CPU) override {
-    // FIXME: We should update the CPUType, CPUSubType in the Object file if
-    // the new values are different from the defaults.
-  }
-};
-}
-
 // This is duplicated code. Refactor this.
 static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     MCContext &Ctx, MCAsmBackend &MAB,
                                     raw_ostream &OS,
                                     MCCodeEmitter *Emitter,
-                                    const MCSubtargetInfo &STI,
                                     bool RelaxAll,
                                     bool NoExecStack) {
-  if (Triple(TT).isOSDarwin()) {
-    MCStreamer *S = createMachOStreamer(Ctx, MAB, OS, Emitter, RelaxAll);
-    new PPCTargetMachOStreamer(*S);
-    return S;
-  }
+  if (Triple(TT).isOSDarwin())
+    return createMachOStreamer(Ctx, MAB, OS, Emitter, RelaxAll);
 
-  MCStreamer *S =
-      createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll, NoExecStack);
-  new PPCTargetELFStreamer(*S);
-  return S;
-}
-
-static MCStreamer *
-createMCAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
-                    bool isVerboseAsm, bool useDwarfDirectory,
-                    MCInstPrinter *InstPrint, MCCodeEmitter *CE,
-                    MCAsmBackend *TAB, bool ShowInst) {
-
-  MCStreamer *S = llvm::createAsmStreamer(
-      Ctx, OS, isVerboseAsm, useDwarfDirectory, InstPrint, CE, TAB, ShowInst);
-  new PPCTargetAsmStreamer(*S, OS);
-  return S;
+  return createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll, NoExecStack);
 }
 
 static MCInstPrinter *createPPCMCInstPrinter(const Target &T,
@@ -241,11 +170,6 @@ extern "C" void LLVMInitializePowerPCTargetMC() {
   TargetRegistry::RegisterMCObjectStreamer(ThePPC32Target, createMCStreamer);
   TargetRegistry::RegisterMCObjectStreamer(ThePPC64Target, createMCStreamer);
   TargetRegistry::RegisterMCObjectStreamer(ThePPC64LETarget, createMCStreamer);
-
-  // Register the asm streamer.
-  TargetRegistry::RegisterAsmStreamer(ThePPC32Target, createMCAsmStreamer);
-  TargetRegistry::RegisterAsmStreamer(ThePPC64Target, createMCAsmStreamer);
-  TargetRegistry::RegisterAsmStreamer(ThePPC64LETarget, createMCAsmStreamer);
 
   // Register the MCInstPrinter.
   TargetRegistry::RegisterMCInstPrinter(ThePPC32Target, createPPCMCInstPrinter);

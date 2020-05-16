@@ -52,7 +52,7 @@ extern "C" void LLVMInitializeHexagonTarget() {
 }
 
 static ScheduleDAGInstrs *createVLIWMachineSched(MachineSchedContext *C) {
-  return new VLIWMachineScheduler(C, make_unique<ConvergingVLIWScheduler>());
+  return new VLIWMachineScheduler(C, new ConvergingVLIWScheduler());
 }
 
 static MachineSchedRegistry
@@ -67,11 +67,33 @@ SchedCustomRegistry("hexagon", "Run Hexagon's custom scheduler",
 HexagonTargetMachine::HexagonTargetMachine(const Target &T, StringRef TT,
                                            StringRef CPU, StringRef FS,
                                            const TargetOptions &Options,
-                                           Reloc::Model RM, CodeModel::Model CM,
+                                           Reloc::Model RM,
+                                           CodeModel::Model CM,
                                            CodeGenOpt::Level OL)
-    : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-      Subtarget(TT, CPU, FS, *this) {
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    DL("e-p:32:32:32-"
+                "i64:64:64-i32:32:32-i16:16:16-i1:32:32-"
+                "f64:64:64-f32:32:32-a0:0-n32") ,
+    Subtarget(TT, CPU, FS), InstrInfo(Subtarget), TLInfo(*this),
+    TSInfo(*this),
+    FrameLowering(Subtarget),
+    InstrItins(&Subtarget.getInstrItineraryData()) {
+    setMCUseCFI(false);
     initAsmInfo();
+}
+
+// addPassesForOptimizations - Allow the backend (target) to add Target
+// Independent Optimization passes to the Pass Manager.
+bool HexagonTargetMachine::addPassesForOptimizations(PassManagerBase &PM) {
+  if (getOptLevel() != CodeGenOpt::None) {
+    PM.add(createConstantPropagationPass());
+    PM.add(createLoopSimplifyPass());
+    PM.add(createDeadCodeEliminationPass());
+    PM.add(createConstantPropagationPass());
+    PM.add(createLoopUnrollPass());
+    PM.add(createLoopStrengthReducePass());
+  }
+  return true;
 }
 
 namespace {
@@ -80,30 +102,22 @@ class HexagonPassConfig : public TargetPassConfig {
 public:
   HexagonPassConfig(HexagonTargetMachine *TM, PassManagerBase &PM)
     : TargetPassConfig(TM, PM) {
-    // FIXME: Rather than calling enablePass(&MachineSchedulerID) below, define
-    // HexagonSubtarget::enableMachineScheduler() { return true; }.
-    // That will bypass the SelectionDAG VLIW scheduler, which is probably just
-    // hurting compile time and will be removed eventually anyway.
-    if (DisableHexagonMISched)
-      disablePass(&MachineSchedulerID);
-    else
+    // Enable MI scheduler.
+    if (!DisableHexagonMISched) {
       enablePass(&MachineSchedulerID);
+      MachineSchedRegistry::setDefault(createVLIWMachineSched);
+    }
   }
 
   HexagonTargetMachine &getHexagonTargetMachine() const {
     return getTM<HexagonTargetMachine>();
   }
 
-  ScheduleDAGInstrs *
-  createMachineScheduler(MachineSchedContext *C) const override {
-    return createVLIWMachineSched(C);
-  }
-
-  bool addInstSelector() override;
-  bool addPreRegAlloc() override;
-  bool addPostRegAlloc() override;
-  bool addPreSched2() override;
-  bool addPreEmitPass() override;
+  virtual bool addInstSelector();
+  virtual bool addPreRegAlloc();
+  virtual bool addPostRegAlloc();
+  virtual bool addPreSched2();
+  virtual bool addPreEmitPass();
 };
 } // namespace
 
@@ -145,12 +159,16 @@ bool HexagonPassConfig::addPostRegAlloc() {
 
 bool HexagonPassConfig::addPreSched2() {
   const HexagonTargetMachine &TM = getHexagonTargetMachine();
+  const HexagonTargetObjectFile &TLOF =
+    (const HexagonTargetObjectFile &)getTargetLowering()->getObjFileLowering();
 
   addPass(createHexagonCopyToCombine());
   if (getOptLevel() != CodeGenOpt::None)
     addPass(&IfConverterID);
-  addPass(createHexagonSplitConst32AndConst64(TM));
-  printAndVerify("After hexagon split const32/64 pass");
+  if (!TLOF.IsSmallDataEnabled()) {
+    addPass(createHexagonSplitConst32AndConst64(TM));
+    printAndVerify("After hexagon split const32/64 pass");
+  }
   return true;
 }
 

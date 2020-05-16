@@ -210,8 +210,7 @@ unsigned TargetSchedModel::computeOperandLatency(
   // unit latency (defaultDefLatency may be too conservative).
 #ifndef NDEBUG
   if (SCDesc->isValid() && !DefMI->getOperand(DefOperIdx).isImplicit()
-      && !DefMI->getDesc().OpInfo[DefOperIdx].isOptionalDef()
-      && SchedModel.isComplete()) {
+      && !DefMI->getDesc().OpInfo[DefOperIdx].isOptionalDef()) {
     std::string Err;
     raw_string_ostream ss(Err);
     ss << "DefIdx " << DefIdx << " exceeds machine model writes for "
@@ -225,13 +224,10 @@ unsigned TargetSchedModel::computeOperandLatency(
   return DefMI->isTransient() ? 0 : TII->defaultDefLatency(&SchedModel, DefMI);
 }
 
-unsigned
-TargetSchedModel::computeInstrLatency(const MachineInstr *MI,
-                                      bool UseDefaultDefLatency) const {
+unsigned TargetSchedModel::computeInstrLatency(const MachineInstr *MI) const {
   // For the itinerary model, fall back to the old subtarget hook.
   // Allow subtargets to compute Bundle latencies outside the machine model.
-  if (hasInstrItineraries() || MI->isBundle() ||
-      (!hasInstrSchedModel() && !UseDefaultDefLatency))
+  if (hasInstrItineraries() || MI->isBundle())
     return TII->getInstrLatency(&InstrItins, MI);
 
   if (hasInstrSchedModel()) {

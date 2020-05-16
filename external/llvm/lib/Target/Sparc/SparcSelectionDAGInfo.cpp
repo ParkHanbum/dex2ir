@@ -11,13 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SparcSelectionDAGInfo.h"
+#define DEBUG_TYPE "sparc-selectiondag-info"
+#include "SparcTargetMachine.h"
 using namespace llvm;
 
-#define DEBUG_TYPE "sparc-selectiondag-info"
-
-SparcSelectionDAGInfo::SparcSelectionDAGInfo(const DataLayout &DL)
-  : TargetSelectionDAGInfo(&DL) {
+SparcSelectionDAGInfo::SparcSelectionDAGInfo(const SparcTargetMachine &TM)
+  : TargetSelectionDAGInfo(TM) {
 }
 
 SparcSelectionDAGInfo::~SparcSelectionDAGInfo() {

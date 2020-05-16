@@ -20,30 +20,34 @@ namespace llvm {
 
 // NOTE: All relocations generated here are 4-byte image-relative.
 
-static uint8_t CountOfUnwindCodes(std::vector<MCWin64EHInstruction> &Insns) {
-  uint8_t Count = 0;
-  for (const auto &I : Insns) {
-    switch (I.getOperation()) {
+static uint8_t CountOfUnwindCodes(std::vector<MCWin64EHInstruction> &instArray){
+  uint8_t count = 0;
+  for (std::vector<MCWin64EHInstruction>::const_iterator I = instArray.begin(),
+       E = instArray.end(); I != E; ++I) {
+    switch (I->getOperation()) {
     case Win64EH::UOP_PushNonVol:
     case Win64EH::UOP_AllocSmall:
     case Win64EH::UOP_SetFPReg:
     case Win64EH::UOP_PushMachFrame:
-      Count += 1;
+      count += 1;
       break;
     case Win64EH::UOP_SaveNonVol:
     case Win64EH::UOP_SaveXMM128:
-      Count += 2;
+      count += 2;
       break;
     case Win64EH::UOP_SaveNonVolBig:
     case Win64EH::UOP_SaveXMM128Big:
-      Count += 3;
+      count += 3;
       break;
     case Win64EH::UOP_AllocLarge:
-      Count += (I.getSize() > 512 * 1024 - 8) ? 3 : 2;
+      if (I->getSize() > 512*1024-8)
+        count += 3;
+      else
+        count += 2;
       break;
     }
   }
-  return Count;
+  return count;
 }
 
 static void EmitAbsDifference(MCStreamer &streamer, MCSymbol *lhs,
@@ -60,7 +64,7 @@ static void EmitAbsDifference(MCStreamer &streamer, MCSymbol *lhs,
 
 static void EmitUnwindCode(MCStreamer &streamer, MCSymbol *begin,
                            MCWin64EHInstruction &inst) {
-  uint8_t b2;
+  uint8_t b1, b2;
   uint16_t w;
   b2 = (inst.getOperation() & 0x0F);
   switch (inst.getOperation()) {
@@ -89,7 +93,8 @@ static void EmitUnwindCode(MCStreamer &streamer, MCSymbol *begin,
     streamer.EmitIntValue(b2, 1);
     break;
   case Win64EH::UOP_SetFPReg:
-    EmitAbsDifference(streamer, inst.getLabel(), begin);
+    b1 = inst.getOffset() & 0xF0;
+    streamer.EmitIntValue(b1, 1);
     streamer.EmitIntValue(b2, 1);
     break;
   case Win64EH::UOP_SaveNonVol:
@@ -124,29 +129,14 @@ static void EmitUnwindCode(MCStreamer &streamer, MCSymbol *begin,
   }
 }
 
-static void EmitSymbolRefWithOfs(MCStreamer &streamer,
-                                 const MCSymbol *Base,
-                                 const MCSymbol *Other) {
-  MCContext &Context = streamer.getContext();
-  const MCSymbolRefExpr *BaseRef = MCSymbolRefExpr::Create(Base, Context);
-  const MCSymbolRefExpr *OtherRef = MCSymbolRefExpr::Create(Other, Context);
-  const MCExpr *Ofs = MCBinaryExpr::CreateSub(OtherRef, BaseRef, Context);
-  const MCSymbolRefExpr *BaseRefRel = MCSymbolRefExpr::Create(Base,
-                                              MCSymbolRefExpr::VK_COFF_IMGREL32,
-                                              Context);
-  streamer.EmitValue(MCBinaryExpr::CreateAdd(BaseRefRel, Ofs, Context), 4);
-}
-
 static void EmitRuntimeFunction(MCStreamer &streamer,
                                 const MCWin64EHUnwindInfo *info) {
   MCContext &context = streamer.getContext();
 
   streamer.EmitValueToAlignment(4);
-  EmitSymbolRefWithOfs(streamer, info->Function, info->Begin);
-  EmitSymbolRefWithOfs(streamer, info->Function, info->End);
-  streamer.EmitValue(MCSymbolRefExpr::Create(info->Symbol,
-                                             MCSymbolRefExpr::VK_COFF_IMGREL32,
-                                             context), 4);
+  streamer.EmitValue(MCSymbolRefExpr::Create(info->Begin, context), 4);
+  streamer.EmitValue(MCSymbolRefExpr::Create(info->End, context), 4);
+  streamer.EmitValue(MCSymbolRefExpr::Create(info->Symbol, context), 4);
 }
 
 static void EmitUnwindInfo(MCStreamer &streamer, MCWin64EHUnwindInfo *info) {
@@ -155,11 +145,11 @@ static void EmitUnwindInfo(MCStreamer &streamer, MCWin64EHUnwindInfo *info) {
 
   MCContext &context = streamer.getContext();
   streamer.EmitValueToAlignment(4);
+  // Upper 3 bits are the version number (currently 1).
+  uint8_t flags = 0x01;
   info->Symbol = context.CreateTempSymbol();
   streamer.EmitLabel(info->Symbol);
 
-  // Upper 3 bits are the version number (currently 1).
-  uint8_t flags = 0x01;
   if (info->ChainedParent)
     flags |= Win64EH::UNW_ChainInfo << 3;
   else {
@@ -195,26 +185,20 @@ static void EmitUnwindInfo(MCStreamer &streamer, MCWin64EHUnwindInfo *info) {
     EmitUnwindCode(streamer, info->Begin, inst);
   }
 
-  // For alignment purposes, the instruction array will always have an even
-  // number of entries, with the final entry potentially unused (in which case
-  // the array will be one longer than indicated by the count of unwind codes
-  // field).
-  if (numCodes & 1) {
-    streamer.EmitIntValue(0, 2);
-  }
-
   if (flags & (Win64EH::UNW_ChainInfo << 3))
     EmitRuntimeFunction(streamer, info->ChainedParent);
   else if (flags &
            ((Win64EH::UNW_TerminateHandler|Win64EH::UNW_ExceptionHandler) << 3))
-    streamer.EmitValue(MCSymbolRefExpr::Create(info->ExceptionHandler,
-                                              MCSymbolRefExpr::VK_COFF_IMGREL32,
-                                              context), 4);
-  else if (numCodes == 0) {
+    streamer.EmitValue(MCSymbolRefExpr::Create(info->ExceptionHandler, context),
+                       4);
+  else if (numCodes < 2) {
     // The minimum size of an UNWIND_INFO struct is 8 bytes. If we're not
     // a chained unwind info, if there is no handler, and if there are fewer
     // than 2 slots used in the unwind code array, we have to pad to 8 bytes.
-    streamer.EmitIntValue(0, 4);
+    if (numCodes == 1)
+      streamer.EmitIntValue(0, 2);
+    else
+      streamer.EmitIntValue(0, 4);
   }
 }
 
@@ -270,23 +254,23 @@ void MCWin64EHUnwindEmitter::EmitUnwindInfo(MCStreamer &streamer,
   llvm::EmitUnwindInfo(streamer, info);
 }
 
-void MCWin64EHUnwindEmitter::Emit(MCStreamer &Streamer) {
-  MCContext &Context = Streamer.getContext();
-
+void MCWin64EHUnwindEmitter::Emit(MCStreamer &streamer) {
+  MCContext &context = streamer.getContext();
   // Emit the unwind info structs first.
-  for (const auto &CFI : Streamer.getW64UnwindInfos()) {
-    const MCSection *XData =
-        getWin64EHTableSection(GetSectionSuffix(CFI->Function), Context);
-    Streamer.SwitchSection(XData);
-    EmitUnwindInfo(Streamer, CFI);
+  for (unsigned i = 0; i < streamer.getNumW64UnwindInfos(); ++i) {
+    MCWin64EHUnwindInfo &info = streamer.getW64UnwindInfo(i);
+    const MCSection *xdataSect =
+      getWin64EHTableSection(GetSectionSuffix(info.Function), context);
+    streamer.SwitchSection(xdataSect);
+    llvm::EmitUnwindInfo(streamer, &info);
   }
-
   // Now emit RUNTIME_FUNCTION entries.
-  for (const auto &CFI : Streamer.getW64UnwindInfos()) {
-    const MCSection *PData =
-        getWin64EHFuncTableSection(GetSectionSuffix(CFI->Function), Context);
-    Streamer.SwitchSection(PData);
-    EmitRuntimeFunction(Streamer, CFI);
+  for (unsigned i = 0; i < streamer.getNumW64UnwindInfos(); ++i) {
+    MCWin64EHUnwindInfo &info = streamer.getW64UnwindInfo(i);
+    const MCSection *pdataSect =
+      getWin64EHFuncTableSection(GetSectionSuffix(info.Function), context);
+    streamer.SwitchSection(pdataSect);
+    EmitRuntimeFunction(streamer, &info);
   }
 }
 

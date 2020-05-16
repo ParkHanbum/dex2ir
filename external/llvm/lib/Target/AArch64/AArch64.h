@@ -1,4 +1,4 @@
-//==-- AArch64.h - Top-level interface for AArch64  --------------*- C++ -*-==//
+//==-- AArch64.h - Top-level interface for AArch64 representation -*- C++ -*-=//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,40 +12,31 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TARGET_AArch64_H
-#define TARGET_AArch64_H
+#ifndef LLVM_TARGET_AARCH64_H
+#define LLVM_TARGET_AARCH64_H
 
-#include "Utils/AArch64BaseInfo.h"
 #include "MCTargetDesc/AArch64MCTargetDesc.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
 
-class AArch64TargetMachine;
+class AArch64AsmPrinter;
 class FunctionPass;
-class MachineFunctionPass;
+class AArch64TargetMachine;
+class MachineInstr;
+class MCInst;
 
-FunctionPass *createAArch64DeadRegisterDefinitions();
-FunctionPass *createAArch64ConditionalCompares();
-FunctionPass *createAArch64AdvSIMDScalar();
-FunctionPass *createAArch64BranchRelaxation();
-FunctionPass *createAArch64ISelDag(AArch64TargetMachine &TM,
-                                 CodeGenOpt::Level OptLevel);
-FunctionPass *createAArch64StorePairSuppressPass();
-FunctionPass *createAArch64ExpandPseudoPass();
-FunctionPass *createAArch64LoadStoreOptimizationPass();
-ModulePass *createAArch64PromoteConstantPass();
-FunctionPass *createAArch64AddressTypePromotionPass();
-FunctionPass *createAArch64A57FPLoadBalancing();
-FunctionPass *createAArch64A53Fix835769();
-/// \brief Creates an ARM-specific Target Transformation Info pass.
-ImmutablePass *
-createAArch64TargetTransformInfoPass(const AArch64TargetMachine *TM);
+FunctionPass *createAArch64ISelDAG(AArch64TargetMachine &TM,
+                                   CodeGenOpt::Level OptLevel);
 
 FunctionPass *createAArch64CleanupLocalDynamicTLSPass();
 
-FunctionPass *createAArch64CollectLOHPass();
-} // end namespace llvm
+FunctionPass *createAArch64BranchFixupPass();
+
+void LowerAArch64MachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
+                                      AArch64AsmPrinter &AP);
+
+
+}
 
 #endif

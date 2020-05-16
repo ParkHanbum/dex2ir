@@ -308,11 +308,10 @@ class InstRRF<bits<16> op, dag outs, dag ins, string asmstr, list<dag> pattern>
   bits<4> R1;
   bits<4> R2;
   bits<4> R3;
-  bits<4> R4;
 
   let Inst{31-16} = op;
   let Inst{15-12} = R3;
-  let Inst{11-8}  = R4;
+  let Inst{11-8}  = 0;
   let Inst{7-4}   = R1;
   let Inst{3-0}   = R2;
 }
@@ -511,32 +510,34 @@ class InstSS<bits<8> op, dag outs, dag ins, string asmstr, list<dag> pattern>
 //     to store.  Other stored registers are added as implicit uses.
 //
 //   Unary:
-//     One register output operand and one input operand.
+//     One register output operand and one input operand.  The input
+//     operand may be a register, immediate or memory.
 //
 //   Binary:
-//     One register output operand and two input operands.
+//     One register output operand and two input operands.  The first
+//     input operand is always a register and he second may be a register,
+//     immediate or memory.
+//
+//   Shift:
+//     One register output operand and two input operands.  The first
+//     input operand is a register and the second has the same form as
+//     an address (although it isn't actually used to address memory).
 //
 //   Compare:
-//     Two input operands and an implicit CC output operand.
+//     Two input operands.  The first operand is always a register,
+//     the second may be a register, immediate or memory.
 //
 //   Ternary:
-//     One register output operand and three input operands.
-//
-//   LoadAndOp:
-//     One output operand and two input operands, one of which is an address.
-//     The instruction both reads from and writes to the address.
+//     One register output operand and three register input operands.
 //
 //   CmpSwap:
-//     One output operand and three input operands, one of which is an address.
-//     The instruction both reads from and writes to the address.
+//     One output operand and three input operands.  The first two
+//     operands are registers and the third is an address.  The instruction
+//     both reads from and writes to the address.
 //
 //   RotateSelect:
 //     One output operand and five input operands.  The first two operands
 //     are registers and the other three are immediates.
-//
-//   Prefetch:
-//     One 4-bit immediate operand and one address operand.  The immediate
-//     operand is 1 for a load prefetch and 2 for a store prefetch.
 //
 // The format determines which input operands are tied to output operands,
 // and also determines the shape of any address operand.
@@ -551,7 +552,7 @@ class InstSS<bits<8> op, dag outs, dag ins, string asmstr, list<dag> pattern>
 class InherentRRE<string mnemonic, bits<16> opcode, RegisterOperand cls,
                   dag src>
   : InstRRE<opcode, (outs cls:$R1), (ins),
-            mnemonic#"\t$R1",
+            mnemonic#"r\t$R1",
             [(set cls:$R1, src)]> {
   let R2 = 0;
 }
@@ -625,33 +626,27 @@ class StoreMultipleRSY<string mnemonic, bits<16> opcode, RegisterOperand cls>
   let mayStore = 1;
 }
 
-// StoreSI* instructions are used to store an integer to memory, but the
-// addresses are more restricted than for normal stores.  If we are in the
-// situation of having to force either the address into a register or the
-// constant into a register, it's usually better to do the latter.
-// We therefore match the address in the same way as a normal store and
-// only use the StoreSI* instruction if the matched address is suitable.
 class StoreSI<string mnemonic, bits<8> opcode, SDPatternOperator operator,
-              Immediate imm>
-  : InstSI<opcode, (outs), (ins mviaddr12pair:$BD1, imm:$I2),
+              Immediate imm, AddressingMode mode = bdaddr12only>
+  : InstSI<opcode, (outs), (ins mode:$BD1, imm:$I2),
            mnemonic#"\t$BD1, $I2",
-           [(operator imm:$I2, mviaddr12pair:$BD1)]> {
+           [(operator imm:$I2, mode:$BD1)]> {
   let mayStore = 1;
 }
 
 class StoreSIY<string mnemonic, bits<16> opcode, SDPatternOperator operator,
-               Immediate imm>
-  : InstSIY<opcode, (outs), (ins mviaddr20pair:$BD1, imm:$I2),
+               Immediate imm, AddressingMode mode = bdaddr20only>
+  : InstSIY<opcode, (outs), (ins mode:$BD1, imm:$I2),
             mnemonic#"\t$BD1, $I2",
-            [(operator imm:$I2, mviaddr20pair:$BD1)]> {
+            [(operator imm:$I2, mode:$BD1)]> {
   let mayStore = 1;
 }
 
 class StoreSIL<string mnemonic, bits<16> opcode, SDPatternOperator operator,
                Immediate imm>
-  : InstSIL<opcode, (outs), (ins mviaddr12pair:$BD1, imm:$I2),
+  : InstSIL<opcode, (outs), (ins bdaddr12only:$BD1, imm:$I2),
             mnemonic#"\t$BD1, $I2",
-            [(operator imm:$I2, mviaddr12pair:$BD1)]> {
+            [(operator imm:$I2, bdaddr12only:$BD1)]> {
   let mayStore = 1;
 }
 
@@ -659,9 +654,9 @@ multiclass StoreSIPair<string mnemonic, bits<8> siOpcode, bits<16> siyOpcode,
                        SDPatternOperator operator, Immediate imm> {
   let DispKey = mnemonic in {
     let DispSize = "12" in
-      def "" : StoreSI<mnemonic, siOpcode, operator, imm>;
+      def "" : StoreSI<mnemonic, siOpcode, operator, imm, bdaddr12pair>;
     let DispSize = "20" in
-      def Y  : StoreSIY<mnemonic#"y", siyOpcode, operator, imm>;
+      def Y  : StoreSIY<mnemonic#"y", siyOpcode, operator, imm, bdaddr20pair>;
   }
 }
 
@@ -681,7 +676,7 @@ class CondStoreRSY<string mnemonic, bits<16> opcode,
 class AsmCondStoreRSY<string mnemonic, bits<16> opcode,
                       RegisterOperand cls, bits<5> bytes,
                       AddressingMode mode = bdaddr20only>
-  : InstRSY<opcode, (outs), (ins cls:$R1, mode:$BD2, imm32zx4:$R3),
+  : InstRSY<opcode, (outs), (ins cls:$R1, mode:$BD2, uimm8zx4:$R3),
             mnemonic#"\t$R1, $BD2, $R3", []>,
     Requires<[FeatureLoadStoreOnCond]> {
   let mayStore = 1;
@@ -720,17 +715,11 @@ class UnaryRRE<string mnemonic, bits<16> opcode, SDPatternOperator operator,
 
 class UnaryRRF<string mnemonic, bits<16> opcode, RegisterOperand cls1,
                RegisterOperand cls2>
-  : InstRRF<opcode, (outs cls1:$R1), (ins imm32zx4:$R3, cls2:$R2),
+  : InstRRF<opcode, (outs cls1:$R1), (ins uimm8zx4:$R3, cls2:$R2),
             mnemonic#"r\t$R1, $R3, $R2", []> {
   let OpKey = mnemonic ## cls1;
   let OpType = "reg";
-  let R4 = 0;
 }
-
-class UnaryRRF4<string mnemonic, bits<16> opcode, RegisterOperand cls1,
-                RegisterOperand cls2>
-  : InstRRF<opcode, (outs cls1:$R1), (ins imm32zx4:$R3, cls2:$R2, imm32zx4:$R4),
-            mnemonic#"\t$R1, $R3, $R2, $R4", []>;
 
 // These instructions are generated by if conversion.  The old value of R1
 // is added as an implicit use.
@@ -740,19 +729,17 @@ class CondUnaryRRF<string mnemonic, bits<16> opcode, RegisterOperand cls1,
             mnemonic#"r$R3\t$R1, $R2", []>,
     Requires<[FeatureLoadStoreOnCond]> {
   let CCMaskLast = 1;
-  let R4 = 0;
 }
 
 // Like CondUnaryRRF, but used for the raw assembly form.  The condition-code
 // mask is the third operand rather than being part of the mnemonic.
 class AsmCondUnaryRRF<string mnemonic, bits<16> opcode, RegisterOperand cls1,
                       RegisterOperand cls2>
-  : InstRRF<opcode, (outs cls1:$R1), (ins cls1:$R1src, cls2:$R2, imm32zx4:$R3),
+  : InstRRF<opcode, (outs cls1:$R1), (ins cls1:$R1src, cls2:$R2, uimm8zx4:$R3),
             mnemonic#"r\t$R1, $R2, $R3", []>,
     Requires<[FeatureLoadStoreOnCond]> {
   let Constraints = "$R1 = $R1src";
   let DisableEncoding = "$R1src";
-  let R4 = 0;
 }
 
 // Like CondUnaryRRF, but with a fixed CC mask.
@@ -764,7 +751,6 @@ class FixedCondUnaryRRF<string mnemonic, bits<16> opcode, RegisterOperand cls1,
   let Constraints = "$R1 = $R1src";
   let DisableEncoding = "$R1src";
   let R3 = ccmask;
-  let R4 = 0;
 }
 
 class UnaryRI<string mnemonic, bits<12> opcode, SDPatternOperator operator,
@@ -813,7 +799,7 @@ class CondUnaryRSY<string mnemonic, bits<16> opcode,
 class AsmCondUnaryRSY<string mnemonic, bits<16> opcode,
                       RegisterOperand cls, bits<5> bytes,
                       AddressingMode mode = bdaddr20only>
-  : InstRSY<opcode, (outs cls:$R1), (ins cls:$R1src, mode:$BD2, imm32zx4:$R3),
+  : InstRSY<opcode, (outs cls:$R1), (ins cls:$R1src, mode:$BD2, uimm8zx4:$R3),
             mnemonic#"\t$R1, $BD2, $R3", []>,
     Requires<[FeatureLoadStoreOnCond]> {
   let mayLoad = 1;
@@ -912,16 +898,13 @@ class BinaryRRF<string mnemonic, bits<16> opcode, SDPatternOperator operator,
             [(set cls1:$R1, (operator cls1:$R3, cls2:$R2))]> {
   let OpKey = mnemonic ## cls1;
   let OpType = "reg";
-  let R4 = 0;
 }
 
 class BinaryRRFK<string mnemonic, bits<16> opcode, SDPatternOperator operator,
                  RegisterOperand cls1, RegisterOperand cls2>
   : InstRRF<opcode, (outs cls1:$R1), (ins cls1:$R2, cls2:$R3),
             mnemonic#"rk\t$R1, $R2, $R3",
-            [(set cls1:$R1, (operator cls1:$R2, cls2:$R3))]> {
-  let R4 = 0;
-}
+            [(set cls1:$R1, (operator cls1:$R2, cls2:$R3))]>;
 
 multiclass BinaryRRAndK<string mnemonic, bits<8> opcode1, bits<16> opcode2,
                         SDPatternOperator operator, RegisterOperand cls1,
@@ -981,33 +964,6 @@ class BinaryRIL<string mnemonic, bits<12> opcode, SDPatternOperator operator,
             [(set cls:$R1, (operator cls:$R1src, imm:$I2))]> {
   let Constraints = "$R1 = $R1src";
   let DisableEncoding = "$R1src";
-}
-
-class BinaryRS<string mnemonic, bits<8> opcode, SDPatternOperator operator,
-               RegisterOperand cls>
-  : InstRS<opcode, (outs cls:$R1), (ins cls:$R1src, shift12only:$BD2),
-           mnemonic#"\t$R1, $BD2",
-           [(set cls:$R1, (operator cls:$R1src, shift12only:$BD2))]> {
-  let R3 = 0;
-  let Constraints = "$R1 = $R1src";
-  let DisableEncoding = "$R1src";
-}
-
-class BinaryRSY<string mnemonic, bits<16> opcode, SDPatternOperator operator,
-                RegisterOperand cls>
-  : InstRSY<opcode, (outs cls:$R1), (ins cls:$R3, shift20only:$BD2),
-            mnemonic#"\t$R1, $R3, $BD2",
-            [(set cls:$R1, (operator cls:$R3, shift20only:$BD2))]>;
-
-multiclass BinaryRSAndK<string mnemonic, bits<8> opcode1, bits<16> opcode2,
-                        SDPatternOperator operator, RegisterOperand cls> {
-  let NumOpsKey = mnemonic in {
-    let NumOpsValue = "3" in
-      def K  : BinaryRSY<mnemonic##"k", opcode2, null_frag, cls>,
-               Requires<[FeatureDistinctOps]>;
-    let NumOpsValue = "2", isConvertibleToThreeAddress = 1 in
-      def "" : BinaryRS<mnemonic, opcode1, operator, cls>;
-  }
 }
 
 class BinaryRX<string mnemonic, bits<8> opcode, SDPatternOperator operator,
@@ -1091,6 +1047,33 @@ multiclass BinarySIPair<string mnemonic, bits<8> siOpcode,
       def "" : BinarySI<mnemonic, siOpcode, operator, imm, bdaddr12pair>;
     let DispSize = "20" in
       def Y  : BinarySIY<mnemonic#"y", siyOpcode, operator, imm, bdaddr20pair>;
+  }
+}
+
+class ShiftRS<string mnemonic, bits<8> opcode, SDPatternOperator operator,
+              RegisterOperand cls>
+  : InstRS<opcode, (outs cls:$R1), (ins cls:$R1src, shift12only:$BD2),
+           mnemonic#"\t$R1, $BD2",
+           [(set cls:$R1, (operator cls:$R1src, shift12only:$BD2))]> {
+  let R3 = 0;
+  let Constraints = "$R1 = $R1src";
+  let DisableEncoding = "$R1src";
+}
+
+class ShiftRSY<string mnemonic, bits<16> opcode, SDPatternOperator operator,
+               RegisterOperand cls>
+  : InstRSY<opcode, (outs cls:$R1), (ins cls:$R3, shift20only:$BD2),
+            mnemonic#"\t$R1, $R3, $BD2",
+            [(set cls:$R1, (operator cls:$R3, shift20only:$BD2))]>;
+
+multiclass ShiftRSAndK<string mnemonic, bits<8> opcode1, bits<16> opcode2,
+                       SDPatternOperator operator, RegisterOperand cls> {
+  let NumOpsKey = mnemonic in {
+    let NumOpsValue = "3" in
+      def K  : ShiftRSY<mnemonic##"k", opcode2, null_frag, cls>,
+               Requires<[FeatureDistinctOps]>;
+    let NumOpsValue = "2", isConvertibleToThreeAddress = 1 in
+      def "" : ShiftRS<mnemonic, opcode1, operator, cls>;
   }
 }
 
@@ -1261,15 +1244,6 @@ class TernaryRXF<string mnemonic, bits<16> opcode, SDPatternOperator operator,
   let AccessBytes = bytes;
 }
 
-class LoadAndOpRSY<string mnemonic, bits<16> opcode, SDPatternOperator operator,
-                  RegisterOperand cls, AddressingMode mode = bdaddr20only>
-  : InstRSY<opcode, (outs cls:$R1), (ins cls:$R3, mode:$BD2),
-            mnemonic#"\t$R1, $R3, $BD2",
-            [(set cls:$R1, (operator mode:$BD2, cls:$R3))]> {
-  let mayLoad = 1;
-  let mayStore = 1;
-}
-
 class CmpSwapRS<string mnemonic, bits<8> opcode, SDPatternOperator operator,
                 RegisterOperand cls, AddressingMode mode = bdaddr12only>
   : InstRS<opcode, (outs cls:$R1), (ins cls:$R1src, cls:$R3, mode:$BD2),
@@ -1305,27 +1279,10 @@ multiclass CmpSwapRSPair<string mnemonic, bits<8> rsOpcode, bits<16> rsyOpcode,
 class RotateSelectRIEf<string mnemonic, bits<16> opcode, RegisterOperand cls1,
                        RegisterOperand cls2>
   : InstRIEf<opcode, (outs cls1:$R1),
-             (ins cls1:$R1src, cls2:$R2, imm32zx8:$I3, imm32zx8:$I4,
-                  imm32zx6:$I5),
+             (ins cls1:$R1src, cls2:$R2, uimm8:$I3, uimm8:$I4, uimm8zx6:$I5),
              mnemonic#"\t$R1, $R2, $I3, $I4, $I5", []> {
   let Constraints = "$R1 = $R1src";
   let DisableEncoding = "$R1src";
-}
-
-class PrefetchRXY<string mnemonic, bits<16> opcode, SDPatternOperator operator>
-  : InstRXY<opcode, (outs), (ins imm32zx4:$R1, bdxaddr20only:$XBD2),
-            mnemonic##"\t$R1, $XBD2",
-            [(operator imm32zx4:$R1, bdxaddr20only:$XBD2)]>;
-
-class PrefetchRILPC<string mnemonic, bits<12> opcode,
-                    SDPatternOperator operator>
-  : InstRIL<opcode, (outs), (ins imm32zx4:$R1, pcrel32:$I2),
-            mnemonic##"\t$R1, $I2",
-            [(operator imm32zx4:$R1, pcrel32:$I2)]> {
-  // We want PC-relative addresses to be tried ahead of BD and BDX addresses.
-  // However, BDXs have two extra operands and are therefore 6 units more
-  // complex.
-  let AddedComplexity = 7;
 }
 
 // A floating-point load-and test operation.  Create both a normal unary
@@ -1353,108 +1310,13 @@ class Pseudo<dag outs, dag ins, list<dag> pattern>
   let isCodeGenOnly = 1;
 }
 
-// Like UnaryRI, but expanded after RA depending on the choice of register.
-class UnaryRIPseudo<SDPatternOperator operator, RegisterOperand cls,
-                    Immediate imm>
-  : Pseudo<(outs cls:$R1), (ins imm:$I2),
-           [(set cls:$R1, (operator imm:$I2))]>;
-
-// Like UnaryRXY, but expanded after RA depending on the choice of register.
-class UnaryRXYPseudo<string key, SDPatternOperator operator,
-                     RegisterOperand cls, bits<5> bytes,
-                     AddressingMode mode = bdxaddr20only>
-  : Pseudo<(outs cls:$R1), (ins mode:$XBD2),
-           [(set cls:$R1, (operator mode:$XBD2))]> {
-  let OpKey = key ## cls;
-  let OpType = "mem";
-  let mayLoad = 1;
-  let Has20BitOffset = 1;
-  let HasIndex = 1;
-  let AccessBytes = bytes;
-}
-
-// Like UnaryRR, but expanded after RA depending on the choice of registers.
-class UnaryRRPseudo<string key, SDPatternOperator operator,
-                    RegisterOperand cls1, RegisterOperand cls2>
-  : Pseudo<(outs cls1:$R1), (ins cls2:$R2),
-           [(set cls1:$R1, (operator cls2:$R2))]> {
-  let OpKey = key ## cls1;
-  let OpType = "reg";
-}
-
-// Like BinaryRI, but expanded after RA depending on the choice of register.
-class BinaryRIPseudo<SDPatternOperator operator, RegisterOperand cls,
-                     Immediate imm>
-  : Pseudo<(outs cls:$R1), (ins cls:$R1src, imm:$I2),
-           [(set cls:$R1, (operator cls:$R1src, imm:$I2))]> {
-  let Constraints = "$R1 = $R1src";
-}
-
-// Like BinaryRIE, but expanded after RA depending on the choice of register.
-class BinaryRIEPseudo<SDPatternOperator operator, RegisterOperand cls,
-                      Immediate imm>
-  : Pseudo<(outs cls:$R1), (ins cls:$R3, imm:$I2),
-           [(set cls:$R1, (operator cls:$R3, imm:$I2))]>;
-
-// Like BinaryRIAndK, but expanded after RA depending on the choice of register.
-multiclass BinaryRIAndKPseudo<string key, SDPatternOperator operator,
-                              RegisterOperand cls, Immediate imm> {
-  let NumOpsKey = key in {
-    let NumOpsValue = "3" in
-      def K : BinaryRIEPseudo<null_frag, cls, imm>,
-              Requires<[FeatureHighWord, FeatureDistinctOps]>;
-    let NumOpsValue = "2", isConvertibleToThreeAddress = 1 in
-      def "" : BinaryRIPseudo<operator, cls, imm>,
-               Requires<[FeatureHighWord]>;
-  }
-}
-
-// Like CompareRI, but expanded after RA depending on the choice of register.
-class CompareRIPseudo<SDPatternOperator operator, RegisterOperand cls,
-                      Immediate imm>
-  : Pseudo<(outs), (ins cls:$R1, imm:$I2), [(operator cls:$R1, imm:$I2)]>;
-
-// Like CompareRXY, but expanded after RA depending on the choice of register.
-class CompareRXYPseudo<SDPatternOperator operator, RegisterOperand cls,
-                       SDPatternOperator load, bits<5> bytes,
-                       AddressingMode mode = bdxaddr20only>
-  : Pseudo<(outs), (ins cls:$R1, mode:$XBD2),
-           [(operator cls:$R1, (load mode:$XBD2))]> {
-  let mayLoad = 1;
-  let Has20BitOffset = 1;
-  let HasIndex = 1;
-  let AccessBytes = bytes;
-}
-
-// Like StoreRXY, but expanded after RA depending on the choice of register.
-class StoreRXYPseudo<SDPatternOperator operator, RegisterOperand cls,
-                     bits<5> bytes, AddressingMode mode = bdxaddr20only>
-  : Pseudo<(outs), (ins cls:$R1, mode:$XBD2),
-           [(operator cls:$R1, mode:$XBD2)]> {
-  let mayStore = 1;
-  let Has20BitOffset = 1;
-  let HasIndex = 1;
-  let AccessBytes = bytes;
-}
-
-// Like RotateSelectRIEf, but expanded after RA depending on the choice
-// of registers.
-class RotateSelectRIEfPseudo<RegisterOperand cls1, RegisterOperand cls2>
-  : Pseudo<(outs cls1:$R1),
-           (ins cls1:$R1src, cls2:$R2, imm32zx8:$I3, imm32zx8:$I4,
-                imm32zx6:$I5),
-           []> {
-  let Constraints = "$R1 = $R1src";
-  let DisableEncoding = "$R1src";
-}
-
 // Implements "$dst = $cc & (8 >> CC) ? $src1 : $src2", where CC is
 // the value of the PSW's 2-bit condition code field.
 class SelectWrapper<RegisterOperand cls>
   : Pseudo<(outs cls:$dst),
-           (ins cls:$src1, cls:$src2, imm32zx4:$valid, imm32zx4:$cc),
+           (ins cls:$src1, cls:$src2, uimm8zx4:$valid, uimm8zx4:$cc),
            [(set cls:$dst, (z_select_ccmask cls:$src1, cls:$src2,
-                                            imm32zx4:$valid, imm32zx4:$cc))]> {
+                                            uimm8zx4:$valid, uimm8zx4:$cc))]> {
   let usesCustomInserter = 1;
   // Although the instructions used by these nodes do not in themselves
   // change CC, the insertion requires new blocks, and CC cannot be live
@@ -1468,14 +1330,14 @@ multiclass CondStores<RegisterOperand cls, SDPatternOperator store,
                       SDPatternOperator load, AddressingMode mode> {
   let Defs = [CC], Uses = [CC], usesCustomInserter = 1 in {
     def "" : Pseudo<(outs),
-                    (ins cls:$new, mode:$addr, imm32zx4:$valid, imm32zx4:$cc),
+                    (ins cls:$new, mode:$addr, uimm8zx4:$valid, uimm8zx4:$cc),
                     [(store (z_select_ccmask cls:$new, (load mode:$addr),
-                                             imm32zx4:$valid, imm32zx4:$cc),
+                                             uimm8zx4:$valid, uimm8zx4:$cc),
                             mode:$addr)]>;
     def Inv : Pseudo<(outs),
-                     (ins cls:$new, mode:$addr, imm32zx4:$valid, imm32zx4:$cc),
+                     (ins cls:$new, mode:$addr, uimm8zx4:$valid, uimm8zx4:$cc),
                      [(store (z_select_ccmask (load mode:$addr), cls:$new,
-                                              imm32zx4:$valid, imm32zx4:$cc),
+                                              uimm8zx4:$valid, uimm8zx4:$cc),
                               mode:$addr)]>;
   }
 }
@@ -1524,86 +1386,3 @@ class AtomicLoadWBinaryReg<SDPatternOperator operator>
   : AtomicLoadWBinary<operator, (i32 GR32:$src2), GR32>;
 class AtomicLoadWBinaryImm<SDPatternOperator operator, Immediate imm>
   : AtomicLoadWBinary<operator, (i32 imm:$src2), imm>;
-
-// Define an instruction that operates on two fixed-length blocks of memory,
-// and associated pseudo instructions for operating on blocks of any size.
-// The Sequence form uses a straight-line sequence of instructions and
-// the Loop form uses a loop of length-256 instructions followed by
-// another instruction to handle the excess.
-multiclass MemorySS<string mnemonic, bits<8> opcode,
-                    SDPatternOperator sequence, SDPatternOperator loop> {
-  def "" : InstSS<opcode, (outs), (ins bdladdr12onlylen8:$BDL1,
-                                       bdaddr12only:$BD2),
-                  mnemonic##"\t$BDL1, $BD2", []>;
-  let usesCustomInserter = 1 in {
-    def Sequence : Pseudo<(outs), (ins bdaddr12only:$dest, bdaddr12only:$src,
-                                       imm64:$length),
-                           [(sequence bdaddr12only:$dest, bdaddr12only:$src,
-                                      imm64:$length)]>;
-    def Loop : Pseudo<(outs), (ins bdaddr12only:$dest, bdaddr12only:$src,
-                                   imm64:$length, GR64:$count256),
-                      [(loop bdaddr12only:$dest, bdaddr12only:$src,
-                             imm64:$length, GR64:$count256)]>;
-  }
-}
-
-// Define an instruction that operates on two strings, both terminated
-// by the character in R0.  The instruction processes a CPU-determinated
-// number of bytes at a time and sets CC to 3 if the instruction needs
-// to be repeated.  Also define a pseudo instruction that represents
-// the full loop (the main instruction plus the branch on CC==3).
-multiclass StringRRE<string mnemonic, bits<16> opcode,
-                     SDPatternOperator operator> {
-  def "" : InstRRE<opcode, (outs GR64:$R1, GR64:$R2),
-                   (ins GR64:$R1src, GR64:$R2src),
-                   mnemonic#"\t$R1, $R2", []> {
-    let Constraints = "$R1 = $R1src, $R2 = $R2src";
-    let DisableEncoding = "$R1src, $R2src";
-  }
-  let usesCustomInserter = 1 in
-    def Loop : Pseudo<(outs GR64:$end),
-                      (ins GR64:$start1, GR64:$start2, GR32:$char),
-                      [(set GR64:$end, (operator GR64:$start1, GR64:$start2,
-                                                 GR32:$char))]>;
-}
-
-// A pseudo instruction that is a direct alias of a real instruction.
-// These aliases are used in cases where a particular register operand is
-// fixed or where the same instruction is used with different register sizes.
-// The size parameter is the size in bytes of the associated real instruction.
-class Alias<int size, dag outs, dag ins, list<dag> pattern>
-  : InstSystemZ<size, outs, ins, "", pattern> {
-  let isPseudo = 1;
-  let isCodeGenOnly = 1;
-}
-
-// An alias of a BinaryRI, but with different register sizes.
-class BinaryAliasRI<SDPatternOperator operator, RegisterOperand cls,
-                    Immediate imm>
-  : Alias<4, (outs cls:$R1), (ins cls:$R1src, imm:$I2),
-          [(set cls:$R1, (operator cls:$R1src, imm:$I2))]> {
-  let Constraints = "$R1 = $R1src";
-}
-
-// An alias of a BinaryRIL, but with different register sizes.
-class BinaryAliasRIL<SDPatternOperator operator, RegisterOperand cls,
-                     Immediate imm>
-  : Alias<6, (outs cls:$R1), (ins cls:$R1src, imm:$I2),
-          [(set cls:$R1, (operator cls:$R1src, imm:$I2))]> {
-  let Constraints = "$R1 = $R1src";
-}
-
-// An alias of a CompareRI, but with different register sizes.
-class CompareAliasRI<SDPatternOperator operator, RegisterOperand cls,
-                     Immediate imm>
-  : Alias<4, (outs), (ins cls:$R1, imm:$I2), [(operator cls:$R1, imm:$I2)]> {
-  let isCompare = 1;
-}
-
-// An alias of a RotateSelectRIEf, but with different register sizes.
-class RotateSelectAliasRIEf<RegisterOperand cls1, RegisterOperand cls2>
-  : Alias<6, (outs cls1:$R1),
-          (ins cls1:$R1src, cls2:$R2, imm32zx8:$I3, imm32zx8:$I4,
-               imm32zx6:$I5), []> {
-  let Constraints = "$R1 = $R1src";
-}

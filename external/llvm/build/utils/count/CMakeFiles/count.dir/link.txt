@@ -1,0 +1,1 @@
+/usr/bin/cc  -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -Wno-comment -g   -Wl,-allow-shlib-undefined CMakeFiles/count.dir/count.c.o  -o ../../bin/count -Wl,-rpath,"\$ORIGIN/../lib" -lpthread 

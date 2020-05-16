@@ -36,9 +36,6 @@
 #include <unistd.h>
 #endif
 #ifdef HAVE_POSIX_SPAWN
-#ifdef __sun__
-#define  _RESTRICT_KYWD
-#endif
 #include <spawn.h>
 #if !defined(__APPLE__)
   extern char **environ;
@@ -48,10 +45,7 @@
 #endif
 
 namespace llvm {
-
 using namespace sys;
-
-ProcessInfo::ProcessInfo() : Pid(0), ReturnCode(0) {}
 
 // This function just uses the PATH environment variable to find the program.
 std::string
@@ -71,7 +65,7 @@ sys::FindProgramByName(const std::string& progName) {
 
   // Get the path. If its empty, we can't do anything to find it.
   const char *PathStr = getenv("PATH");
-  if (!PathStr)
+  if (PathStr == 0)
     return "";
 
   // Now we have a colon separated list of directories to search; try them.
@@ -100,7 +94,7 @@ sys::FindProgramByName(const std::string& progName) {
 }
 
 static bool RedirectIO(const StringRef *Path, int FD, std::string* ErrMsg) {
-  if (!Path) // Noop
+  if (Path == 0) // Noop
     return false;
   std::string File;
   if (Path->empty())
@@ -130,7 +124,7 @@ static bool RedirectIO(const StringRef *Path, int FD, std::string* ErrMsg) {
 #ifdef HAVE_POSIX_SPAWN
 static bool RedirectIO_PS(const std::string *Path, int FD, std::string *ErrMsg,
                           posix_spawn_file_actions_t *FileActions) {
-  if (!Path) // Noop
+  if (Path == 0) // Noop
     return false;
   const char *File;
   if (Path->empty())
@@ -181,22 +175,15 @@ static void SetMemoryLimits (unsigned size)
 
 }
 
-static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
+static bool Execute(void **Data, StringRef Program, const char **args,
                     const char **envp, const StringRef **redirects,
                     unsigned memoryLimit, std::string *ErrMsg) {
-  if (!llvm::sys::fs::exists(Program)) {
-    if (ErrMsg)
-      *ErrMsg = std::string("Executable \"") + Program.str() +
-                std::string("\" doesn't exist!");
-    return false;
-  }
-
   // If this OS has posix_spawn and there is no memory limit being implied, use
   // posix_spawn.  It is more efficient than fork/exec.
 #ifdef HAVE_POSIX_SPAWN
   if (memoryLimit == 0) {
     posix_spawn_file_actions_t FileActionsStore;
-    posix_spawn_file_actions_t *FileActions = nullptr;
+    posix_spawn_file_actions_t *FileActions = 0;
 
     // If we call posix_spawn_file_actions_addopen we have to make sure the
     // c strings we pass to it stay alive until the call to posix_spawn,
@@ -204,7 +191,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     std::string RedirectsStorage[3];
 
     if (redirects) {
-      std::string *RedirectsStr[3] = {nullptr, nullptr, nullptr};
+      std::string *RedirectsStr[3] = {0, 0, 0};
       for (int I = 0; I < 3; ++I) {
         if (redirects[I]) {
           RedirectsStorage[I] = *redirects[I];
@@ -219,7 +206,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
       if (RedirectIO_PS(RedirectsStr[0], 0, ErrMsg, FileActions) ||
           RedirectIO_PS(RedirectsStr[1], 1, ErrMsg, FileActions))
         return false;
-      if (redirects[1] == nullptr || redirects[2] == nullptr ||
+      if (redirects[1] == 0 || redirects[2] == 0 ||
           *redirects[1] != *redirects[2]) {
         // Just redirect stderr
         if (RedirectIO_PS(RedirectsStr[2], 2, ErrMsg, FileActions))
@@ -243,9 +230,8 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     // Explicitly initialized to prevent what appears to be a valgrind false
     // positive.
     pid_t PID = 0;
-    int Err = posix_spawn(&PID, Program.str().c_str(), FileActions,
-                          /*attrp*/nullptr, const_cast<char **>(args),
-                          const_cast<char **>(envp));
+    int Err = posix_spawn(&PID, Program.str().c_str(), FileActions, /*attrp*/0,
+                          const_cast<char **>(args), const_cast<char **>(envp));
 
     if (FileActions)
       posix_spawn_file_actions_destroy(FileActions);
@@ -253,8 +239,8 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
     if (Err)
      return !MakeErrMsg(ErrMsg, "posix_spawn failed", Err);
 
-    PI.Pid = PID;
-
+    if (Data)
+      *Data = reinterpret_cast<void*>(PID);
     return true;
   }
 #endif
@@ -296,7 +282,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
 
       // Execute!
       std::string PathStr = Program;
-      if (envp != nullptr)
+      if (envp != 0)
         execve(PathStr.c_str(),
                const_cast<char **>(args),
                const_cast<char **>(envp));
@@ -317,77 +303,58 @@ static bool Execute(ProcessInfo &PI, StringRef Program, const char **args,
       break;
   }
 
-  PI.Pid = child;
+  if (Data)
+    *Data = reinterpret_cast<void*>(child);
 
   return true;
 }
 
-namespace llvm {
-
-ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
-                      bool WaitUntilTerminates, std::string *ErrMsg) {
+static int Wait(void *&Data, StringRef Program, unsigned secondsToWait,
+                std::string *ErrMsg) {
 #ifdef HAVE_SYS_WAIT_H
   struct sigaction Act, Old;
-  assert(PI.Pid && "invalid pid to wait on, process not started?");
+  assert(Data && "invalid pid to wait on, process not started?");
 
-  int WaitPidOptions = 0;
-  pid_t ChildPid = PI.Pid;
-  if (WaitUntilTerminates) {
-    SecondsToWait = 0;
-    ChildPid = -1; // mimic a wait() using waitpid()
-  } else if (SecondsToWait) {
-    // Install a timeout handler.  The handler itself does nothing, but the
-    // simple fact of having a handler at all causes the wait below to return
-    // with EINTR, unlike if we used SIG_IGN.
+  // Install a timeout handler.  The handler itself does nothing, but the simple
+  // fact of having a handler at all causes the wait below to return with EINTR,
+  // unlike if we used SIG_IGN.
+  if (secondsToWait) {
     memset(&Act, 0, sizeof(Act));
     Act.sa_handler = TimeOutHandler;
     sigemptyset(&Act.sa_mask);
     sigaction(SIGALRM, &Act, &Old);
-    alarm(SecondsToWait);
-  } else if (SecondsToWait == 0)
-    WaitPidOptions = WNOHANG;
+    alarm(secondsToWait);
+  }
 
   // Parent process: Wait for the child process to terminate.
   int status;
-  ProcessInfo WaitResult;
+  uint64_t pid = reinterpret_cast<uint64_t>(Data);
+  pid_t child = static_cast<pid_t>(pid);
+  while (waitpid(pid, &status, 0) != child)
+    if (secondsToWait && errno == EINTR) {
+      // Kill the child.
+      kill(child, SIGKILL);
 
-  do {
-    WaitResult.Pid = waitpid(ChildPid, &status, WaitPidOptions);
-  } while (WaitUntilTerminates && WaitResult.Pid == -1 && errno == EINTR);
+      // Turn off the alarm and restore the signal handler
+      alarm(0);
+      sigaction(SIGALRM, &Old, 0);
 
-  if (WaitResult.Pid != PI.Pid) {
-    if (WaitResult.Pid == 0) {
-      // Non-blocking wait.
-      return WaitResult;
-    } else {
-      if (SecondsToWait && errno == EINTR) {
-        // Kill the child.
-        kill(PI.Pid, SIGKILL);
+      // Wait for child to die
+      if (wait(&status) != child)
+        MakeErrMsg(ErrMsg, "Child timed out but wouldn't die");
+      else
+        MakeErrMsg(ErrMsg, "Child timed out", 0);
 
-        // Turn off the alarm and restore the signal handler
-        alarm(0);
-        sigaction(SIGALRM, &Old, nullptr);
-
-        // Wait for child to die
-        if (wait(&status) != ChildPid)
-          MakeErrMsg(ErrMsg, "Child timed out but wouldn't die");
-        else
-          MakeErrMsg(ErrMsg, "Child timed out", 0);
-
-        WaitResult.ReturnCode = -2; // Timeout detected
-        return WaitResult;
-      } else if (errno != EINTR) {
-        MakeErrMsg(ErrMsg, "Error waiting for child process");
-        WaitResult.ReturnCode = -1;
-        return WaitResult;
-      }
+      return -2;   // Timeout detected
+    } else if (errno != EINTR) {
+      MakeErrMsg(ErrMsg, "Error waiting for child process");
+      return -1;
     }
-  }
 
   // We exited normally without timeout, so turn off the timer.
-  if (SecondsToWait && !WaitUntilTerminates) {
+  if (secondsToWait) {
     alarm(0);
-    sigaction(SIGALRM, &Old, nullptr);
+    sigaction(SIGALRM, &Old, 0);
   }
 
   // Return the proper exit status. Detect error conditions
@@ -395,19 +362,24 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
   int result = 0;
   if (WIFEXITED(status)) {
     result = WEXITSTATUS(status);
-    WaitResult.ReturnCode = result;
-
+#ifdef HAVE_POSIX_SPAWN
+    // The posix_spawn child process returns 127 on any kind of error.
+    // Following the POSIX convention for command-line tools (which posix_spawn
+    // itself apparently does not), check to see if the failure was due to some
+    // reason other than the file not existing, and return 126 in this case.
+    bool Exists;
+    if (result == 127 && !llvm::sys::fs::exists(Program, Exists) && Exists)
+      result = 126;
+#endif
     if (result == 127) {
       if (ErrMsg)
         *ErrMsg = llvm::sys::StrError(ENOENT);
-      WaitResult.ReturnCode = -1;
-      return WaitResult;
+      return -1;
     }
     if (result == 126) {
       if (ErrMsg)
         *ErrMsg = "Program could not be executed";
-      WaitResult.ReturnCode = -1;
-      return WaitResult;
+      return -1;
     }
   } else if (WIFSIGNALED(status)) {
     if (ErrMsg) {
@@ -419,25 +391,31 @@ ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
     }
     // Return a special value to indicate that the process received an unhandled
     // signal during execution as opposed to failing to execute.
-    WaitResult.ReturnCode = -2;
+    return -2;
   }
+  return result;
 #else
   if (ErrMsg)
     *ErrMsg = "Program::Wait is not implemented on this platform yet!";
-  ProcessInfo WaitResult;
-  WaitResult.ReturnCode = -2;
+  return -1;
 #endif
-  return WaitResult;
 }
 
-  std::error_code sys::ChangeStdinToBinary(){
+namespace llvm {
+
+error_code sys::ChangeStdinToBinary(){
   // Do nothing, as Unix doesn't differentiate between text and binary.
-    return std::error_code();
+  return make_error_code(errc::success);
 }
 
-  std::error_code sys::ChangeStdoutToBinary(){
+error_code sys::ChangeStdoutToBinary(){
   // Do nothing, as Unix doesn't differentiate between text and binary.
-    return std::error_code();
+  return make_error_code(errc::success);
+}
+
+error_code sys::ChangeStderrToBinary(){
+  // Do nothing, as Unix doesn't differentiate between text and binary.
+  return make_error_code(errc::success);
 }
 
 bool llvm::sys::argumentsFitWithinSystemLimits(ArrayRef<const char*> Args) {
@@ -460,4 +438,5 @@ bool llvm::sys::argumentsFitWithinSystemLimits(ArrayRef<const char*> Args) {
   }
   return true;
 }
+
 }

@@ -97,13 +97,13 @@ private:
 public:
   SIInsertWaits(TargetMachine &tm) :
     MachineFunctionPass(ID),
-    TII(nullptr),
-    TRI(nullptr),
+    TII(0),
+    TRI(0),
     ExpInstrTypesSeen(0) { }
 
-  bool runOnMachineFunction(MachineFunction &MF) override;
+  virtual bool runOnMachineFunction(MachineFunction &MF);
 
-  const char *getPassName() const override {
+  const char *getPassName() const {
     return "SI insert wait  instructions";
   }
 
@@ -134,19 +134,14 @@ Counters SIInsertWaits::getHwCounts(MachineInstr &MI) {
   // LGKM may uses larger values
   if (TSFlags & SIInstrFlags::LGKM_CNT) {
 
-    if (TII->isSMRD(MI.getOpcode())) {
+    MachineOperand &Op = MI.getOperand(0);
+    if (!Op.isReg())
+      Op = MI.getOperand(1);
+    assert(Op.isReg() && "First LGKM operand must be a register!");
 
-      MachineOperand &Op = MI.getOperand(0);
-      assert(Op.isReg() && "First LGKM operand must be a register!");
-
-      unsigned Reg = Op.getReg();
-      unsigned Size = TRI->getMinimalPhysRegClass(Reg)->getSize();
-      Result.Named.LGKM = Size > 4 ? 2 : 1;
-
-    } else {
-      // DS
-      Result.Named.LGKM = 1;
-    }
+    unsigned Reg = Op.getReg();
+    unsigned Size = TRI->getMinimalPhysRegClass(Reg)->getSize();
+    Result.Named.LGKM = Size > 4 ? 2 : 1;
 
   } else {
     Result.Named.LGKM = 0;
@@ -186,7 +181,7 @@ bool SIInsertWaits::isOpRelevant(MachineOperand &Op) {
 
 RegInterval SIInsertWaits::getRegInterval(MachineOperand &Op) {
 
-  if (!Op.isReg() || !TRI->isInAllocatableClass(Op.getReg()))
+  if (!Op.isReg())
     return std::make_pair(0, 0);
 
   unsigned Reg = Op.getReg();
@@ -314,12 +309,6 @@ Counters SIInsertWaits::handleOperands(MachineInstr &MI) {
 
   Counters Result = ZeroCounts;
 
-  // S_SENDMSG implicitly waits for all outstanding LGKM transfers to finish,
-  // but we also want to wait for any other outstanding transfers before
-  // signalling other hardware blocks
-  if (MI.getOpcode() == AMDGPU::S_SENDMSG)
-    return LastIssued;
-
   // For each register affected by this
   // instruction increase the result sequence
   for (unsigned i = 0, e = MI.getNumOperands(); i != e; ++i) {
@@ -341,8 +330,6 @@ Counters SIInsertWaits::handleOperands(MachineInstr &MI) {
   return Result;
 }
 
-// FIXME: Insert waits listed in Table 4.2 "Required User-Inserted Wait States"
-// around other non-memory instructions.
 bool SIInsertWaits::runOnMachineFunction(MachineFunction &MF) {
   bool Changes = false;
 

@@ -1,6 +1,5 @@
-; RUN: llc -mtriple=arm-eabi -mattr=+neon %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon | FileCheck %s
 ; pr4843
-
 define <4 x i16> @v2regbug(<4 x i16>* %B) nounwind {
 ;CHECK-LABEL: v2regbug:
 ;CHECK: vzip.16

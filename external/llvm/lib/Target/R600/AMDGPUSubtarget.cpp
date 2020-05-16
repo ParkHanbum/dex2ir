@@ -13,54 +13,95 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPUSubtarget.h"
-#include "R600InstrInfo.h"
-#include "SIInstrInfo.h"
+#include <stdio.h>
 
 using namespace llvm;
-
-#define DEBUG_TYPE "amdgpu-subtarget"
 
 #define GET_SUBTARGETINFO_ENUM
 #define GET_SUBTARGETINFO_TARGET_DESC
 #define GET_SUBTARGETINFO_CTOR
 #include "AMDGPUGenSubtargetInfo.inc"
 
-AMDGPUSubtarget::AMDGPUSubtarget(StringRef TT, StringRef GPU, StringRef FS) :
-  AMDGPUGenSubtargetInfo(TT, GPU, FS),
-  DevName(GPU),
-  Is64bit(false),
-  DumpCode(false),
-  R600ALUInst(false),
-  HasVertexCache(false),
-  TexVTXClauseSize(0),
-  Gen(AMDGPUSubtarget::R600),
-  FP64(false),
-  CaymanISA(false),
-  EnableIRStructurizer(true),
-  EnableIfCvt(true),
-  WavefrontSize(0),
-  CFALUBug(false),
-  LocalMemorySize(0),
-  InstrItins(getInstrItineraryForCPU(GPU)) {
-  ParseSubtargetFeatures(GPU, FS);
+AMDGPUSubtarget::AMDGPUSubtarget(StringRef TT, StringRef CPU, StringRef FS) :
+  AMDGPUGenSubtargetInfo(TT, CPU, FS), DumpCode(false) {
+    InstrItins = getInstrItineraryForCPU(CPU);
 
-  if (getGeneration() <= AMDGPUSubtarget::NORTHERN_ISLANDS) {
-    InstrInfo.reset(new R600InstrInfo(*this));
+  // Default card
+  StringRef GPU = CPU;
+  Is64bit = false;
+  DefaultSize[0] = 64;
+  DefaultSize[1] = 1;
+  DefaultSize[2] = 1;
+  HasVertexCache = false;
+  TexVTXClauseSize = 0;
+  Gen = AMDGPUSubtarget::R600;
+  FP64 = false;
+  CaymanISA = false;
+  ParseSubtargetFeatures(GPU, FS);
+  DevName = GPU;
+}
+
+bool
+AMDGPUSubtarget::is64bit() const  {
+  return Is64bit;
+}
+bool
+AMDGPUSubtarget::hasVertexCache() const {
+  return HasVertexCache;
+}
+short
+AMDGPUSubtarget::getTexVTXClauseSize() const {
+  return TexVTXClauseSize;
+}
+enum AMDGPUSubtarget::Generation
+AMDGPUSubtarget::getGeneration() const {
+  return Gen;
+}
+bool
+AMDGPUSubtarget::hasHWFP64() const {
+  return FP64;
+}
+bool
+AMDGPUSubtarget::hasCaymanISA() const {
+  return CaymanISA;
+}
+bool
+AMDGPUSubtarget::isTargetELF() const {
+  return false;
+}
+size_t
+AMDGPUSubtarget::getDefaultSize(uint32_t dim) const {
+  if (dim > 3) {
+    return 1;
   } else {
-    InstrInfo.reset(new SIInstrInfo(*this));
+    return DefaultSize[dim];
   }
 }
 
-unsigned AMDGPUSubtarget::getStackEntrySize() const {
-  assert(getGeneration() <= NORTHERN_ISLANDS);
-  switch(getWavefrontSize()) {
-  case 16:
-    return 8;
-  case 32:
-    return hasCaymanISA() ? 4 : 8;
-  case 64:
-    return 4;
-  default:
-    llvm_unreachable("Illegal wavefront size.");
+std::string
+AMDGPUSubtarget::getDataLayout() const {
+  std::string DataLayout = std::string(
+   "e"
+   "-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32"
+   "-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128"
+   "-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-v2048:2048:2048"
+   "-n32:64"
+  );
+
+  if (hasHWFP64()) {
+    DataLayout.append("-f64:64:64");
   }
+
+  if (is64bit()) {
+    DataLayout.append("-p:64:64:64");
+  } else {
+    DataLayout.append("-p:32:32:32");
+  }
+
+  return DataLayout;
+}
+
+std::string
+AMDGPUSubtarget::getDeviceName() const {
+  return DevName;
 }

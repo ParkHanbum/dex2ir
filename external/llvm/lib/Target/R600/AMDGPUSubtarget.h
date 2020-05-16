@@ -15,7 +15,6 @@
 #ifndef AMDGPUSUBTARGET_H
 #define AMDGPUSUBTARGET_H
 #include "AMDGPU.h"
-#include "AMDGPUInstrInfo.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
@@ -28,145 +27,51 @@
 namespace llvm {
 
 class AMDGPUSubtarget : public AMDGPUGenSubtargetInfo {
-
-  std::unique_ptr<AMDGPUInstrInfo> InstrInfo;
-
 public:
   enum Generation {
     R600 = 0,
     R700,
     EVERGREEN,
     NORTHERN_ISLANDS,
-    SOUTHERN_ISLANDS,
-    SEA_ISLANDS
+    SOUTHERN_ISLANDS
   };
 
 private:
+  size_t DefaultSize[3];
   std::string DevName;
   bool Is64bit;
+  bool Is32on64bit;
   bool DumpCode;
   bool R600ALUInst;
   bool HasVertexCache;
   short TexVTXClauseSize;
-  Generation Gen;
+  enum Generation Gen;
   bool FP64;
   bool CaymanISA;
-  bool EnableIRStructurizer;
-  bool EnableIfCvt;
-  unsigned WavefrontSize;
-  bool CFALUBug;
-  int LocalMemorySize;
 
   InstrItineraryData InstrItins;
 
 public:
   AMDGPUSubtarget(StringRef TT, StringRef CPU, StringRef FS);
 
-  const AMDGPUInstrInfo *getInstrInfo() const {
-    return InstrInfo.get();
-  }
+  const InstrItineraryData &getInstrItineraryData() const { return InstrItins; }
+  virtual void ParseSubtargetFeatures(StringRef CPU, StringRef FS);
 
-  const InstrItineraryData &getInstrItineraryData() const {
-    return InstrItins;
-  }
-
-  void ParseSubtargetFeatures(StringRef CPU, StringRef FS);
-
-  bool is64bit() const {
-    return Is64bit;
-  }
-
-  bool hasVertexCache() const {
-    return HasVertexCache;
-  }
-
-  short getTexVTXClauseSize() const {
-      return TexVTXClauseSize;
-  }
-
-  Generation getGeneration() const {
-    return Gen;
-  }
-
-  bool hasHWFP64() const {
-    return FP64;
-  }
-
-  bool hasCaymanISA() const {
-    return CaymanISA;
-  }
-
-  bool hasBFE() const {
-    return (getGeneration() >= EVERGREEN);
-  }
-
-  bool hasBFI() const {
-    return (getGeneration() >= EVERGREEN);
-  }
-
-  bool hasBFM() const {
-    return hasBFE();
-  }
-
-  bool hasBCNT(unsigned Size) const {
-    if (Size == 32)
-      return (getGeneration() >= EVERGREEN);
-
-    assert(Size == 64);
-    return (getGeneration() >= SOUTHERN_ISLANDS);
-  }
-
-  bool hasMulU24() const {
-    return (getGeneration() >= EVERGREEN);
-  }
-
-  bool hasMulI24() const {
-    return (getGeneration() >= SOUTHERN_ISLANDS ||
-            hasCaymanISA());
-  }
-
-  bool IsIRStructurizerEnabled() const {
-    return EnableIRStructurizer;
-  }
-
-  bool isIfCvtEnabled() const {
-    return EnableIfCvt;
-  }
-
-  unsigned getWavefrontSize() const {
-    return WavefrontSize;
-  }
-
-  unsigned getStackEntrySize() const;
-
-  bool hasCFAluBug() const {
-    assert(getGeneration() <= NORTHERN_ISLANDS);
-    return CFALUBug;
-  }
-
-  int getLocalMemorySize() const {
-    return LocalMemorySize;
-  }
-
-  bool enableMachineScheduler() const override {
-    return getGeneration() <= NORTHERN_ISLANDS;
-  }
+  bool is64bit() const;
+  bool hasVertexCache() const;
+  short getTexVTXClauseSize() const;
+  enum Generation getGeneration() const;
+  bool hasHWFP64() const;
+  bool hasCaymanISA() const;
 
   // Helper functions to simplify if statements
-  bool isTargetELF() const {
-    return false;
-  }
+  bool isTargetELF() const;
+  std::string getDataLayout() const;
+  std::string getDeviceName() const;
+  virtual size_t getDefaultSize(uint32_t dim) const;
+  bool dumpCode() const { return DumpCode; }
+  bool r600ALUEncoding() const { return R600ALUInst; }
 
-  StringRef getDeviceName() const {
-    return DevName;
-  }
-
-  bool dumpCode() const {
-    return DumpCode;
-  }
-  bool r600ALUEncoding() const {
-    return R600ALUInst;
-  }
 };
 
 } // End namespace llvm

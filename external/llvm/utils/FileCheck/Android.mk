@@ -11,6 +11,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := FileCheck
 LOCAL_SRC_FILES := $(filecheck_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(filecheck_STATIC_LIBRARIES)
+LOCAL_C_INCLUDES += external/llvm/include
 LOCAL_C_INCLUDES += external/llvm/host/include
 LOCAL_LDLIBS += -lpthread -lm -ldl
 LOCAL_CFLAGS += -D __STDC_LIMIT_MACROS -D __STDC_CONSTANT_MACROS

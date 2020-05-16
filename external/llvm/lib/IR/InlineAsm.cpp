@@ -64,6 +64,16 @@ InlineAsm::ConstraintInfo::ConstraintInfo() :
   currentAlternativeIndex(0) {
 }
 
+/// Copy constructor.
+InlineAsm::ConstraintInfo::ConstraintInfo(const ConstraintInfo &other) :
+  Type(other.Type), isEarlyClobber(other.isEarlyClobber),
+  MatchingInput(other.MatchingInput), isCommutative(other.isCommutative),
+  isIndirect(other.isIndirect), Codes(other.Codes),
+  isMultipleAlternative(other.isMultipleAlternative),
+  multipleAlternatives(other.multipleAlternatives),
+  currentAlternativeIndex(other.currentAlternativeIndex) {
+}
+
 /// Parse - Analyze the specified string (e.g. "==&{eax}") and fill in the
 /// fields in this structure.  If the constraint string is not understood,
 /// return true, otherwise return false.
@@ -274,7 +284,7 @@ bool InlineAsm::Verify(FunctionType *Ty, StringRef ConstStr) {
     break;
   default:
     StructType *STy = dyn_cast<StructType>(Ty->getReturnType());
-    if (!STy || STy->getNumElements() != NumOutputs)
+    if (STy == 0 || STy->getNumElements() != NumOutputs)
       return false;
     break;
   }      

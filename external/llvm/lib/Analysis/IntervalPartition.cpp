@@ -29,7 +29,7 @@ void IntervalPartition::releaseMemory() {
     delete Intervals[i];
   IntervalMap.clear();
   Intervals.clear();
-  RootInterval = nullptr;
+  RootInterval = 0;
 }
 
 void IntervalPartition::print(raw_ostream &O, const Module*) const {

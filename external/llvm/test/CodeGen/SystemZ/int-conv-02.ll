@@ -1,7 +1,6 @@
-; Test zero extensions from a byte to an i32.    The tests here
-; assume z10 register pressure, without the high words being available.
+; Test zero extensions from a byte to an i32.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 ; Test register extension, starting with an i32.
 define i32 @f1(i32 %a) {

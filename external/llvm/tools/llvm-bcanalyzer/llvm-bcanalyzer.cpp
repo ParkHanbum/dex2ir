@@ -27,10 +27,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/OwningPtr.h"
+#include "llvm/Analysis/Verifier.h"
 #include "llvm/Bitcode/BitstreamReader.h"
 #include "llvm/Bitcode/LLVMBitCodes.h"
 #include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/IR/Verifier.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -38,10 +39,9 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/system_error.h"
 #include <algorithm>
-#include <cctype>
 #include <map>
-#include <system_error>
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -84,7 +84,7 @@ static const char *GetBlockName(unsigned BlockID,
   if (BlockID < bitc::FIRST_APPLICATION_BLOCKID) {
     if (BlockID == bitc::BLOCKINFO_BLOCK_ID)
       return "BLOCKINFO_BLOCK";
-    return nullptr;
+    return 0;
   }
 
   // Check to see if we have a blockinfo record for this block, with a name.
@@ -95,10 +95,10 @@ static const char *GetBlockName(unsigned BlockID,
   }
 
 
-  if (CurStreamType != LLVMIRBitstream) return nullptr;
+  if (CurStreamType != LLVMIRBitstream) return 0;
 
   switch (BlockID) {
-  default:                             return nullptr;
+  default:                             return 0;
   case bitc::MODULE_BLOCK_ID:          return "MODULE_BLOCK";
   case bitc::PARAMATTR_BLOCK_ID:       return "PARAMATTR_BLOCK";
   case bitc::PARAMATTR_GROUP_BLOCK_ID: return "PARAMATTR_GROUP_BLOCK_ID";
@@ -120,13 +120,13 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
   if (BlockID < bitc::FIRST_APPLICATION_BLOCKID) {
     if (BlockID == bitc::BLOCKINFO_BLOCK_ID) {
       switch (CodeID) {
-      default: return nullptr;
+      default: return 0;
       case bitc::BLOCKINFO_CODE_SETBID:        return "SETBID";
       case bitc::BLOCKINFO_CODE_BLOCKNAME:     return "BLOCKNAME";
       case bitc::BLOCKINFO_CODE_SETRECORDNAME: return "SETRECORDNAME";
       }
     }
-    return nullptr;
+    return 0;
   }
 
   // Check to see if we have a blockinfo record for this record, with a name.
@@ -138,13 +138,13 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
   }
 
 
-  if (CurStreamType != LLVMIRBitstream) return nullptr;
+  if (CurStreamType != LLVMIRBitstream) return 0;
 
   switch (BlockID) {
-  default: return nullptr;
+  default: return 0;
   case bitc::MODULE_BLOCK_ID:
     switch (CodeID) {
-    default: return nullptr;
+    default: return 0;
     case bitc::MODULE_CODE_VERSION:     return "VERSION";
     case bitc::MODULE_CODE_TRIPLE:      return "TRIPLE";
     case bitc::MODULE_CODE_DATALAYOUT:  return "DATALAYOUT";
@@ -159,14 +159,14 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     }
   case bitc::PARAMATTR_BLOCK_ID:
     switch (CodeID) {
-    default: return nullptr;
+    default: return 0;
     case bitc::PARAMATTR_CODE_ENTRY_OLD: return "ENTRY";
     case bitc::PARAMATTR_CODE_ENTRY:     return "ENTRY";
     case bitc::PARAMATTR_GRP_CODE_ENTRY: return "ENTRY";
     }
   case bitc::TYPE_BLOCK_ID_NEW:
     switch (CodeID) {
-    default: return nullptr;
+    default: return 0;
     case bitc::TYPE_CODE_NUMENTRY:     return "NUMENTRY";
     case bitc::TYPE_CODE_VOID:         return "VOID";
     case bitc::TYPE_CODE_FLOAT:        return "FLOAT";
@@ -189,7 +189,7 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
 
   case bitc::CONSTANTS_BLOCK_ID:
     switch (CodeID) {
-    default: return nullptr;
+    default: return 0;
     case bitc::CST_CODE_SETTYPE:         return "SETTYPE";
     case bitc::CST_CODE_NULL:            return "NULL";
     case bitc::CST_CODE_UNDEF:           return "UNDEF";
@@ -215,7 +215,7 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     }
   case bitc::FUNCTION_BLOCK_ID:
     switch (CodeID) {
-    default: return nullptr;
+    default: return 0;
     case bitc::FUNC_CODE_DECLAREBLOCKS: return "DECLAREBLOCKS";
 
     case bitc::FUNC_CODE_INST_BINOP:        return "INST_BINOP";
@@ -249,18 +249,18 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     }
   case bitc::VALUE_SYMTAB_BLOCK_ID:
     switch (CodeID) {
-    default: return nullptr;
+    default: return 0;
     case bitc::VST_CODE_ENTRY: return "ENTRY";
     case bitc::VST_CODE_BBENTRY: return "BBENTRY";
     }
   case bitc::METADATA_ATTACHMENT_ID:
     switch(CodeID) {
-    default:return nullptr;
+    default:return 0;
     case bitc::METADATA_ATTACHMENT: return "METADATA_ATTACHMENT";
     }
   case bitc::METADATA_BLOCK_ID:
     switch(CodeID) {
-    default:return nullptr;
+    default:return 0;
     case bitc::METADATA_STRING:      return "METADATA_STRING";
     case bitc::METADATA_NAME:        return "METADATA_NAME";
     case bitc::METADATA_KIND:        return "METADATA_KIND";
@@ -270,7 +270,7 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     }
   case bitc::USELIST_BLOCK_ID:
     switch(CodeID) {
-    default:return nullptr;
+    default:return 0;
     case bitc::USELIST_CODE_ENTRY:   return "USELIST_CODE_ENTRY";
     }
   }
@@ -345,7 +345,7 @@ static bool ParseBlock(BitstreamCursor &Stream, unsigned BlockID,
   if (Stream.EnterSubBlock(BlockID, &NumWords))
     return Error("Malformed block record");
 
-  const char *BlockName = nullptr;
+  const char *BlockName = 0;
   if (Dump) {
     outs() << Indent << "<";
     if ((BlockName = GetBlockName(BlockID, *Stream.getBitStreamReader())))
@@ -478,11 +478,11 @@ static void PrintSize(uint64_t Bits) {
 /// AnalyzeBitcode - Analyze the bitcode file specified by InputFilename.
 static int AnalyzeBitcode() {
   // Read the input file.
-  ErrorOr<std::unique_ptr<MemoryBuffer>> MemBufOrErr =
-      MemoryBuffer::getFileOrSTDIN(InputFilename);
-  if (std::error_code EC = MemBufOrErr.getError())
-    return Error("Error reading '" + InputFilename + "': " + EC.message());
-  std::unique_ptr<MemoryBuffer> MemBuf = std::move(MemBufOrErr.get());
+  OwningPtr<MemoryBuffer> MemBuf;
+
+  if (error_code ec =
+        MemoryBuffer::getFileOrSTDIN(InputFilename, MemBuf))
+    return Error("Error reading '" + InputFilename + "': " + ec.message());
 
   if (MemBuf->getBufferSize() & 3)
     return Error("Bitcode stream should be a multiple of 4 bytes in length");

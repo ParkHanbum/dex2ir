@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <valgrind.h>
 
 #include <fstream>
 #include <iostream>
@@ -154,9 +155,6 @@ static void Usage(const char* fmt, ...) {
   UsageError("      Example: --instruction-set-features=div");
   UsageError("      Default: default");
   UsageError("");
-  UsageError("  --compile-pic: Force indirect use of code, methods, and classes");
-  UsageError("      Default: disabled");
-  UsageError("");
   UsageError("  --compiler-backend=(Quick|Optimizing|Portable): select compiler backend");
   UsageError("      set.");
   UsageError("      Example: --compiler-backend=Portable");
@@ -228,12 +226,6 @@ static void Usage(const char* fmt, ...) {
   UsageError("  --disable-passes=<pass-names>:  disable one or more passes separated by comma.");
   UsageError("      Example: --disable-passes=UseCount,BBOptimizations");
   UsageError("");
-  UsageError("  --swap-file=<file-name>:  specifies a file to use for swap.");
-  UsageError("      Example: --swap-file=/data/tmp/swap.001");
-  UsageError("");
-  UsageError("  --swap-fd=<file-descriptor>:  specifies a file to use for swap (by descriptor).");
-  UsageError("      Example: --swap-fd=10");
-  UsageError("");
   std::cerr << "See log for usage error information\n";
   exit(EXIT_FAILURE);
 }
@@ -269,11 +261,12 @@ class Dex2Oat {
 
   ~Dex2Oat() {
     delete runtime_;
+    LogCompletionTime();
   }
 
-  void LogCompletionTime(const CompilerDriver* compiler) {
+  void LogCompletionTime() {
     LOG(INFO) << "dex2oat took " << PrettyDuration(NanoTime() - start_ns_)
-              << " (threads: " << thread_count_ << ") ";
+              << " (threads: " << thread_count_ << ")";
   }
 
 
@@ -357,12 +350,10 @@ class Dex2Oat {
                                       const std::string& bitcode_filename,
                                       bool image,
                                       std::unique_ptr<std::set<std::string>>& image_classes,
-                                      std::unique_ptr<std::set<std::string>>& compiled_classes,
                                       bool dump_stats,
                                       bool dump_passes,
                                       TimingLogger& timings,
                                       CumulativeLogger& compiler_phases_timings,
-                                      int swap_fd,
                                       std::string profile_file,
                                       SafeMap<std::string, std::string>* key_value_store) {
     CHECK(key_value_store != nullptr);
@@ -393,12 +384,10 @@ class Dex2Oat {
                                                               instruction_set_features_,
                                                               image,
                                                               image_classes.release(),
-                                                              compiled_classes.release(),
                                                               thread_count_,
                                                               dump_stats,
                                                               dump_passes,
                                                               &compiler_phases_timings,
-                                                              swap_fd,
                                                               profile_file));
 
     driver->GetCompiler()->SetBitcodeFileName(*driver.get(), bitcode_filename);
@@ -434,25 +423,19 @@ class Dex2Oat {
     t2.NewTiming("Writing ELF");
     if (!driver->WriteElf(android_root, is_host, dex_files, &oat_writer, oat_file)) {
       LOG(ERROR) << "Failed to write ELF file " << oat_file->GetPath();
-      oat_file->Erase();
       return nullptr;
     }
 
     // Flush result to disk. Patching code will re-open the file (mmap), so ensure that our view
     // of the file already made it there and won't be re-ordered with writes from PatchOat or
     // image patching.
-    if (oat_file->Flush() != 0) {
-      PLOG(ERROR) << "Failed flushing oat file " << oat_file->GetPath();
-      oat_file->Erase();
-      return nullptr;
-    }
+    oat_file->Flush();
 
     if (!driver->IsImage() && driver->GetCompilerOptions().GetIncludePatchInformation()) {
       t2.NewTiming("Patching ELF");
       std::string error_msg;
       if (!PatchOatCode(driver.get(), oat_file, oat_location, &error_msg)) {
         LOG(ERROR) << "Failed to fixup ELF file " << oat_file->GetPath() << ": " << error_msg;
-        oat_file->Erase();
         return nullptr;
       }
     }
@@ -470,35 +453,22 @@ class Dex2Oat {
     {
       // ImageWriter is scoped so it can free memory before doing FixupElf
       ImageWriter image_writer(compiler);
-      if (!image_writer.Write(image_filename, image_base, oat_filename, oat_location,
-                              compiler_options_->GetCompilePic())) {
+      if (!image_writer.Write(image_filename, image_base, oat_filename, oat_location)) {
         LOG(ERROR) << "Failed to create image file " << image_filename;
         return false;
       }
       oat_data_begin = image_writer.GetOatDataBegin();
     }
 
-
-    // Do not fix up the ELF file if we are --compile-pic
-    if (!compiler_options_->GetCompilePic()) {
-      std::unique_ptr<File> oat_file(OS::OpenFileReadWrite(oat_filename.c_str()));
-      if (oat_file.get() == nullptr) {
-        PLOG(ERROR) << "Failed to open ELF file: " << oat_filename;
-        return false;
-      }
-
-      if (!ElfFixup::Fixup(oat_file.get(), oat_data_begin)) {
-        LOG(ERROR) << "Failed to fixup ELF file " << oat_file->GetPath();
-        oat_file->Erase();
-        return false;
-      }
-
-      if (oat_file->FlushCloseOrErase() != 0) {
-        PLOG(ERROR) << "Failed to flush and close patched oat file " << oat_filename;
-        return false;
-      }
+    std::unique_ptr<File> oat_file(OS::OpenFileReadWrite(oat_filename.c_str()));
+    if (oat_file.get() == nullptr) {
+      PLOG(ERROR) << "Failed to open ELF file: " << oat_filename;
+      return false;
     }
-
+    if (!ElfFixup::Fixup(oat_file.get(), oat_data_begin)) {
+      LOG(ERROR) << "Failed to fixup ELF file " << oat_file->GetPath();
+      return false;
+    }
     return true;
   }
 
@@ -615,7 +585,7 @@ static size_t OpenDexFiles(const std::vector<const char*>& dex_filenames,
 // during development when fatal aborts lead to a cascade of failures
 // that result in a deadlock.
 class WatchDog {
-// WatchDog defines its own CHECK_PTHREAD_CALL to avoid using LOG which uses locks
+// WatchDog defines its own CHECK_PTHREAD_CALL to avoid using Log which uses locks
 #undef CHECK_PTHREAD_CALL
 #define CHECK_WATCH_DOG_PTHREAD_CALL(call, args, what) \
   do { \
@@ -678,23 +648,41 @@ class WatchDog {
             message.c_str());
   }
 
+  static void Warn(const std::string& message) {
+    Message('W', message);
+  }
+
   static void Fatal(const std::string& message) {
     Message('F', message);
     exit(1);
   }
 
   void Wait() {
+    bool warning = true;
+    CHECK_GT(kWatchDogTimeoutSeconds, kWatchDogWarningSeconds);
     // TODO: tune the multiplier for GC verification, the following is just to make the timeout
     //       large.
     int64_t multiplier = kVerifyObjectSupport > kVerifyObjectModeFast ? 100 : 1;
+    timespec warning_ts;
+    InitTimeSpec(true, CLOCK_REALTIME, multiplier * kWatchDogWarningSeconds * 1000, 0, &warning_ts);
     timespec timeout_ts;
     InitTimeSpec(true, CLOCK_REALTIME, multiplier * kWatchDogTimeoutSeconds * 1000, 0, &timeout_ts);
     const char* reason = "dex2oat watch dog thread waiting";
     CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_lock, (&mutex_), reason);
     while (!shutting_down_) {
-      int rc = TEMP_FAILURE_RETRY(pthread_cond_timedwait(&cond_, &mutex_, &timeout_ts));
+      int rc = TEMP_FAILURE_RETRY(pthread_cond_timedwait(&cond_, &mutex_,
+                                                         warning ? &warning_ts
+                                                                 : &timeout_ts));
       if (rc == ETIMEDOUT) {
-        Fatal(StringPrintf("dex2oat did not finish after %d seconds", kWatchDogTimeoutSeconds));
+        std::string message(StringPrintf("dex2oat did not finish after %d seconds",
+                                         warning ? kWatchDogWarningSeconds
+                                                 : kWatchDogTimeoutSeconds));
+        if (warning) {
+          Warn(message.c_str());
+          warning = false;
+        } else {
+          Fatal(message.c_str());
+        }
       } else if (rc != 0) {
         std::string message(StringPrintf("pthread_cond_timedwait failed: %s",
                                          strerror(errno)));
@@ -708,9 +696,13 @@ class WatchDog {
   // Debug builds are slower so they have larger timeouts.
   static const unsigned int kSlowdownFactor = kIsDebugBuild ? 5U : 1U;
 #if ART_USE_PORTABLE_COMPILER
+  // 2 minutes scaled by kSlowdownFactor.
+  static const unsigned int kWatchDogWarningSeconds = kSlowdownFactor * 2 * 60;
   // 30 minutes scaled by kSlowdownFactor.
   static const unsigned int kWatchDogTimeoutSeconds = kSlowdownFactor * 30 * 60;
 #else
+  // 1 minutes scaled by kSlowdownFactor.
+  static const unsigned int kWatchDogWarningSeconds = kSlowdownFactor * 1 * 60;
   // 6 minutes scaled by kSlowdownFactor.
   static const unsigned int kWatchDogTimeoutSeconds = kSlowdownFactor * 6 * 60;
 #endif
@@ -723,6 +715,7 @@ class WatchDog {
   pthread_attr_t attr_;
   pthread_t pthread_;
 };
+const unsigned int WatchDog::kWatchDogWarningSeconds;
 const unsigned int WatchDog::kWatchDogTimeoutSeconds;
 
 // Given a set of instruction features from the build, parse it.  The
@@ -789,7 +782,7 @@ void ParseDouble(const std::string& option, char after_char,
   *parsed_value = value;
 }
 
-static void b13564922() {
+static int dex2oat(int argc, char** argv) {
 #if defined(__linux__) && defined(__arm__)
   int major, minor;
   struct utsname uts;
@@ -807,29 +800,6 @@ static void b13564922() {
     }
   }
 #endif
-}
-
-static constexpr size_t kMinDexFilesForSwap = 2;
-static constexpr size_t kMinDexFileCumulativeSizeForSwap = 20 * MB;
-
-static bool UseSwap(bool is_image, std::vector<const DexFile*>& dex_files) {
-  if (is_image) {
-    // Don't use swap, we know generation should succeed, and we don't want to slow it down.
-    return false;
-  }
-  if (dex_files.size() < kMinDexFilesForSwap) {
-    // If there are less dex files than the threshold, assume it's gonna be fine.
-    return false;
-  }
-  size_t dex_files_size = 0;
-  for (const auto* dex_file : dex_files) {
-    dex_files_size += dex_file->GetHeader().file_size_;
-  }
-  return dex_files_size >= kMinDexFileCumulativeSizeForSwap;
-}
-
-static int dex2oat(int argc, char** argv) {
-  b13564922();
 
   original_argc = argc;
   original_argv = argv;
@@ -858,8 +828,6 @@ static int dex2oat(int argc, char** argv) {
   std::string bitcode_filename;
   const char* image_classes_zip_filename = nullptr;
   const char* image_classes_filename = nullptr;
-  const char* compiled_classes_zip_filename = nullptr;
-  const char* compiled_classes_filename = nullptr;
   std::string image_filename;
   std::string boot_image_filename;
   uintptr_t image_base = 0;
@@ -870,7 +838,6 @@ static int dex2oat(int argc, char** argv) {
       ? Compiler::kPortable
       : Compiler::kQuick;
   const char* compiler_filter_string = nullptr;
-  bool compile_pic = false;
   int huge_method_threshold = CompilerOptions::kDefaultHugeMethodThreshold;
   int large_method_threshold = CompilerOptions::kDefaultLargeMethodThreshold;
   int small_method_threshold = CompilerOptions::kDefaultSmallMethodThreshold;
@@ -901,10 +868,6 @@ static int dex2oat(int argc, char** argv) {
   bool implicit_null_checks = false;
   bool implicit_so_checks = false;
   bool implicit_suspend_checks = false;
-
-  // Swap file.
-  std::string swap_file_name;
-  int swap_fd = -1;  // No swap file descriptor;
 
   for (int i = 0; i < argc; i++) {
     const StringPiece option(argv[i]);
@@ -963,10 +926,6 @@ static int dex2oat(int argc, char** argv) {
       image_classes_filename = option.substr(strlen("--image-classes=")).data();
     } else if (option.starts_with("--image-classes-zip=")) {
       image_classes_zip_filename = option.substr(strlen("--image-classes-zip=")).data();
-    } else if (option.starts_with("--compiled-classes=")) {
-      compiled_classes_filename = option.substr(strlen("--compiled-classes=")).data();
-    } else if (option.starts_with("--compiled-classes-zip=")) {
-      compiled_classes_zip_filename = option.substr(strlen("--compiled-classes-zip=")).data();
     } else if (option.starts_with("--base=")) {
       const char* image_base_str = option.substr(strlen("--base=")).data();
       char* end;
@@ -1005,8 +964,6 @@ static int dex2oat(int argc, char** argv) {
       }
     } else if (option.starts_with("--compiler-filter=")) {
       compiler_filter_string = option.substr(strlen("--compiler-filter=")).data();
-    } else if (option == "--compile-pic") {
-      compile_pic = true;
     } else if (option.starts_with("--huge-method-max=")) {
       const char* threshold = option.substr(strlen("--huge-method-max=")).data();
       if (!ParseInt(threshold, &huge_method_threshold)) {
@@ -1092,16 +1049,6 @@ static int dex2oat(int argc, char** argv) {
       include_patch_information = true;
     } else if (option == "--no-include-patch-information") {
       include_patch_information = false;
-    } else if (option.starts_with("--swap-file=")) {
-      swap_file_name = option.substr(strlen("--swap-file=")).data();
-    } else if (option.starts_with("--swap-fd=")) {
-      const char* swap_fd_str = option.substr(strlen("--swap-fd=")).data();
-      if (!ParseInt(swap_fd_str, &swap_fd)) {
-        Usage("Failed to parse --swap-fd argument '%s' as an integer", swap_fd_str);
-      }
-      if (swap_fd < 0) {
-        Usage("--swap-fd passed a negative value %d", swap_fd);
-      }
     } else {
       Usage("Unknown argument %s", option.data());
     }
@@ -1156,18 +1103,6 @@ static int dex2oat(int argc, char** argv) {
 
   if (image_classes_zip_filename != nullptr && image_classes_filename == nullptr) {
     Usage("--image-classes-zip should be used with --image-classes");
-  }
-
-  if (compiled_classes_filename != nullptr && !image) {
-    Usage("--compiled-classes should only be used with --image");
-  }
-
-  if (compiled_classes_filename != nullptr && !boot_image_option.empty()) {
-    Usage("--compiled-classes should not be used with --boot-image");
-  }
-
-  if (compiled_classes_zip_filename != nullptr && compiled_classes_filename == nullptr) {
-    Usage("--compiled-classes-zip should be used with --compiled-classes");
   }
 
   if (dex_filenames.empty() && zip_fd == -1) {
@@ -1268,8 +1203,7 @@ static int dex2oat(int argc, char** argv) {
                                                                         include_debug_symbols,
                                                                         implicit_null_checks,
                                                                         implicit_so_checks,
-                                                                        implicit_suspend_checks,
-                                                                        compile_pic
+                                                                        implicit_suspend_checks
 #ifdef ART_SEA_IR_MODE
                                                                         , compiler_options.sea_ir_ =
                                                                               true;
@@ -1288,11 +1222,8 @@ static int dex2oat(int argc, char** argv) {
       oat_location = oat_filename;
     }
   } else {
-    oat_file.reset(new File(oat_fd, oat_location, true));
+    oat_file.reset(new File(oat_fd, oat_location));
     oat_file->DisableAutoClose();
-    if (oat_file->SetLength(0)) {  // Only warn for truncation error.
-      PLOG(WARNING) << "Truncating oat file " << oat_location << " failed.";
-    }
   }
   if (oat_file.get() == nullptr) {
     PLOG(ERROR) << "Failed to create oat file: " << oat_location;
@@ -1300,27 +1231,7 @@ static int dex2oat(int argc, char** argv) {
   }
   if (create_file && fchmod(oat_file->Fd(), 0644) != 0) {
     PLOG(ERROR) << "Failed to make oat file world readable: " << oat_location;
-    oat_file->Erase();
     return EXIT_FAILURE;
-  }
-
-  // Swap file handling.
-  //
-  // If the swap fd is not -1, we assume this is the file descriptor of an open but unlinked file
-  // that we can use for swap.
-  //
-  // If the swap fd is -1 and we have a swap-file string, open the given file as a swap file. We
-  // will immediately unlink to satisfy the swap fd assumption.
-  std::unique_ptr<File> swap_file;
-  if (swap_fd == -1 && !swap_file_name.empty()) {
-    swap_file.reset(OS::CreateEmptyFile(swap_file_name.c_str()));
-    if (swap_file.get() == nullptr) {
-      PLOG(ERROR) << "Failed to create swap file: " << swap_file_name;
-      return EXIT_FAILURE;
-    }
-    swap_fd = swap_file->Fd();
-    swap_file->MarkUnchecked();  // We don't we to track this, it will be unlinked immediately.
-    unlink(swap_file_name.c_str());
   }
 
   timings.StartTiming("dex2oat Setup");
@@ -1328,12 +1239,10 @@ static int dex2oat(int argc, char** argv) {
 
   RuntimeOptions runtime_options;
   std::vector<const DexFile*> boot_class_path;
-  art::MemMap::Init();  // For ZipEntry::ExtractToMemMap.
   if (boot_image_option.empty()) {
     size_t failure_count = OpenDexFiles(dex_filenames, dex_locations, boot_class_path);
     if (failure_count > 0) {
       LOG(ERROR) << "Failed to open some dex files: " << failure_count;
-      oat_file->Erase();
       return EXIT_FAILURE;
     }
     runtime_options.push_back(std::make_pair("bootclasspath", &boot_class_path));
@@ -1353,11 +1262,6 @@ static int dex2oat(int argc, char** argv) {
       std::make_pair("imageinstructionset",
                      reinterpret_cast<const void*>(GetInstructionSetString(instruction_set))));
 
-  if (swap_fd != -1) {
-    // Swap file indicates low-memory mode. Use GC.
-    runtime_options.push_back(std::make_pair("-Xgc:MS", nullptr));
-  }
-
   Dex2Oat* p_dex2oat;
   if (!Dex2Oat::Create(&p_dex2oat,
                        runtime_options,
@@ -1369,8 +1273,6 @@ static int dex2oat(int argc, char** argv) {
                        &method_inliner_map,
                        thread_count)) {
     LOG(ERROR) << "Failed to create dex2oat";
-    timings.EndTiming();
-    oat_file->Erase();
     return EXIT_FAILURE;
   }
   std::unique_ptr<Dex2Oat> dex2oat(p_dex2oat);
@@ -1399,34 +1301,10 @@ static int dex2oat(int argc, char** argv) {
     if (image_classes.get() == nullptr) {
       LOG(ERROR) << "Failed to create list of image classes from '" << image_classes_filename <<
           "': " << error_msg;
-      timings.EndTiming();
-      oat_file->Erase();
       return EXIT_FAILURE;
     }
   } else if (image) {
     image_classes.reset(new std::set<std::string>);
-  }
-  // If --compiled-classes was specified, calculate the full list of classes to compile in the
-  // image.
-  std::unique_ptr<std::set<std::string>> compiled_classes(nullptr);
-  if (compiled_classes_filename != nullptr) {
-    std::string error_msg;
-    if (compiled_classes_zip_filename != nullptr) {
-      compiled_classes.reset(dex2oat->ReadImageClassesFromZip(compiled_classes_zip_filename,
-                                                              compiled_classes_filename,
-                                                              &error_msg));
-    } else {
-      compiled_classes.reset(dex2oat->ReadImageClassesFromFile(compiled_classes_filename));
-    }
-    if (compiled_classes.get() == nullptr) {
-      LOG(ERROR) << "Failed to create list of compiled classes from '" << compiled_classes_filename
-                 << "': " << error_msg;
-      timings.EndTiming();
-      oat_file->Erase();
-      return EXIT_FAILURE;
-    }
-  } else if (image) {
-    compiled_classes.reset(nullptr);  // By default compile everything.
   }
 
   std::vector<const DexFile*> dex_files;
@@ -1441,15 +1319,11 @@ static int dex2oat(int argc, char** argv) {
       if (zip_archive.get() == nullptr) {
         LOG(ERROR) << "Failed to open zip from file descriptor for '" << zip_location << "': "
             << error_msg;
-        timings.EndTiming();
-        oat_file->Erase();
         return EXIT_FAILURE;
       }
       if (!DexFile::OpenFromZip(*zip_archive.get(), zip_location, &error_msg, &dex_files)) {
         LOG(ERROR) << "Failed to open dex from file descriptor for zip file '" << zip_location
             << "': " << error_msg;
-        timings.EndTiming();
-        oat_file->Erase();
         return EXIT_FAILURE;
       }
       ATRACE_END();
@@ -1457,8 +1331,6 @@ static int dex2oat(int argc, char** argv) {
       size_t failure_count = OpenDexFiles(dex_filenames, dex_locations, dex_files);
       if (failure_count > 0) {
         LOG(ERROR) << "Failed to open some dex files: " << failure_count;
-        timings.EndTiming();
-        oat_file->Erase();
         return EXIT_FAILURE;
       }
     }
@@ -1474,10 +1346,7 @@ static int dex2oat(int argc, char** argv) {
                         << ". Try: adb shell chmod 777 /data/local/tmp";
             continue;
         }
-        // This is just dumping files for debugging. Ignore errors, and leave remnants.
-        UNUSED(tmp_file->WriteFully(dex_file->Begin(), dex_file->Size()));
-        UNUSED(tmp_file->Flush());
-        UNUSED(tmp_file->Close());
+        tmp_file->WriteFully(dex_file->Begin(), dex_file->Size());
         LOG(INFO) << "Wrote input to " << tmp_file_name;
       }
     }
@@ -1486,16 +1355,6 @@ static int dex2oat(int argc, char** argv) {
   for (const auto& dex_file : dex_files) {
     if (!dex_file->EnableWrite()) {
       PLOG(ERROR) << "Failed to make .dex file writeable '" << dex_file->GetLocation() << "'\n";
-    }
-  }
-  // If we use a swap file, ensure we are above the threshold to make it necessary.
-  if (swap_fd != -1) {
-    if (!UseSwap(image, dex_files)) {
-      close(swap_fd);
-      swap_fd = -1;
-      LOG(INFO) << "Decided to run without swap.";
-    } else {
-      LOG(INFO) << "Accepted running with swap.";
     }
   }
 
@@ -1521,20 +1380,17 @@ static int dex2oat(int argc, char** argv) {
       new SafeMap<std::string, std::string>());
 
   // Insert some compiler things.
-  {
-    std::ostringstream oss;
-    for (int i = 0; i < argc; ++i) {
-      if (i > 0) {
-        oss << ' ';
-      }
-      oss << argv[i];
+  std::ostringstream oss;
+  for (int i = 0; i < argc; ++i) {
+    if (i > 0) {
+      oss << ' ';
     }
-    key_value_store->Put(OatHeader::kDex2OatCmdLineKey, oss.str());
-    oss.str("");  // Reset.
-    oss << kRuntimeISA;
-    key_value_store->Put(OatHeader::kDex2OatHostKey, oss.str());
-    key_value_store->Put(OatHeader::kPicKey, compile_pic ? "true" : "false");
+    oss << argv[i];
   }
+  key_value_store->Put(OatHeader::kDex2OatCmdLineKey, oss.str());
+  oss.str("");  // Reset.
+  oss << kRuntimeISA;
+  key_value_store->Put(OatHeader::kDex2OatHostKey, oss.str());
 
   std::unique_ptr<const CompilerDriver> compiler(dex2oat->CreateOatFile(boot_image_option,
                                                                         android_root,
@@ -1545,30 +1401,19 @@ static int dex2oat(int argc, char** argv) {
                                                                         bitcode_filename,
                                                                         image,
                                                                         image_classes,
-                                                                        compiled_classes,
                                                                         dump_stats,
                                                                         dump_passes,
                                                                         timings,
                                                                         compiler_phases_timings,
-                                                                        swap_fd,
                                                                         profile_file,
                                                                         key_value_store.get()));
   if (compiler.get() == nullptr) {
     LOG(ERROR) << "Failed to create oat file: " << oat_location;
-    timings.EndTiming();
     return EXIT_FAILURE;
   }
 
-  if (!kUsePortableCompiler) {
-    if (oat_file->FlushCloseOrErase() != 0) {
-      PLOG(ERROR) << "Failed to flush and close oat file: " << oat_location;
-      timings.EndTiming();
-      return EXIT_FAILURE;
-    }
-    oat_file.reset();
-  }
-
   VLOG(compiler) << "Oat file written successfully (unstripped): " << oat_location;
+
   // Notes on the interleaving of creating the image and oat file to
   // ensure the references between the two are correct.
   //
@@ -1627,7 +1472,6 @@ static int dex2oat(int argc, char** argv) {
                                                            oat_location,
                                                            *compiler.get());
     if (!image_creation_success) {
-      timings.EndTiming();
       return EXIT_FAILURE;
     }
     VLOG(compiler) << "Image written successfully: " << image_filename;
@@ -1648,14 +1492,8 @@ static int dex2oat(int argc, char** argv) {
   // We need to strip after image creation because FixupElf needs to use .strtab.
   if (oat_unstripped != oat_stripped) {
     TimingLogger::ScopedTiming t("dex2oat OatFile copy", &timings);
-    if (kUsePortableCompiler) {
-      if (oat_file->FlushCloseOrErase() != 0) {
-        PLOG(ERROR) << "Failed to flush and close oat file: " << oat_location;
-        return EXIT_FAILURE;
-      }
-      oat_file.reset();
-    }
-    std::unique_ptr<File> in(OS::OpenFileForReading(oat_unstripped.c_str()));
+    oat_file.reset();
+     std::unique_ptr<File> in(OS::OpenFileForReading(oat_unstripped.c_str()));
     std::unique_ptr<File> out(OS::CreateEmptyFile(oat_stripped.c_str()));
     size_t buffer_size = 8192;
     std::unique_ptr<uint8_t> buffer(new uint8_t[buffer_size]);
@@ -1671,34 +1509,22 @@ static int dex2oat(int argc, char** argv) {
     VLOG(compiler) << "Oat file copied successfully (stripped): " << oat_stripped;
   }
 
-  if (kUsePortableCompiler) {
-    if (!compiler_options->GetIncludeDebugSymbols()) {
-      timings.NewTiming("dex2oat ElfStripper");
-      // Strip unneeded sections for target
-      off_t seek_actual = lseek(oat_file->Fd(), 0, SEEK_SET);
-      CHECK_EQ(0, seek_actual);
-      std::string error_msg;
-      CHECK(ElfStripper::Strip(oat_file.get(), &error_msg)) << error_msg;
+#if ART_USE_PORTABLE_COMPILER  // We currently only generate symbols on Portable
+  if (!compiler_options.GetIncludeDebugSymbols()) {
+    timings.NewSplit("dex2oat ElfStripper");
+    // Strip unneeded sections for target
+    off_t seek_actual = lseek(oat_file->Fd(), 0, SEEK_SET);
+    CHECK_EQ(0, seek_actual);
+    std::string error_msg;
+    CHECK(ElfStripper::Strip(oat_file.get(), &error_msg)) << error_msg;
 
 
-      // We wrote the oat file successfully, and want to keep it.
-      VLOG(compiler) << "Oat file written successfully (stripped): " << oat_location;
-    } else {
-      VLOG(compiler) << "Oat file written successfully without stripping: " << oat_location;
-    }
-    if (oat_file->FlushCloseOrErase() != 0) {
-      LOG(ERROR) << "Failed to flush and close oat file: " << oat_location;
-      return EXIT_FAILURE;
-    }
-    oat_file.reset(nullptr);
+    // We wrote the oat file successfully, and want to keep it.
+    VLOG(compiler) << "Oat file written successfully (stripped): " << oat_location;
+  } else {
+    VLOG(compiler) << "Oat file written successfully without stripping: " << oat_location;
   }
-
-  if (oat_file.get() != nullptr) {
-    if (oat_file->FlushCloseOrErase() != 0) {
-      PLOG(ERROR) << "Failed to flush and close oat file: " << oat_location << "/" << oat_filename;
-      return EXIT_FAILURE;
-    }
-  }
+#endif  // ART_USE_PORTABLE_COMPILER
 
   timings.EndTiming();
 
@@ -1709,10 +1535,10 @@ static int dex2oat(int argc, char** argv) {
     LOG(INFO) << Dumpable<CumulativeLogger>(compiler_phases_timings);
   }
 
-  dex2oat->LogCompletionTime(compiler.get());
   // Everything was successfully written, do an explicit exit here to avoid running Runtime
   // destructors that take time (bug 10645725) unless we're a debug build or running on valgrind.
   if (!kIsDebugBuild && (RUNNING_ON_VALGRIND == 0)) {
+    dex2oat->LogCompletionTime();
     exit(EXIT_SUCCESS);
   }
 

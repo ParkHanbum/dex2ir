@@ -27,10 +27,8 @@ class BlockFrequency {
   uint64_t Frequency;
   static const int64_t ENTRY_FREQ = 1 << 14;
 
-  /// \brief Scale the given BlockFrequency by N/D. Return the remainder from
-  /// the division by D. Upon overflow, the routine will saturate and
-  /// additionally will return the remainder set to D.
-  uint32_t scale(uint32_t N, uint32_t D);
+  // Scale frequency by N/D, saturating on overflow.
+  void scale(uint32_t N, uint32_t D);
 
 public:
   BlockFrequency(uint64_t Freq = 0) : Frequency(Freq) { }
@@ -58,10 +56,6 @@ public:
   /// \brief Adds another block frequency using saturating arithmetic.
   BlockFrequency &operator+=(const BlockFrequency &Freq);
   const BlockFrequency operator+(const BlockFrequency &Freq) const;
-
-  /// \brief Scale the given BlockFrequency by N/D. Return the remainder from
-  /// the division by D. Upon overflow, the routine will saturate.
-  uint32_t scale(const BranchProbability &Prob);
 
   bool operator<(const BlockFrequency &RHS) const {
     return Frequency < RHS.Frequency;

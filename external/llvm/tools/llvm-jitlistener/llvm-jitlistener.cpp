@@ -15,6 +15,7 @@
 
 #include "llvm/IR/LLVMContext.h"
 #include "../../lib/ExecutionEngine/IntelJITEvents/IntelJITEventsWrapper.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/JITMemoryManager.h"
@@ -138,8 +139,8 @@ protected:
     if (Tuple.getTriple().empty())
       Tuple.setTriple(sys::getProcessTriple());
 
-    if (Tuple.isOSWindows() && !Tuple.isOSBinFormatELF()) {
-      Tuple.setObjectFormat(Triple::ELF);
+    if (Tuple.isOSWindows() && Triple::ELF != Tuple.getEnvironment()) {
+      Tuple.setEnvironment(Triple::ELF);
       TheModule->setTargetTriple(Tuple.getTriple());
     }
 
@@ -162,15 +163,16 @@ protected:
   LLVMContext Context; // Global ownership
   Module *TheModule; // Owned by ExecutionEngine.
   JITMemoryManager *JMM; // Owned by ExecutionEngine.
-  std::unique_ptr<ExecutionEngine> TheJIT;
+  OwningPtr<ExecutionEngine> TheJIT;
 
 public:
   void ProcessInput(const std::string &Filename) {
     InitEE(Filename);
 
-    std::unique_ptr<llvm::JITEventListener> Listener(
-        JITEventListener::createIntelJITEventListener(new IntelJITEventsWrapper(
-            NotifyEvent, 0, IsProfilingActive, 0, 0, GetNewMethodID)));
+    llvm::OwningPtr<llvm::JITEventListener> Listener(JITEventListener::createIntelJITEventListener(
+        new IntelJITEventsWrapper(NotifyEvent, 0,
+          IsProfilingActive, 0, 0,
+          GetNewMethodID)));
 
     TheJIT->RegisterJITEventListener(Listener.get());
 

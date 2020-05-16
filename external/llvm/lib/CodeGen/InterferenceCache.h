@@ -72,13 +72,12 @@ class InterferenceCache {
       unsigned VirtTag;
 
       /// Fixed interference in RegUnit.
-      LiveRange *Fixed;
+      LiveInterval *Fixed;
 
       /// Iterator pointing into the fixed RegUnit interference.
       LiveInterval::iterator FixedI;
 
-      RegUnitInfo(LiveIntervalUnion &LIU)
-          : VirtTag(LIU.getTag()), Fixed(nullptr) {
+      RegUnitInfo(LiveIntervalUnion &LIU) : VirtTag(LIU.getTag()), Fixed(0) {
         VirtI.setMap(LIU.getMap());
       }
     };
@@ -94,7 +93,7 @@ class InterferenceCache {
     void update(unsigned MBBNum);
 
   public:
-    Entry() : PhysReg(0), Tag(0), RefCount(0), Indexes(nullptr), LIS(nullptr) {}
+    Entry() : PhysReg(0), Tag(0), RefCount(0), Indexes(0), LIS(0) {}
 
     void clear(MachineFunction *mf, SlotIndexes *indexes, LiveIntervals *lis) {
       assert(!hasRefs() && "Cannot clear cache entry with references");
@@ -136,8 +135,7 @@ class InterferenceCache {
 
   // Point to an entry for each physreg. The entry pointed to may not be up to
   // date, and it may have been reused for a different physreg.
-  unsigned char* PhysRegEntries;
-  size_t PhysRegEntriesCount;
+  SmallVector<unsigned char, 2> PhysRegEntries;
 
   // Next round-robin entry to be picked.
   unsigned RoundRobin;
@@ -149,15 +147,7 @@ class InterferenceCache {
   Entry *get(unsigned PhysReg);
 
 public:
-  InterferenceCache()
-    : TRI(nullptr), LIUArray(nullptr), MF(nullptr), PhysRegEntries(nullptr),
-      PhysRegEntriesCount(0), RoundRobin(0) {}
-
-  ~InterferenceCache() {
-    free(PhysRegEntries);
-  }
-
-  void reinitPhysRegEntries();
+  InterferenceCache() : TRI(0), LIUArray(0), MF(0), RoundRobin(0) {}
 
   /// init - Prepare cache for a new function.
   void init(MachineFunction*, LiveIntervalUnion*, SlotIndexes*, LiveIntervals*,
@@ -174,7 +164,7 @@ public:
     static BlockInterference NoInterference;
 
     void setEntry(Entry *E) {
-      Current = nullptr;
+      Current = 0;
       // Update reference counts. Nothing happens when RefCount reaches 0, so
       // we don't have to check for E == CacheEntry etc.
       if (CacheEntry)
@@ -186,10 +176,10 @@ public:
 
   public:
     /// Cursor - Create a dangling cursor.
-    Cursor() : CacheEntry(nullptr), Current(nullptr) {}
-    ~Cursor() { setEntry(nullptr); }
+    Cursor() : CacheEntry(0), Current(0) {}
+    ~Cursor() { setEntry(0); }
 
-    Cursor(const Cursor &O) : CacheEntry(nullptr), Current(nullptr) {
+    Cursor(const Cursor &O) : CacheEntry(0), Current(0) {
       setEntry(O.CacheEntry);
     }
 
@@ -202,7 +192,7 @@ public:
     void setPhysReg(InterferenceCache &Cache, unsigned PhysReg) {
       // Release reference before getting a new one. That guarantees we can
       // actually have CacheEntries live cursors.
-      setEntry(nullptr);
+      setEntry(0);
       if (PhysReg)
         setEntry(Cache.get(PhysReg));
     }

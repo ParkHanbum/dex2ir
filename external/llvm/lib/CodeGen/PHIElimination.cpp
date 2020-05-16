@@ -13,6 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "phielim"
 #include "llvm/CodeGen/Passes.h"
 #include "PHIEliminationUtils.h"
 #include "llvm/ADT/STLExtras.h"
@@ -33,8 +34,6 @@
 #include "llvm/Target/TargetMachine.h"
 #include <algorithm>
 using namespace llvm;
-
-#define DEBUG_TYPE "phielim"
 
 static cl::opt<bool>
 DisableEdgeSplitting("disable-phi-elim-edge-splitting", cl::init(false),
@@ -58,8 +57,8 @@ namespace {
       initializePHIEliminationPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &Fn) override;
-    void getAnalysisUsage(AnalysisUsage &AU) const override;
+    virtual bool runOnMachineFunction(MachineFunction &Fn);
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
   private:
     /// EliminatePHINodes - Eliminate phi nodes by inserting copy instructions
@@ -187,7 +186,7 @@ bool PHIElimination::EliminatePHINodes(MachineFunction &MF,
   // Get an iterator to the first instruction after the last PHI node (this may
   // also be the end of the basic block).
   MachineBasicBlock::iterator LastPHIIt =
-    std::prev(MBB.SkipPHIsAndLabels(MBB.begin()));
+    prior(MBB.SkipPHIsAndLabels(MBB.begin()));
 
   while (MBB.front().isPHI())
     LowerPHINode(MBB, LastPHIIt);
@@ -199,8 +198,9 @@ bool PHIElimination::EliminatePHINodes(MachineFunction &MF,
 /// This includes registers with no defs.
 static bool isImplicitlyDefined(unsigned VirtReg,
                                 const MachineRegisterInfo *MRI) {
-  for (MachineInstr &DI : MRI->def_instructions(VirtReg))
-    if (!DI.isImplicitDef())
+  for (MachineRegisterInfo::def_iterator DI = MRI->def_begin(VirtReg),
+       DE = MRI->def_end(); DI != DE; ++DI)
+    if (!DI->isImplicitDef())
       return false;
   return true;
 }
@@ -222,7 +222,7 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
                                   MachineBasicBlock::iterator LastPHIIt) {
   ++NumLowered;
 
-  MachineBasicBlock::iterator AfterPHIsIt = std::next(LastPHIIt);
+  MachineBasicBlock::iterator AfterPHIsIt = llvm::next(LastPHIIt);
 
   // Unlink the PHI node from the basic block, but don't delete the PHI yet.
   MachineInstr *MPhi = MBB.remove(MBB.begin());
@@ -267,7 +267,7 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
 
   // Update live variable information if there is any.
   if (LV) {
-    MachineInstr *PHICopy = std::prev(AfterPHIsIt);
+    MachineInstr *PHICopy = prior(AfterPHIsIt);
 
     if (IncomingReg) {
       LiveVariables::VarInfo &VI = LV->getVarInfo(IncomingReg);
@@ -306,21 +306,21 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
 
   // Update LiveIntervals for the new copy or implicit def.
   if (LIS) {
-    MachineInstr *NewInstr = std::prev(AfterPHIsIt);
+    MachineInstr *NewInstr = prior(AfterPHIsIt);
     SlotIndex DestCopyIndex = LIS->InsertMachineInstrInMaps(NewInstr);
 
     SlotIndex MBBStartIndex = LIS->getMBBStartIdx(&MBB);
     if (IncomingReg) {
       // Add the region from the beginning of MBB to the copy instruction to
       // IncomingReg's live interval.
-      LiveInterval &IncomingLI = LIS->createEmptyInterval(IncomingReg);
+      LiveInterval &IncomingLI = LIS->getOrCreateInterval(IncomingReg);
       VNInfo *IncomingVNI = IncomingLI.getVNInfoAt(MBBStartIndex);
       if (!IncomingVNI)
         IncomingVNI = IncomingLI.getNextValue(MBBStartIndex,
                                               LIS->getVNInfoAllocator());
-      IncomingLI.addSegment(LiveInterval::Segment(MBBStartIndex,
-                                                  DestCopyIndex.getRegSlot(),
-                                                  IncomingVNI));
+      IncomingLI.addRange(LiveRange(MBBStartIndex,
+                                    DestCopyIndex.getRegSlot(),
+                                    IncomingVNI));
     }
 
     LiveInterval &DestLI = LIS->getInterval(DestReg);
@@ -332,14 +332,14 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
       // the copy instruction.
       VNInfo *OrigDestVNI = DestLI.getVNInfoAt(MBBStartIndex);
       assert(OrigDestVNI && "PHI destination should be live at block entry.");
-      DestLI.removeSegment(MBBStartIndex, MBBStartIndex.getDeadSlot());
+      DestLI.removeRange(MBBStartIndex, MBBStartIndex.getDeadSlot());
       DestLI.createDeadDef(DestCopyIndex.getRegSlot(),
                            LIS->getVNInfoAllocator());
       DestLI.removeValNo(OrigDestVNI);
     } else {
       // Otherwise, remove the region from the beginning of MBB to the copy
       // instruction from DestReg's live interval.
-      DestLI.removeSegment(MBBStartIndex, DestCopyIndex.getRegSlot());
+      DestLI.removeRange(MBBStartIndex, DestCopyIndex.getRegSlot());
       VNInfo *DestVNI = DestLI.getVNInfoAt(DestCopyIndex.getRegSlot());
       assert(DestVNI && "PHI destination should be live at its definition.");
       DestVNI->def = DestCopyIndex.getRegSlot();
@@ -378,7 +378,7 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
       findPHICopyInsertPoint(&opBlock, &MBB, SrcReg);
 
     // Insert the copy.
-    MachineInstr *NewSrcInstr = nullptr;
+    MachineInstr *NewSrcInstr = 0;
     if (!reusedIncoming && IncomingReg) {
       if (SrcUndef) {
         // The source register is undefined, so there is no need for a real
@@ -444,7 +444,7 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
           }
         } else {
           // We just inserted this copy.
-          KillInst = std::prev(InsertPos);
+          KillInst = prior(InsertPos);
         }
       }
       assert(KillInst->readsRegister(SrcReg) && "Cannot find kill instruction");
@@ -460,7 +460,7 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
     if (LIS) {
       if (NewSrcInstr) {
         LIS->InsertMachineInstrInMaps(NewSrcInstr);
-        LIS->addSegmentToEndOfBlock(IncomingReg, NewSrcInstr);
+        LIS->addLiveRangeToEndOfBlock(IncomingReg, NewSrcInstr);
       }
 
       if (!SrcUndef &&
@@ -504,15 +504,15 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
               }
             } else {
               // We just inserted this copy.
-              KillInst = std::prev(InsertPos);
+              KillInst = prior(InsertPos);
             }
           }
           assert(KillInst->readsRegister(SrcReg) &&
                  "Cannot find kill instruction");
 
           SlotIndex LastUseIndex = LIS->getInstructionIndex(KillInst);
-          SrcLI.removeSegment(LastUseIndex.getRegSlot(),
-                              LIS->getMBBEndIdx(&opBlock));
+          SrcLI.removeRange(LastUseIndex.getRegSlot(),
+                            LIS->getMBBEndIdx(&opBlock));
         }
       }
     }
@@ -532,14 +532,13 @@ void PHIElimination::LowerPHINode(MachineBasicBlock &MBB,
 /// used later to determine when the vreg is killed in the BB.
 ///
 void PHIElimination::analyzePHINodes(const MachineFunction& MF) {
-  for (const auto &MBB : MF)
-    for (const auto &BBI : MBB) {
-      if (!BBI.isPHI())
-        break;
-      for (unsigned i = 1, e = BBI.getNumOperands(); i != e; i += 2)
-        ++VRegPHIUseCount[BBVRegPair(BBI.getOperand(i+1).getMBB()->getNumber(),
-                                     BBI.getOperand(i).getReg())];
-    }
+  for (MachineFunction::const_iterator I = MF.begin(), E = MF.end();
+       I != E; ++I)
+    for (MachineBasicBlock::const_iterator BBI = I->begin(), BBE = I->end();
+         BBI != BBE && BBI->isPHI(); ++BBI)
+      for (unsigned i = 1, e = BBI->getNumOperands(); i != e; i += 2)
+        ++VRegPHIUseCount[BBVRegPair(BBI->getOperand(i+1).getMBB()->getNumber(),
+                                     BBI->getOperand(i).getReg())];
 }
 
 bool PHIElimination::SplitPHIEdges(MachineFunction &MF,
@@ -548,7 +547,7 @@ bool PHIElimination::SplitPHIEdges(MachineFunction &MF,
   if (MBB.empty() || !MBB.front().isPHI() || MBB.isLandingPad())
     return false;   // Quick exit for basic blocks without PHIs.
 
-  const MachineLoop *CurLoop = MLI ? MLI->getLoopFor(&MBB) : nullptr;
+  const MachineLoop *CurLoop = MLI ? MLI->getLoopFor(&MBB) : 0;
   bool IsLoopHeader = CurLoop && &MBB == CurLoop->getHeader();
 
   bool Changed = false;
@@ -565,7 +564,7 @@ bool PHIElimination::SplitPHIEdges(MachineFunction &MF,
       // out-of-line blocks into the loop which is very bad for code placement.
       if (PreMBB == &MBB && !SplitAllCriticalEdges)
         continue;
-      const MachineLoop *PreLoop = MLI ? MLI->getLoopFor(PreMBB) : nullptr;
+      const MachineLoop *PreLoop = MLI ? MLI->getLoopFor(PreMBB) : 0;
       if (IsLoopHeader && PreLoop == CurLoop && !SplitAllCriticalEdges)
         continue;
 
@@ -608,7 +607,7 @@ bool PHIElimination::SplitPHIEdges(MachineFunction &MF,
       if (!ShouldSplit)
         continue;
       if (!PreMBB->SplitCriticalEdge(&MBB, this)) {
-        DEBUG(dbgs() << "Failed to split critical edge.\n");
+        DEBUG(dbgs() << "Failed to split ciritcal edge.\n");
         continue;
       }
       Changed = true;

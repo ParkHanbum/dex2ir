@@ -16,24 +16,19 @@
 
 #include "llvm/ADT/StringRef.h"
 
-#if defined(__GNUC__) && defined(__linux__) && !defined(ANDROID)
-inline void *getDFSanArgTLSPtrForJIT() {
-  extern __thread __attribute__((tls_model("initial-exec")))
-    void *__dfsan_arg_tls;
-  return (void *)&__dfsan_arg_tls;
-}
-
-inline void *getDFSanRetValTLSPtrForJIT() {
-  extern __thread __attribute__((tls_model("initial-exec")))
-    void *__dfsan_retval_tls;
-  return (void *)&__dfsan_retval_tls;
-}
-#endif
-
 namespace llvm {
 
 class ModulePass;
 class FunctionPass;
+
+// Insert edge profiling instrumentation
+ModulePass *createEdgeProfilerPass();
+
+// Insert optimal edge profiling instrumentation
+ModulePass *createOptimalEdgeProfilerPass();
+
+// Insert path profiling instrumentation
+ModulePass *createPathProfilerPass();
 
 // Insert GCOV profiling instrumentation
 struct GCOVOptions {
@@ -78,19 +73,6 @@ FunctionPass *createMemorySanitizerPass(bool TrackOrigins = false,
 
 // Insert ThreadSanitizer (race detection) instrumentation
 FunctionPass *createThreadSanitizerPass(StringRef BlacklistFile = StringRef());
-
-// Insert DataFlowSanitizer (dynamic data flow analysis) instrumentation
-ModulePass *createDataFlowSanitizerPass(StringRef ABIListFile = StringRef(),
-                                        void *(*getArgTLS)() = 0,
-                                        void *(*getRetValTLS)() = 0);
-
-#if defined(__GNUC__) && defined(__linux__) && !defined(ANDROID)
-inline ModulePass *createDataFlowSanitizerPassForJIT(StringRef ABIListFile =
-                                                         StringRef()) {
-  return createDataFlowSanitizerPass(ABIListFile, getDFSanArgTLSPtrForJIT,
-                                     getDFSanRetValTLSPtrForJIT);
-}
-#endif
 
 // BoundsChecking - This pass instruments the code to perform run-time bounds
 // checking on loads, stores, and other memory intrinsics.

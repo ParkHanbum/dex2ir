@@ -14,15 +14,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "loop-delete"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ScalarEvolution.h"
-#include "llvm/IR/Dominators.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "loop-delete"
 
 STATISTIC(NumDeleted, "Number of loops deleted");
 
@@ -35,17 +34,17 @@ namespace {
     }
 
     // Possibly eliminate loop L if it is dead.
-    bool runOnLoop(Loop *L, LPPassManager &LPM) override;
+    bool runOnLoop(Loop *L, LPPassManager &LPM);
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<DominatorTreeWrapperPass>();
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.addRequired<DominatorTree>();
       AU.addRequired<LoopInfo>();
       AU.addRequired<ScalarEvolution>();
       AU.addRequiredID(LoopSimplifyID);
       AU.addRequiredID(LCSSAID);
 
       AU.addPreserved<ScalarEvolution>();
-      AU.addPreserved<DominatorTreeWrapperPass>();
+      AU.addPreserved<DominatorTree>();
       AU.addPreserved<LoopInfo>();
       AU.addPreservedID(LoopSimplifyID);
       AU.addPreservedID(LCSSAID);
@@ -62,7 +61,7 @@ namespace {
 char LoopDeletion::ID = 0;
 INITIALIZE_PASS_BEGIN(LoopDeletion, "loop-deletion",
                 "Delete dead loops", false, false)
-INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_DEPENDENCY(LoopInfo)
 INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
@@ -131,9 +130,6 @@ bool LoopDeletion::isLoopDead(Loop *L,
 /// NOTE: This entire process relies pretty heavily on LoopSimplify and LCSSA
 /// in order to make various safety checks work.
 bool LoopDeletion::runOnLoop(Loop *L, LPPassManager &LPM) {
-  if (skipOptnoneFunction(L))
-    return false;
-
   // We can only remove the loop if there is a preheader that we can
   // branch from after removing it.
   BasicBlock *preheader = L->getLoopPreheader();
@@ -206,7 +202,7 @@ bool LoopDeletion::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // Update the dominator tree and remove the instructions and blocks that will
   // be deleted from the reference counting scheme.
-  DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+  DominatorTree &DT = getAnalysis<DominatorTree>();
   SmallVector<DomTreeNode*, 8> ChildNodes;
   for (Loop::block_iterator LI = L->block_begin(), LE = L->block_end();
        LI != LE; ++LI) {

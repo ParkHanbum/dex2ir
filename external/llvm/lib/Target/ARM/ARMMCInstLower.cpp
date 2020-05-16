@@ -14,27 +14,25 @@
 
 #include "ARM.h"
 #include "ARMAsmPrinter.h"
-#include "MCTargetDesc/ARMBaseInfo.h"
 #include "MCTargetDesc/ARMMCExpr.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Mangler.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/Target/Mangler.h"
 using namespace llvm;
 
 
 MCOperand ARMAsmPrinter::GetSymbolRef(const MachineOperand &MO,
                                       const MCSymbol *Symbol) {
   const MCExpr *Expr;
-  unsigned Option = MO.getTargetFlags() & ARMII::MO_OPTION_MASK;
-  switch (Option) {
+  switch (MO.getTargetFlags()) {
   default: {
     Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_None,
                                    OutContext);
-    switch (Option) {
+    switch (MO.getTargetFlags()) {
     default: llvm_unreachable("Unknown target flag on symbol operand");
-    case ARMII::MO_NO_FLAG:
+    case 0:
       break;
     case ARMII::MO_LO16:
       Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_None,
@@ -51,7 +49,7 @@ MCOperand ARMAsmPrinter::GetSymbolRef(const MachineOperand &MO,
   }
 
   case ARMII::MO_PLT:
-    Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_PLT,
+    Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_ARM_PLT,
                                    OutContext);
     break;
   }
@@ -83,11 +81,9 @@ bool ARMAsmPrinter::lowerOperand(const MachineOperand &MO,
     MCOp = MCOperand::CreateExpr(MCSymbolRefExpr::Create(
         MO.getMBB()->getSymbol(), OutContext));
     break;
-  case MachineOperand::MO_GlobalAddress: {
-    MCOp = GetSymbolRef(MO,
-                        GetARMGVSymbol(MO.getGlobal(), MO.getTargetFlags()));
+  case MachineOperand::MO_GlobalAddress:
+    MCOp = GetSymbolRef(MO, Mang->getSymbol(MO.getGlobal()));
     break;
-  }
   case MachineOperand::MO_ExternalSymbol:
    MCOp = GetSymbolRef(MO,
                         GetExternalSymbolSymbol(MO.getSymbolName()));

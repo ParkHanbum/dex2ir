@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=thumb-eabi %s -o /dev/null
+; RUN: llc < %s -march=thumb
 
 define float @f1(double %x) {
 entry:

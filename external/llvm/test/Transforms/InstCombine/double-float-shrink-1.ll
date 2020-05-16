@@ -157,10 +157,7 @@ define float @exp10_test(float %f) nounwind readnone {
    %call = call double @exp10(double %conv)
    %conv1 = fptrunc double %call to float
    ret float %conv1
-; FIXME: Re-enable this when Linux allows transforming this again, or when we
-; can use builtin attributes to test the transform regardless of OS.
-; DISABLED-CHECK: call float @exp10f(float %f)
-; CHECK: call double @exp10(double %conv)
+; CHECK: call float @exp10f(float %f)
 }
 
 define double @exp10_test2(float %f) nounwind readnone {
@@ -266,7 +263,6 @@ define double @sin_test2(float %f) nounwind readnone {
    ret double %call
 ; CHECK: call double @sin(double %conv)
 }
-
 define float @sqrt_test(float %f) nounwind readnone {
 ; CHECK: sqrt_test
    %conv = fpext float %f to double
@@ -274,15 +270,6 @@ define float @sqrt_test(float %f) nounwind readnone {
    %conv1 = fptrunc double %call to float
    ret float %conv1
 ; CHECK: call float @sqrtf(float %f)
-}
-
-define float @sqrt_int_test(float %f) nounwind readnone {
-; CHECK: sqrt_int_test
-   %conv = fpext float %f to double
-   %call = call double @llvm.sqrt.f64(double %conv)
-   %conv1 = fptrunc double %call to float
-   ret float %conv1
-; CHECK: call float @llvm.sqrt.f32(float %f)
 }
 
 define double @sqrt_test2(float %f) nounwind readnone {
@@ -344,6 +331,3 @@ declare double @acos(double) nounwind readnone
 declare double @acosh(double) nounwind readnone
 declare double @asin(double) nounwind readnone
 declare double @asinh(double) nounwind readnone
-
-declare double @llvm.sqrt.f64(double) nounwind readnone
-

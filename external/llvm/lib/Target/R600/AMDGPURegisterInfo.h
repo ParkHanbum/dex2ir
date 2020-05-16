@@ -25,36 +25,36 @@
 
 namespace llvm {
 
-class AMDGPUSubtarget;
+class AMDGPUTargetMachine;
 class TargetInstrInfo;
 
 struct AMDGPURegisterInfo : public AMDGPUGenRegisterInfo {
-  static const MCPhysReg CalleeSavedReg;
-  const AMDGPUSubtarget &ST;
+  TargetMachine &TM;
+  static const uint16_t CalleeSavedReg;
 
-  AMDGPURegisterInfo(const AMDGPUSubtarget &st);
+  AMDGPURegisterInfo(TargetMachine &tm);
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override {
+  virtual BitVector getReservedRegs(const MachineFunction &MF) const {
     assert(!"Unimplemented");  return BitVector();
   }
 
+  /// \param RC is an AMDIL reg class.
+  ///
+  /// \returns The ISA reg class that is equivalent to \p RC.
+  virtual const TargetRegisterClass * getISARegClass(
+                                         const TargetRegisterClass * RC) const {
+    assert(!"Unimplemented"); return NULL;
+  }
+
   virtual const TargetRegisterClass* getCFGStructurizerRegClass(MVT VT) const {
-    assert(!"Unimplemented"); return nullptr;
+    assert(!"Unimplemented"); return NULL;
   }
 
-  virtual unsigned getHWRegIndex(unsigned Reg) const {
-    assert(!"Unimplemented"); return 0;
-  }
-
-  /// \returns the sub reg enum value for the given \p Channel
-  /// (e.g. getSubRegFromChannel(0) -> AMDGPU::sub0)
-  unsigned getSubRegFromChannel(unsigned Channel) const;
-
-  const MCPhysReg* getCalleeSavedRegs(const MachineFunction *MF) const override;
+  const uint16_t* getCalleeSavedRegs(const MachineFunction *MF) const;
   void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
                            unsigned FIOperandNum,
-                           RegScavenger *RS) const override;
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+                           RegScavenger *RS) const;
+  unsigned getFrameRegister(const MachineFunction &MF) const;
 
   unsigned getIndirectSubReg(unsigned IndirectIndex) const;
 

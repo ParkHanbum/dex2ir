@@ -234,19 +234,19 @@ TEST(TypeBuilderTest, Extensions) {
                                      TypeBuilder<int, false>::get(getGlobalContext()),
                                      TypeBuilder<int*, false>::get(getGlobalContext()),
                                      TypeBuilder<void*[], false>::get(getGlobalContext()),
-                                     (void*)nullptr)),
+                                     (void*)0)),
             (TypeBuilder<MyType*, false>::get(getGlobalContext())));
   EXPECT_EQ(PointerType::getUnqual(StructType::get(
                                      TypeBuilder<types::i<32>, false>::get(getGlobalContext()),
                                      TypeBuilder<types::i<32>*, false>::get(getGlobalContext()),
                                      TypeBuilder<types::i<8>*[], false>::get(getGlobalContext()),
-                                     (void*)nullptr)),
+                                     (void*)0)),
             (TypeBuilder<MyPortableType*, false>::get(getGlobalContext())));
   EXPECT_EQ(PointerType::getUnqual(StructType::get(
                                      TypeBuilder<types::i<32>, false>::get(getGlobalContext()),
                                      TypeBuilder<types::i<32>*, false>::get(getGlobalContext()),
                                      TypeBuilder<types::i<8>*[], false>::get(getGlobalContext()),
-                                     (void*)nullptr)),
+                                     (void*)0)),
             (TypeBuilder<MyPortableType*, true>::get(getGlobalContext())));
 }
 

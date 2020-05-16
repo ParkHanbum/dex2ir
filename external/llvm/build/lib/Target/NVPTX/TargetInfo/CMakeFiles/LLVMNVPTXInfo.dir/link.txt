@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMNVPTXInfo.a  CMakeFiles/LLVMNVPTXInfo.dir/NVPTXTargetInfo.cpp.o
+/usr/bin/ranlib ../../../libLLVMNVPTXInfo.a

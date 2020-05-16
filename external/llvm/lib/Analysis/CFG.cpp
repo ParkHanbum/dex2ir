@@ -13,9 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/CFG.h"
+
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/Dominators.h"
 
 using namespace llvm;
 
@@ -101,15 +102,21 @@ bool llvm::isCriticalEdge(const TerminatorInst *TI, unsigned SuccNum,
 
   // If AllowIdenticalEdges is true, then we allow this edge to be considered
   // non-critical iff all preds come from TI's block.
-  for (; I != E; ++I)
-    if (*I != FirstPred)
+  while (I != E) {
+    const BasicBlock *P = *I;
+    if (P != FirstPred)
       return true;
+    // Note: leave this as is until no one ever compiles with either gcc 4.0.1
+    // or Xcode 2. This seems to work around the pred_iterator assert in PR 2207
+    E = pred_end(P);
+    ++I;
+  }
   return false;
 }
 
 // LoopInfo contains a mapping from basic block to the innermost loop. Find
 // the outermost loop in the loop nest that contains BB.
-static const Loop *getOutermostLoop(const LoopInfo *LI, const BasicBlock *BB) {
+static const Loop *getOutermostLoop(LoopInfo *LI, const BasicBlock *BB) {
   const Loop *L = LI->getLoopFor(BB);
   if (L) {
     while (const Loop *Parent = L->getParentLoop())
@@ -119,26 +126,73 @@ static const Loop *getOutermostLoop(const LoopInfo *LI, const BasicBlock *BB) {
 }
 
 // True if there is a loop which contains both BB1 and BB2.
-static bool loopContainsBoth(const LoopInfo *LI,
+static bool loopContainsBoth(LoopInfo *LI,
                              const BasicBlock *BB1, const BasicBlock *BB2) {
   const Loop *L1 = getOutermostLoop(LI, BB1);
   const Loop *L2 = getOutermostLoop(LI, BB2);
-  return L1 != nullptr && L1 == L2;
+  return L1 != NULL && L1 == L2;
 }
 
-static bool isPotentiallyReachableInner(SmallVectorImpl<BasicBlock *> &Worklist,
-                                        BasicBlock *StopBB,
-                                        const DominatorTree *DT,
-                                        const LoopInfo *LI) {
+static bool isPotentiallyReachableSameBlock(const Instruction *A,
+                                            const Instruction *B,
+                                            LoopInfo *LI) {
+  // The same block case is special because it's the only time we're looking
+  // within a single block to see which comes first. Once we start looking at
+  // multiple blocks, the first instruction of the block is reachable, so we
+  // only need to determine reachability between whole blocks.
+
+  const BasicBlock *BB = A->getParent();
+  // If the block is in a loop then we can reach any instruction in the block
+  // from any other instruction in the block by going around the backedge.
+  // Check whether we're in a loop (or aren't sure).
+
+  // Can't be in a loop if it's the entry block -- the entry block may not
+  // have predecessors.
+  bool HasLoop = BB != &BB->getParent()->getEntryBlock();
+
+  // Can't be in a loop if LoopInfo doesn't know about it.
+  if (LI && HasLoop) {
+    HasLoop = LI->getLoopFor(BB) != 0;
+  }
+  if (HasLoop)
+    return true;
+
+  // Linear scan, start at 'A', see whether we hit 'B' or the end first.
+  for (BasicBlock::const_iterator I = A, E = BB->end(); I != E; ++I) {
+    if (&*I == B)
+      return true;
+  }
+  return false;
+}
+
+bool llvm::isPotentiallyReachable(const Instruction *A, const Instruction *B,
+                                  DominatorTree *DT, LoopInfo *LI) {
+  assert(A->getParent()->getParent() == B->getParent()->getParent() &&
+         "This analysis is function-local!");
+
+  const BasicBlock *StopBB = B->getParent();
+
+  if (A->getParent() == B->getParent())
+    return isPotentiallyReachableSameBlock(A, B, LI);
+
+  if (A->getParent() == &A->getParent()->getParent()->getEntryBlock())
+    return true;
+  if (B->getParent() == &A->getParent()->getParent()->getEntryBlock())
+    return false;
+
   // When the stop block is unreachable, it's dominated from everywhere,
   // regardless of whether there's a path between the two blocks.
   if (DT && !DT->isReachableFromEntry(StopBB))
-    DT = nullptr;
+    DT = 0;
 
   // Limit the number of blocks we visit. The goal is to avoid run-away compile
   // times on large CFGs without hampering sensible code. Arbitrarily chosen.
   unsigned Limit = 32;
+
   SmallSet<const BasicBlock*, 64> Visited;
+  SmallVector<BasicBlock*, 32> Worklist;
+  Worklist.push_back(const_cast<BasicBlock*>(A->getParent()));
+
   do {
     BasicBlock *BB = Worklist.pop_back_val();
     if (!Visited.insert(BB))
@@ -156,81 +210,18 @@ static bool isPotentiallyReachableInner(SmallVectorImpl<BasicBlock *> &Worklist,
       return true;
     }
 
-    if (const Loop *Outer = LI ? getOutermostLoop(LI, BB) : nullptr) {
+    if (const Loop *Outer = LI ? getOutermostLoop(LI, BB) : 0) {
       // All blocks in a single loop are reachable from all other blocks. From
       // any of these blocks, we can skip directly to the exits of the loop,
       // ignoring any other blocks inside the loop body.
       Outer->getExitBlocks(Worklist);
     } else {
-      Worklist.append(succ_begin(BB), succ_end(BB));
+      for (succ_iterator I = succ_begin(BB), E = succ_end(BB); I != E; ++I)
+        Worklist.push_back(*I);
     }
   } while (!Worklist.empty());
 
-  // We have exhausted all possible paths and are certain that 'To' can not be
-  // reached from 'From'.
+  // We have exhaustived all possible paths and are certain that 'To' can not
+  // be reached from 'From'.
   return false;
-}
-
-bool llvm::isPotentiallyReachable(const BasicBlock *A, const BasicBlock *B,
-                                  const DominatorTree *DT, const LoopInfo *LI) {
-  assert(A->getParent() == B->getParent() &&
-         "This analysis is function-local!");
-
-  SmallVector<BasicBlock*, 32> Worklist;
-  Worklist.push_back(const_cast<BasicBlock*>(A));
-
-  return isPotentiallyReachableInner(Worklist, const_cast<BasicBlock*>(B),
-                                     DT, LI);
-}
-
-bool llvm::isPotentiallyReachable(const Instruction *A, const Instruction *B,
-                                  const DominatorTree *DT, const LoopInfo *LI) {
-  assert(A->getParent()->getParent() == B->getParent()->getParent() &&
-         "This analysis is function-local!");
-
-  SmallVector<BasicBlock*, 32> Worklist;
-
-  if (A->getParent() == B->getParent()) {
-    // The same block case is special because it's the only time we're looking
-    // within a single block to see which instruction comes first. Once we
-    // start looking at multiple blocks, the first instruction of the block is
-    // reachable, so we only need to determine reachability between whole
-    // blocks.
-    BasicBlock *BB = const_cast<BasicBlock *>(A->getParent());
-
-    // If the block is in a loop then we can reach any instruction in the block
-    // from any other instruction in the block by going around a backedge.
-    if (LI && LI->getLoopFor(BB) != nullptr)
-      return true;
-
-    // Linear scan, start at 'A', see whether we hit 'B' or the end first.
-    for (BasicBlock::const_iterator I = A, E = BB->end(); I != E; ++I) {
-      if (&*I == B)
-        return true;
-    }
-
-    // Can't be in a loop if it's the entry block -- the entry block may not
-    // have predecessors.
-    if (BB == &BB->getParent()->getEntryBlock())
-      return false;
-
-    // Otherwise, continue doing the normal per-BB CFG walk.
-    Worklist.append(succ_begin(BB), succ_end(BB));
-
-    if (Worklist.empty()) {
-      // We've proven that there's no path!
-      return false;
-    }
-  } else {
-    Worklist.push_back(const_cast<BasicBlock*>(A->getParent()));
-  }
-
-  if (A->getParent() == &A->getParent()->getParent()->getEntryBlock())
-    return true;
-  if (B->getParent() == &A->getParent()->getParent()->getEntryBlock())
-    return false;
-
-  return isPotentiallyReachableInner(Worklist,
-                                     const_cast<BasicBlock*>(B->getParent()),
-                                     DT, LI);
 }

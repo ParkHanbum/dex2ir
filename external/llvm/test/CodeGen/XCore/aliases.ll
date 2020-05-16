@@ -1,9 +1,7 @@
 ; RUN: llc < %s -march=xcore | FileCheck %s
-define void @a_val() nounwind {
-  ret void
-}
-@b_val = constant i32 42, section ".cp.rodata"
-@c_val = global i32 42
+declare void @a_val() nounwind
+@b_val = external constant i32, section ".cp.rodata"
+@c_val = external global i32
 
 @a = alias void ()* @a_val
 @b = alias i32* @b_val

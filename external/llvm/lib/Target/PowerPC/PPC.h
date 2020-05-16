@@ -23,7 +23,6 @@
 
 namespace llvm {
   class PPCTargetMachine;
-  class PassRegistry;
   class FunctionPass;
   class ImmutablePass;
   class JITCodeEmitter;
@@ -36,9 +35,6 @@ namespace llvm {
   FunctionPass *createPPCCTRLoopsVerify();
 #endif
   FunctionPass *createPPCEarlyReturnPass();
-  FunctionPass *createPPCVSXCopyPass();
-  FunctionPass *createPPCVSXCopyCleanupPass();
-  FunctionPass *createPPCVSXFMAMutatePass();
   FunctionPass *createPPCBranchSelectionPass();
   FunctionPass *createPPCISelDag(PPCTargetMachine &TM);
   FunctionPass *createPPCJITCodeEmitterPass(PPCTargetMachine &TM,
@@ -48,9 +44,6 @@ namespace llvm {
 
   /// \brief Creates an PPC-specific Target Transformation Info pass.
   ImmutablePass *createPPCTargetTransformInfoPass(const PPCTargetMachine *TM);
-
-  void initializePPCVSXFMAMutatePass(PassRegistry&);
-  extern char &PPCVSXFMAMutateID;
 
   namespace PPCII {
     

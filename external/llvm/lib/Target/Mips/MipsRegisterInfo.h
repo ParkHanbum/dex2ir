@@ -42,32 +42,32 @@ public:
   void adjustMipsStackFrame(MachineFunction &MF) const;
 
   /// Code Generation virtual methods...
-  const TargetRegisterClass *getPointerRegClass(const MachineFunction &MF,
-                                                unsigned Kind) const override;
-
   unsigned getRegPressureLimit(const TargetRegisterClass *RC,
-                               MachineFunction &MF) const override;
-  const MCPhysReg *
-  getCalleeSavedRegs(const MachineFunction *MF = nullptr) const override;
-  const uint32_t *getCallPreservedMask(CallingConv::ID) const override;
+                               MachineFunction &MF) const;
+  const uint16_t *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
+  const uint32_t *getCallPreservedMask(CallingConv::ID) const;
   static const uint32_t *getMips16RetHelperMask();
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
+  BitVector getReservedRegs(const MachineFunction &MF) const;
 
-  bool requiresRegisterScavenging(const MachineFunction &MF) const override;
+  virtual bool requiresRegisterScavenging(const MachineFunction &MF) const;
 
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override;
+  virtual bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const;
 
   /// Stack Frame Processing Methods
   void eliminateFrameIndex(MachineBasicBlock::iterator II,
                            int SPAdj, unsigned FIOperandNum,
-                           RegScavenger *RS = nullptr) const override;
+                           RegScavenger *RS = NULL) const;
 
   void processFunctionBeforeFrameFinalized(MachineFunction &MF,
-                                       RegScavenger *RS = nullptr) const;
+                                       RegScavenger *RS = NULL) const;
 
   /// Debug information queries.
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  unsigned getFrameRegister(const MachineFunction &MF) const;
+
+  /// Exception handling queries.
+  unsigned getEHExceptionRegister() const;
+  unsigned getEHHandlerRegister() const;
 
   /// \brief Return GPR register class.
   virtual const TargetRegisterClass *intRegClass(unsigned Size) const = 0;

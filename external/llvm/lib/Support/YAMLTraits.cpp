@@ -7,7 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/Errc.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Casting.h"
@@ -15,7 +14,6 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cctype>
 #include <cstring>
 using namespace llvm;
 using namespace yaml;
@@ -42,27 +40,24 @@ void IO::setContext(void *Context) {
 //  Input
 //===----------------------------------------------------------------------===//
 
-Input::Input(StringRef InputContent,
-             void *Ctxt,
-             SourceMgr::DiagHandlerTy DiagHandler,
-             void *DiagHandlerCtxt)
-  : IO(Ctxt),
+Input::Input(StringRef InputContent, void *Ctxt) 
+  : IO(Ctxt), 
     Strm(new Stream(InputContent, SrcMgr)),
-    CurrentNode(nullptr) {
-  if (DiagHandler)
-    SrcMgr.setDiagHandler(DiagHandler, DiagHandlerCtxt);
+    CurrentNode(NULL) {
   DocIterator = Strm->begin();
 }
 
 Input::~Input() {
+  
 }
 
-std::error_code Input::error() { return EC; }
+error_code Input::error() {
+  return EC;
+}
 
-// Pin the vtables to this file.
-void Input::HNode::anchor() {}
-void Input::EmptyHNode::anchor() {}
-void Input::ScalarHNode::anchor() {}
+void Input::setDiagHandler(SourceMgr::DiagHandlerTy Handler, void *Ctxt) {
+  SrcMgr.setDiagHandler(Handler, Ctxt);
+}
 
 bool Input::outputting() {
   return false;
@@ -71,12 +66,6 @@ bool Input::outputting() {
 bool Input::setCurrentDocument() {
   if (DocIterator != Strm->end()) {
     Node *N = DocIterator->getRoot();
-    if (!N) {
-      assert(Strm->failed() && "Root is NULL iff parsing failed");
-      EC = make_error_code(errc::invalid_argument);
-      return false;
-    }
-
     if (isa<NullNode>(N)) {
       // Empty files are allowed and ignored
       ++DocIterator;
@@ -89,25 +78,14 @@ bool Input::setCurrentDocument() {
   return false;
 }
 
-bool Input::nextDocument() {
-  return ++DocIterator != Strm->end();
-}
-
-bool Input::mapTag(StringRef Tag, bool Default) {
-  std::string foundTag = CurrentNode->_node->getVerbatimTag();
-  if (foundTag.empty()) {
-    // If no tag found and 'Tag' is the default, say it was found.
-    return Default;
-  }
-  // Return true iff found tag matches supplied tag.
-  return Tag.equals(foundTag);
+void Input::nextDocument() {
+  ++DocIterator;
 }
 
 void Input::beginMapping() {
   if (EC)
     return;
-  // CurrentNode can be null if the document is empty.
-  MapHNode *MN = dyn_cast_or_null<MapHNode>(CurrentNode);
+  MapHNode *MN = dyn_cast<MapHNode>(CurrentNode);
   if (MN) {
     MN->ValidKeys.clear();
   }
@@ -118,15 +96,6 @@ bool Input::preflightKey(const char *Key, bool Required, bool, bool &UseDefault,
   UseDefault = false;
   if (EC)
     return false;
-
-  // CurrentNode is null for empty documents, which is an error in case required
-  // nodes are present.
-  if (!CurrentNode) {
-    if (Required)
-      EC = make_error_code(errc::invalid_argument);
-    return false;
-  }
-
   MapHNode *MN = dyn_cast<MapHNode>(CurrentNode);
   if (!MN) {
     setError(CurrentNode, "not a mapping");
@@ -153,13 +122,13 @@ void Input::postflightKey(void *saveInfo) {
 void Input::endMapping() {
   if (EC)
     return;
-  // CurrentNode can be null if the document is empty.
-  MapHNode *MN = dyn_cast_or_null<MapHNode>(CurrentNode);
+  MapHNode *MN = dyn_cast<MapHNode>(CurrentNode);
   if (!MN)
     return;
-  for (const auto &NN : MN->Mapping) {
-    if (!MN->isValidKey(NN.first())) {
-      setError(NN.second, Twine("unknown key '") + NN.first() + "'");
+  for (MapHNode::NameToNode::iterator i = MN->Mapping.begin(),
+       End = MN->Mapping.end(); i != End; ++i) {
+    if (!MN->isValidKey(i->first())) {
+      setError(i->second, Twine("unknown key '") + i->first() + "'");
       break;
     }
   }
@@ -253,8 +222,9 @@ bool Input::bitSetMatch(const char *Str, bool) {
     return false;
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     unsigned Index = 0;
-    for (HNode *N : SQ->Entries) {
-      if (ScalarHNode *SN = dyn_cast<ScalarHNode>(N)) {
+    for (std::vector<HNode *>::iterator i = SQ->Entries.begin(),
+         End = SQ->Entries.end(); i != End; ++i) {
+      if (ScalarHNode *SN = dyn_cast<ScalarHNode>(*i)) {
         if (SN->value().equals(Str)) {
           BitValuesUsed[Index] = true;
           return true;
@@ -284,7 +254,7 @@ void Input::endBitSetScalar() {
   }
 }
 
-void Input::scalarString(StringRef &S, bool) {
+void Input::scalarString(StringRef &S) {
   if (ScalarHNode *SN = dyn_cast<ScalarHNode>(CurrentNode)) {
     S = SN->value();
   } else {
@@ -293,7 +263,6 @@ void Input::scalarString(StringRef &S, bool) {
 }
 
 void Input::setError(HNode *hnode, const Twine &message) {
-  assert(hnode && "HNode must not be NULL");
   this->setError(hnode->_node, message);
 }
 
@@ -316,8 +285,9 @@ Input::HNode *Input::createHNodes(Node *N) {
     return new ScalarHNode(N, KeyStr);
   } else if (SequenceNode *SQ = dyn_cast<SequenceNode>(N)) {
     SequenceHNode *SQHNode = new SequenceHNode(N);
-    for (Node &SN : *SQ) {
-      HNode *Entry = this->createHNodes(&SN);
+    for (SequenceNode::iterator i = SQ->begin(), End = SQ->end(); i != End;
+         ++i) {
+      HNode *Entry = this->createHNodes(i);
       if (EC)
         break;
       SQHNode->Entries.push_back(Entry);
@@ -325,8 +295,9 @@ Input::HNode *Input::createHNodes(Node *N) {
     return SQHNode;
   } else if (MappingNode *Map = dyn_cast<MappingNode>(N)) {
     MapHNode *mapHNode = new MapHNode(N);
-    for (KeyValueNode &KVN : *Map) {
-      ScalarNode *KeyScalar = dyn_cast<ScalarNode>(KVN.getKey());
+    for (MappingNode::iterator i = Map->begin(), End = Map->end(); i != End;
+         ++i) {
+      ScalarNode *KeyScalar = dyn_cast<ScalarNode>(i->getKey());
       StringStorage.clear();
       StringRef KeyStr = KeyScalar->getValue(StringStorage);
       if (!StringStorage.empty()) {
@@ -336,7 +307,7 @@ Input::HNode *Input::createHNodes(Node *N) {
         memcpy(Buf, &StringStorage[0], Len);
         KeyStr = StringRef(Buf, Len);
       }
-      HNode *ValueHNode = this->createHNodes(KVN.getValue());
+      HNode *ValueHNode = this->createHNodes(i->getValue());
       if (EC)
         break;
       mapHNode->Mapping[KeyStr] = ValueHNode;
@@ -346,13 +317,14 @@ Input::HNode *Input::createHNodes(Node *N) {
     return new EmptyHNode(N);
   } else {
     setError(N, "unknown node kind");
-    return nullptr;
+    return NULL;
   }
 }
 
 bool Input::MapHNode::isValidKey(StringRef Key) {
-  for (const char *K : ValidKeys) {
-    if (Key.equals(K))
+  for (SmallVectorImpl<const char *>::iterator i = ValidKeys.begin(),
+       End = ValidKeys.end(); i != End; ++i) {
+    if (Key.equals(*i))
       return true;
   }
   return false;
@@ -362,18 +334,18 @@ void Input::setError(const Twine &Message) {
   this->setError(CurrentNode, Message);
 }
 
-bool Input::canElideEmptySequence() {
-  return false;
-}
-
 Input::MapHNode::~MapHNode() {
-  for (auto &N : Mapping)
-    delete N.second;
+  for (MapHNode::NameToNode::iterator i = Mapping.begin(), End = Mapping.end();
+                                                                i != End; ++i) {
+    delete i->second;
+  }
 }
 
 Input::SequenceHNode::~SequenceHNode() {
-  for (HNode *N : Entries)
-    delete N;
+  for (std::vector<HNode*>::iterator i = Entries.begin(), End = Entries.end();
+                                                                i != End; ++i) {
+    delete *i;
+  }
 }
 
 
@@ -403,14 +375,6 @@ bool Output::outputting() {
 void Output::beginMapping() {
   StateStack.push_back(inMapFirstKey);
   NeedsNewLine = true;
-}
-
-bool Output::mapTag(StringRef Tag, bool Use) {
-  if (Use) {
-    this->output(" ");
-    this->output(Tag);
-  }
-  return Use;
 }
 
 void Output::endMapping() {
@@ -540,16 +504,10 @@ void Output::endBitSetScalar() {
   this->outputUpToEndOfLine(" ]");
 }
 
-void Output::scalarString(StringRef &S, bool MustQuote) {
+void Output::scalarString(StringRef &S) {
   this->newLineCheck();
-  if (S.empty()) {
-    // Print '' for the empty string because leaving the field empty is not
-    // allowed.
-    this->outputUpToEndOfLine("''");
-    return;
-  }
-  if (!MustQuote) {
-    // Only quote if we must.
+  if (S.find('\n') == StringRef::npos) {
+    // No embedded new-line chars, just print string.
     this->outputUpToEndOfLine(S);
     return;
   }
@@ -572,19 +530,6 @@ void Output::scalarString(StringRef &S, bool MustQuote) {
 }
 
 void Output::setError(const Twine &message) {
-}
-
-bool Output::canElideEmptySequence() {
-  // Normally, with an optional key/value where the value is an empty sequence,
-  // the whole key/value can be not written.  But, that produces wrong yaml
-  // if the key/value is the only thing in the map and the map is used in
-  // a sequence.  This detects if the this sequence is the first key/value
-  // in map that itself is embedded in a sequnce.
-  if (StateStack.size() < 2)
-    return true;
-  if (StateStack.back() != inMapFirstKey)
-    return true;
-  return (StateStack[StateStack.size()-2] != inSeq);
 }
 
 void Output::output(StringRef s) {
@@ -672,17 +617,6 @@ void ScalarTraits<StringRef>::output(const StringRef &Val, void *,
 StringRef ScalarTraits<StringRef>::input(StringRef Scalar, void *,
                                          StringRef &Val) {
   Val = Scalar;
-  return StringRef();
-}
- 
-void ScalarTraits<std::string>::output(const std::string &Val, void *,
-                                     raw_ostream &Out) {
-  Out << Val;
-}
-
-StringRef ScalarTraits<std::string>::input(StringRef Scalar, void *,
-                                         std::string &Val) {
-  Val = Scalar.str();
   return StringRef();
 }
 

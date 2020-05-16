@@ -14,7 +14,7 @@ x86_instprinter_SRC_FILES := \
 
 # For the device
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
+ifeq ($(TARGET_ARCH),x86)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 

@@ -1,6 +1,6 @@
-; Test conversions of unsigned i64s to floating-point values (z10 only).
+; Test conversions of unsigned i64s to floating-point values.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 ; Test i64->f32.  There's no native support for unsigned i64-to-fp conversions,
 ; but we should be able to implement them using signed i64-to-fp conversions.

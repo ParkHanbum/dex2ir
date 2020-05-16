@@ -9,102 +9,45 @@
 
 class Proc<string Name, ProcessorItineraries itin, list<SubtargetFeature> Features>
 : Processor<Name, itin, Features>;
-
-//===----------------------------------------------------------------------===//
-// R600
-//===----------------------------------------------------------------------===//
 def : Proc<"",           R600_VLIW5_Itin,
     [FeatureR600, FeatureVertexCache]>;
-
 def : Proc<"r600",       R600_VLIW5_Itin,
-    [FeatureR600 , FeatureVertexCache, FeatureWavefrontSize64]>;
-
-def : Proc<"r630",       R600_VLIW5_Itin,
-    [FeatureR600, FeatureVertexCache, FeatureWavefrontSize32]>;
-
+    [FeatureR600 , FeatureVertexCache]>;
 def : Proc<"rs880",      R600_VLIW5_Itin,
-    [FeatureR600, FeatureWavefrontSize16]>;
-
+    [FeatureR600]>;
 def : Proc<"rv670",      R600_VLIW5_Itin,
-    [FeatureR600, FeatureFP64, FeatureVertexCache, FeatureWavefrontSize64]>;
-
-//===----------------------------------------------------------------------===//
-// R700
-//===----------------------------------------------------------------------===//
-
+    [FeatureR600, FeatureFP64, FeatureVertexCache]>;
 def : Proc<"rv710",      R600_VLIW5_Itin,
-    [FeatureR700, FeatureVertexCache, FeatureWavefrontSize32]>;
-
+    [FeatureR700, FeatureVertexCache]>;
 def : Proc<"rv730",      R600_VLIW5_Itin,
-    [FeatureR700, FeatureVertexCache, FeatureWavefrontSize32]>;
-
+    [FeatureR700, FeatureVertexCache]>;
 def : Proc<"rv770",      R600_VLIW5_Itin,
-    [FeatureR700, FeatureFP64, FeatureVertexCache, FeatureWavefrontSize64]>;
-
-//===----------------------------------------------------------------------===//
-// Evergreen
-//===----------------------------------------------------------------------===//
-
+    [FeatureR700, FeatureFP64, FeatureVertexCache]>;
 def : Proc<"cedar",      R600_VLIW5_Itin,
-    [FeatureEvergreen, FeatureVertexCache, FeatureWavefrontSize32,
-     FeatureCFALUBug]>;
-
+    [FeatureEvergreen, FeatureVertexCache]>;
 def : Proc<"redwood",    R600_VLIW5_Itin,
-    [FeatureEvergreen, FeatureVertexCache, FeatureWavefrontSize64,
-     FeatureCFALUBug]>;
-
+    [FeatureEvergreen, FeatureVertexCache]>;
 def : Proc<"sumo",       R600_VLIW5_Itin,
-    [FeatureEvergreen, FeatureWavefrontSize64, FeatureCFALUBug]>;
-
+    [FeatureEvergreen]>;
 def : Proc<"juniper",    R600_VLIW5_Itin,
-    [FeatureEvergreen, FeatureVertexCache, FeatureWavefrontSize64]>;
-
+    [FeatureEvergreen, FeatureVertexCache]>;
 def : Proc<"cypress",    R600_VLIW5_Itin,
-    [FeatureEvergreen, FeatureFP64, FeatureVertexCache,
-     FeatureWavefrontSize64]>;
-
-//===----------------------------------------------------------------------===//
-// Northern Islands
-//===----------------------------------------------------------------------===//
-
+    [FeatureEvergreen, FeatureFP64, FeatureVertexCache]>;
 def : Proc<"barts",      R600_VLIW5_Itin,
-    [FeatureNorthernIslands, FeatureVertexCache, FeatureCFALUBug]>;
-
+    [FeatureNorthernIslands, FeatureVertexCache]>;
 def : Proc<"turks",      R600_VLIW5_Itin,
-    [FeatureNorthernIslands, FeatureVertexCache, FeatureCFALUBug]>;
-
+    [FeatureNorthernIslands, FeatureVertexCache]>;
 def : Proc<"caicos",     R600_VLIW5_Itin,
-    [FeatureNorthernIslands, FeatureCFALUBug]>;
-
+    [FeatureNorthernIslands]>;
 def : Proc<"cayman",     R600_VLIW4_Itin,
     [FeatureNorthernIslands, FeatureFP64, FeatureCaymanISA]>;
 
-//===----------------------------------------------------------------------===//
-// Southern Islands
-//===----------------------------------------------------------------------===//
-
 def : Proc<"SI",         SI_Itin, [FeatureSouthernIslands]>;
-
 def : Proc<"tahiti",     SI_Itin, [FeatureSouthernIslands]>;
-
 def : Proc<"pitcairn",   SI_Itin, [FeatureSouthernIslands]>;
-
 def : Proc<"verde",      SI_Itin, [FeatureSouthernIslands]>;
-
 def : Proc<"oland",      SI_Itin, [FeatureSouthernIslands]>;
-
 def : Proc<"hainan",     SI_Itin, [FeatureSouthernIslands]>;
-
-//===----------------------------------------------------------------------===//
-// Sea Islands
-//===----------------------------------------------------------------------===//
-
-def : Proc<"bonaire",    SI_Itin, [FeatureSeaIslands]>;
-
-def : Proc<"kabini",     SI_Itin, [FeatureSeaIslands]>;
-
-def : Proc<"kaveri",     SI_Itin, [FeatureSeaIslands]>;
-
-def : Proc<"hawaii",     SI_Itin, [FeatureSeaIslands]>;
-
-def : Proc<"mullins",    SI_Itin, [FeatureSeaIslands]>;
+def : Proc<"bonaire",    SI_Itin, [FeatureSouthernIslands]>;
+def : Proc<"kabini",     SI_Itin, [FeatureSouthernIslands]>;
+def : Proc<"kaveri",     SI_Itin, [FeatureSouthernIslands]>;

@@ -14,13 +14,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "strip-dead-prototypes"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "strip-dead-prototypes"
 
 STATISTIC(NumDeadPrototypes, "Number of dead prototypes removed");
 
@@ -33,7 +32,7 @@ public:
   StripDeadPrototypesPass() : ModulePass(ID) {
     initializeStripDeadPrototypesPassPass(*PassRegistry::getPassRegistry());
   }
-  bool runOnModule(Module &M) override;
+  virtual bool runOnModule(Module &M);
 };
 
 } // end anonymous namespace

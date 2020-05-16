@@ -14,21 +14,22 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ExecutionEngine/OProfileWrapper.h"
-#include "llvm/ADT/SmallString.h"
+
+#define DEBUG_TYPE "oprofile-wrapper"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/MutexGuard.h"
-#include "llvm/Support/raw_ostream.h"
-#include <cstring>
-#include <dirent.h>
-#include <fcntl.h>
-#include <sstream>
-#include <stddef.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "llvm/ADT/SmallString.h"
 
-#define DEBUG_TYPE "oprofile-wrapper"
+#include <sstream>
+#include <cstring>
+#include <stddef.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace {
 
@@ -142,10 +143,6 @@ bool OProfileWrapper::checkForOProfileProcEntry() {
         close(CmdLineFD);
         ssize_t Idx = 0;
 
-        if (ExeName[0] != '/') {
-          BaseName = ExeName;
-        }
-
         // Find the terminator for the first string
         while (Idx < NumRead-1 && ExeName[Idx] != 0) {
           Idx++;
@@ -164,8 +161,7 @@ bool OProfileWrapper::checkForOProfileProcEntry() {
         }
 
         // Test this to see if it is the oprofile daemon
-        if (BaseName != 0 && (!strcmp("oprofiled", BaseName) ||
-                              !strcmp("operf", BaseName))) {
+        if (BaseName != 0 && !strcmp("oprofiled", BaseName)) {
           // If it is, we're done
           closedir(ProcDir);
           return true;

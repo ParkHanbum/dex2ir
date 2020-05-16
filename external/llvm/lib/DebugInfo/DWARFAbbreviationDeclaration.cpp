@@ -14,51 +14,37 @@
 using namespace llvm;
 using namespace dwarf;
 
-void DWARFAbbreviationDeclaration::clear() {
-  Code = 0;
-  Tag = 0;
-  HasChildren = false;
-  AttributeSpecs.clear();
-}
-
-DWARFAbbreviationDeclaration::DWARFAbbreviationDeclaration() {
-  clear();
+bool
+DWARFAbbreviationDeclaration::extract(DataExtractor data, uint32_t* offset_ptr){
+  return extract(data, offset_ptr, data.getULEB128(offset_ptr));
 }
 
 bool
-DWARFAbbreviationDeclaration::extract(DataExtractor Data, uint32_t* OffsetPtr) {
-  clear();
-  Code = Data.getULEB128(OffsetPtr);
-  if (Code == 0) {
-    return false;
-  }
-  Tag = Data.getULEB128(OffsetPtr);
-  uint8_t ChildrenByte = Data.getU8(OffsetPtr);
-  HasChildren = (ChildrenByte == DW_CHILDREN_yes);
+DWARFAbbreviationDeclaration::extract(DataExtractor data, uint32_t* offset_ptr,
+                                      uint32_t code) {
+  Code = code;
+  Attribute.clear();
+  if (Code) {
+    Tag = data.getULEB128(offset_ptr);
+    HasChildren = data.getU8(offset_ptr);
 
-  while (true) {
-    uint32_t CurOffset = *OffsetPtr;
-    uint16_t Attr = Data.getULEB128(OffsetPtr);
-    if (CurOffset == *OffsetPtr) {
-      clear();
-      return false;
+    while (data.isValidOffset(*offset_ptr)) {
+      uint16_t attr = data.getULEB128(offset_ptr);
+      uint16_t form = data.getULEB128(offset_ptr);
+
+      if (attr && form)
+        Attribute.push_back(DWARFAttribute(attr, form));
+      else
+        break;
     }
-    CurOffset = *OffsetPtr;
-    uint16_t Form = Data.getULEB128(OffsetPtr);
-    if (CurOffset == *OffsetPtr) {
-      clear();
-      return false;
-    }
-    if (Attr == 0 && Form == 0)
-      break;
-    AttributeSpecs.push_back(AttributeSpec(Attr, Form));
+
+    return Tag != 0;
+  } else {
+    Tag = 0;
+    HasChildren = false;
   }
 
-  if (Tag == 0) {
-    clear();
-    return false;
-  }
-  return true;
+  return false;
 }
 
 void DWARFAbbreviationDeclaration::dump(raw_ostream &OS) const {
@@ -69,19 +55,19 @@ void DWARFAbbreviationDeclaration::dump(raw_ostream &OS) const {
   else
     OS << format("DW_TAG_Unknown_%x", getTag());
   OS << "\tDW_CHILDREN_" << (hasChildren() ? "yes" : "no") << '\n';
-  for (const AttributeSpec &Spec : AttributeSpecs) {
+  for (unsigned i = 0, e = Attribute.size(); i != e; ++i) {
     OS << '\t';
-    const char *attrString = AttributeString(Spec.Attr);
+    const char *attrString = AttributeString(Attribute[i].getAttribute());
     if (attrString)
       OS << attrString;
     else
-      OS << format("DW_AT_Unknown_%x", Spec.Attr);
+      OS << format("DW_AT_Unknown_%x", Attribute[i].getAttribute());
     OS << '\t';
-    const char *formString = FormEncodingString(Spec.Form);
+    const char *formString = FormEncodingString(Attribute[i].getForm());
     if (formString)
       OS << formString;
     else
-      OS << format("DW_FORM_Unknown_%x", Spec.Form);
+      OS << format("DW_FORM_Unknown_%x", Attribute[i].getForm());
     OS << '\n';
   }
   OS << '\n';
@@ -89,8 +75,8 @@ void DWARFAbbreviationDeclaration::dump(raw_ostream &OS) const {
 
 uint32_t
 DWARFAbbreviationDeclaration::findAttributeIndex(uint16_t attr) const {
-  for (uint32_t i = 0, e = AttributeSpecs.size(); i != e; ++i) {
-    if (AttributeSpecs[i].Attr == attr)
+  for (uint32_t i = 0, e = Attribute.size(); i != e; ++i) {
+    if (Attribute[i].getAttribute() == attr)
       return i;
   }
   return -1U;

@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Config/config.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/ThreadLocal.h"
 
 //===----------------------------------------------------------------------===//
@@ -24,10 +23,10 @@
 // Define all methods as no-ops if threading is explicitly disabled
 namespace llvm {
 using namespace sys;
-ThreadLocalImpl::ThreadLocalImpl() : data() { }
+ThreadLocalImpl::ThreadLocalImpl() { }
 ThreadLocalImpl::~ThreadLocalImpl() { }
 void ThreadLocalImpl::setInstance(const void* d) {
-  static_assert(sizeof(d) <= sizeof(data), "size too big");
+  typedef int SIZE_TOO_BIG[sizeof(d) <= sizeof(data) ? 1 : -1];
   void **pd = reinterpret_cast<void**>(&data);
   *pd = const_cast<void*>(d);
 }
@@ -51,9 +50,9 @@ namespace llvm {
 using namespace sys;
 
 ThreadLocalImpl::ThreadLocalImpl() : data() {
-  static_assert(sizeof(pthread_key_t) <= sizeof(data), "size too big");
+  typedef int SIZE_TOO_BIG[sizeof(pthread_key_t) <= sizeof(data) ? 1 : -1];
   pthread_key_t* key = reinterpret_cast<pthread_key_t*>(&data);
-  int errorcode = pthread_key_create(key, nullptr);
+  int errorcode = pthread_key_create(key, NULL);
   assert(errorcode == 0);
   (void) errorcode;
 }
@@ -78,7 +77,7 @@ const void* ThreadLocalImpl::getInstance() {
 }
 
 void ThreadLocalImpl::removeInstance() {
-  setInstance(nullptr);
+  setInstance(0);
 }
 
 }

@@ -74,8 +74,8 @@ namespace llvm {
                               unsigned& RetSize) const;
 
   public:
-    const TargetMachine &TM;
-    explicit HexagonTargetLowering(const TargetMachine &targetmachine);
+    HexagonTargetMachine &TM;
+    explicit HexagonTargetLowering(HexagonTargetMachine &targetmachine);
 
     /// IsEligibleForTailCallOptimization - Check whether the call is eligible
     /// for tail call optimization. Targets which want to do tail call
@@ -92,14 +92,14 @@ namespace llvm {
                                       const SmallVectorImpl<ISD::InputArg> &Ins,
                                       SelectionDAG& DAG) const;
 
-    bool isTruncateFree(Type *Ty1, Type *Ty2) const override;
-    bool isTruncateFree(EVT VT1, EVT VT2) const override;
+    virtual bool isTruncateFree(Type *Ty1, Type *Ty2) const;
+    virtual bool isTruncateFree(EVT VT1, EVT VT2) const;
 
-    bool allowTruncateForTailCall(Type *Ty1, Type *Ty2) const override;
+    virtual bool allowTruncateForTailCall(Type *Ty1, Type *Ty2) const;
 
-    SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+    virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
 
-    const char *getTargetNodeName(unsigned Opcode) const override;
+    virtual const char *getTargetNodeName(unsigned Opcode) const;
     SDValue  LowerBR_JT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINLINEASM(SDValue Op, SelectionDAG &DAG) const;
@@ -109,12 +109,12 @@ namespace llvm {
                                  CallingConv::ID CallConv, bool isVarArg,
                                  const SmallVectorImpl<ISD::InputArg> &Ins,
                                  SDLoc dl, SelectionDAG &DAG,
-                                 SmallVectorImpl<SDValue> &InVals) const override;
+                                 SmallVectorImpl<SDValue> &InVals) const;
     SDValue LowerGLOBALADDRESS(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerCall(TargetLowering::CallLoweringInfo &CLI,
-                      SmallVectorImpl<SDValue> &InVals) const override;
+                      SmallVectorImpl<SDValue> &InVals) const;
 
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
                             CallingConv::ID CallConv, bool isVarArg,
@@ -124,6 +124,7 @@ namespace llvm {
                             const SmallVectorImpl<SDValue> &OutVals,
                             SDValue Callee) const;
 
+    SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerATOMIC_FENCE(SDValue Op, SelectionDAG& DAG) const;
     SDValue LowerRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
@@ -132,45 +133,43 @@ namespace llvm {
                         CallingConv::ID CallConv, bool isVarArg,
                         const SmallVectorImpl<ISD::OutputArg> &Outs,
                         const SmallVectorImpl<SDValue> &OutVals,
-                        SDLoc dl, SelectionDAG &DAG) const override;
+                        SDLoc dl, SelectionDAG &DAG) const;
 
-    MachineBasicBlock *
-    EmitInstrWithCustomInserter(MachineInstr *MI,
-                                MachineBasicBlock *BB) const override;
+    virtual MachineBasicBlock
+    *EmitInstrWithCustomInserter(MachineInstr *MI,
+                                 MachineBasicBlock *BB) const;
 
     SDValue  LowerVASTART(SDValue Op, SelectionDAG &DAG) const;
     SDValue  LowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
-    EVT getSetCCResultType(LLVMContext &C, EVT VT) const override {
-      if (!VT.isVector())
-        return MVT::i1;
-      else
-        return EVT::getVectorVT(C, MVT::i1, VT.getVectorNumElements());
+    virtual EVT getSetCCResultType(LLVMContext &, EVT) const {
+      return MVT::i1;
     }
 
-    bool getPostIndexedAddressParts(SDNode *N, SDNode *Op,
-                                    SDValue &Base, SDValue &Offset,
-                                    ISD::MemIndexedMode &AM,
-                                    SelectionDAG &DAG) const override;
+    virtual bool getPostIndexedAddressParts(SDNode *N, SDNode *Op,
+                                            SDValue &Base, SDValue &Offset,
+                                            ISD::MemIndexedMode &AM,
+                                            SelectionDAG &DAG) const;
 
     std::pair<unsigned, const TargetRegisterClass*>
     getRegForInlineAsmConstraint(const std::string &Constraint,
-                                 MVT VT) const override;
+                                 MVT VT) const;
 
     // Intrinsics
-    SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
+    virtual SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op,
+                                            SelectionDAG &DAG) const;
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
     /// The type may be VoidTy, in which case only return true if the addressing
     /// mode is legal for a load/store of any legal type.
     /// TODO: Handle pre/postinc as well.
-    bool isLegalAddressingMode(const AddrMode &AM, Type *Ty) const override;
-    bool isFPImmLegal(const APFloat &Imm, EVT VT) const override;
+    virtual bool isLegalAddressingMode(const AddrMode &AM, Type *Ty) const;
+    virtual bool isFPImmLegal(const APFloat &Imm, EVT VT) const;
 
     /// isLegalICmpImmediate - Return true if the specified immediate is legal
     /// icmp immediate, that is the target has icmp instructions which can
     /// compare a register against the immediate without having to materialize
     /// the immediate into a register.
-    bool isLegalICmpImmediate(int64_t Imm) const override;
+    virtual bool isLegalICmpImmediate(int64_t Imm) const;
   };
 } // end namespace llvm
 

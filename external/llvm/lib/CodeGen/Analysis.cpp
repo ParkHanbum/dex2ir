@@ -7,14 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines several CodeGen-specific LLVM IR analysis utilities.
+// This file defines several CodeGen-specific LLVM IR analysis utilties.
 //
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -47,7 +46,7 @@ unsigned llvm::ComputeLinearIndex(Type *Ty,
         EI != EE; ++EI) {
       if (Indices && *Indices == unsigned(EI - EB))
         return ComputeLinearIndex(*EI, Indices+1, IndicesEnd, CurIndex);
-      CurIndex = ComputeLinearIndex(*EI, nullptr, nullptr, CurIndex);
+      CurIndex = ComputeLinearIndex(*EI, 0, 0, CurIndex);
     }
     return CurIndex;
   }
@@ -57,7 +56,7 @@ unsigned llvm::ComputeLinearIndex(Type *Ty,
     for (unsigned i = 0, e = ATy->getNumElements(); i != e; ++i) {
       if (Indices && *Indices == i)
         return ComputeLinearIndex(EltTy, Indices+1, IndicesEnd, CurIndex);
-      CurIndex = ComputeLinearIndex(EltTy, nullptr, nullptr, CurIndex);
+      CurIndex = ComputeLinearIndex(EltTy, 0, 0, CurIndex);
     }
     return CurIndex;
   }
@@ -229,7 +228,7 @@ static const Value *getNoopInput(const Value *V,
     // through.
     const Instruction *I = dyn_cast<Instruction>(V);
     if (!I || I->getNumOperands() == 0) return V;
-    const Value *NoopInput = nullptr;
+    const Value *NoopInput = 0;
 
     Value *Op = I->getOperand(0);
     if (isa<BitCastInst>(I)) {
@@ -321,7 +320,6 @@ static const Value *getNoopInput(const Value *V,
 static bool slotOnlyDiscardsData(const Value *RetVal, const Value *CallVal,
                                  SmallVectorImpl<unsigned> &RetIndices,
                                  SmallVectorImpl<unsigned> &CallIndices,
-                                 bool AllowDifferingSizes,
                                  const TargetLoweringBase &TLI) {
 
   // Trace the sub-value needed by the return value as far back up the graph as
@@ -352,8 +350,7 @@ static bool slotOnlyDiscardsData(const Value *RetVal, const Value *CallVal,
   // all the bits that are needed by the "ret" have been provided by the "tail
   // call". FIXME: with sufficiently cunning bit-tracking, we could look through
   // extensions too.
-  if (BitsProvided < BitsRequired ||
-      (!AllowDifferingSizes && BitsProvided != BitsRequired))
+  if (BitsProvided < BitsRequired)
     return false;
 
   return true;
@@ -385,8 +382,9 @@ static bool indexReallyValid(CompositeType *T, unsigned Idx) {
 /// function again on a finished iterator will repeatedly return
 /// false. SubTypes.back()->getTypeAtIndex(Path.back()) is either an empty
 /// aggregate or a non-aggregate
-static bool advanceToNextLeafType(SmallVectorImpl<CompositeType *> &SubTypes,
-                                  SmallVectorImpl<unsigned> &Path) {
+static bool
+advanceToNextLeafType(SmallVectorImpl<CompositeType *> &SubTypes,
+                     SmallVectorImpl<unsigned> &Path) {
   // First march back up the tree until we can successfully increment one of the
   // coordinates in Path.
   while (!Path.empty() && !indexReallyValid(SubTypes.back(), Path.back() + 1)) {
@@ -456,8 +454,8 @@ static bool firstRealType(Type *Next,
 
 /// Set the iterator data-structures to the next non-empty, non-aggregate
 /// subtype.
-static bool nextRealType(SmallVectorImpl<CompositeType *> &SubTypes,
-                         SmallVectorImpl<unsigned> &Path) {
+bool nextRealType(SmallVectorImpl<CompositeType *> &SubTypes,
+                  SmallVectorImpl<unsigned> &Path) {
   do {
     if (!advanceToNextLeafType(SubTypes, Path))
       return false;
@@ -475,7 +473,8 @@ static bool nextRealType(SmallVectorImpl<CompositeType *> &SubTypes,
 /// between it and the return.
 ///
 /// This function only tests target-independent requirements.
-bool llvm::isInTailCallPosition(ImmutableCallSite CS, const SelectionDAG &DAG) {
+bool llvm::isInTailCallPosition(ImmutableCallSite CS,
+                                const TargetLowering &TLI) {
   const Instruction *I = CS.getInstruction();
   const BasicBlock *ExitBB = I->getParent();
   const TerminatorInst *Term = ExitBB->getTerminator();
@@ -490,7 +489,7 @@ bool llvm::isInTailCallPosition(ImmutableCallSite CS, const SelectionDAG &DAG) {
   // longjmp on x86), it can end up causing miscompilation that has not
   // been fully understood.
   if (!Ret &&
-      (!DAG.getTarget().Options.GuaranteedTailCallOpt ||
+      (!TLI.getTargetMachine().Options.GuaranteedTailCallOpt ||
        !isa<UnreachableInst>(Term)))
     return false;
 
@@ -498,7 +497,8 @@ bool llvm::isInTailCallPosition(ImmutableCallSite CS, const SelectionDAG &DAG) {
   // chain interposes between I and the return.
   if (I->mayHaveSideEffects() || I->mayReadFromMemory() ||
       !isSafeToSpeculativelyExecute(I))
-    for (BasicBlock::const_iterator BBI = std::prev(ExitBB->end(), 2);; --BBI) {
+    for (BasicBlock::const_iterator BBI = prior(prior(ExitBB->end())); ;
+         --BBI) {
       if (&*BBI == I)
         break;
       // Debug info intrinsics do not get in the way of tail call optimization.
@@ -509,14 +509,6 @@ bool llvm::isInTailCallPosition(ImmutableCallSite CS, const SelectionDAG &DAG) {
         return false;
     }
 
-  return returnTypeIsEligibleForTailCall(ExitBB->getParent(), I, Ret,
-                                         *DAG.getTarget().getTargetLowering());
-}
-
-bool llvm::returnTypeIsEligibleForTailCall(const Function *F,
-                                           const Instruction *I,
-                                           const ReturnInst *Ret,
-                                           const TargetLoweringBase &TLI) {
   // If the block ends with a void return or unreachable, it doesn't matter
   // what the call's return type is.
   if (!Ret || Ret->getNumOperands() == 0) return true;
@@ -525,38 +517,19 @@ bool llvm::returnTypeIsEligibleForTailCall(const Function *F,
   // return type is.
   if (isa<UndefValue>(Ret->getOperand(0))) return true;
 
-  // Make sure the attributes attached to each return are compatible.
-  AttrBuilder CallerAttrs(F->getAttributes(),
-                          AttributeSet::ReturnIndex);
-  AttrBuilder CalleeAttrs(cast<CallInst>(I)->getAttributes(),
-                          AttributeSet::ReturnIndex);
+  // Conservatively require the attributes of the call to match those of
+  // the return. Ignore noalias because it doesn't affect the call sequence.
+  const Function *F = ExitBB->getParent();
+  AttributeSet CallerAttrs = F->getAttributes();
+  if (AttrBuilder(CallerAttrs, AttributeSet::ReturnIndex).
+        removeAttribute(Attribute::NoAlias) !=
+      AttrBuilder(CallerAttrs, AttributeSet::ReturnIndex).
+        removeAttribute(Attribute::NoAlias))
+    return false;
 
-  // Noalias is completely benign as far as calling convention goes, it
-  // shouldn't affect whether the call is a tail call.
-  CallerAttrs = CallerAttrs.removeAttribute(Attribute::NoAlias);
-  CalleeAttrs = CalleeAttrs.removeAttribute(Attribute::NoAlias);
-
-  bool AllowDifferingSizes = true;
-  if (CallerAttrs.contains(Attribute::ZExt)) {
-    if (!CalleeAttrs.contains(Attribute::ZExt))
-      return false;
-
-    AllowDifferingSizes = false;
-    CallerAttrs.removeAttribute(Attribute::ZExt);
-    CalleeAttrs.removeAttribute(Attribute::ZExt);
-  } else if (CallerAttrs.contains(Attribute::SExt)) {
-    if (!CalleeAttrs.contains(Attribute::SExt))
-      return false;
-
-    AllowDifferingSizes = false;
-    CallerAttrs.removeAttribute(Attribute::SExt);
-    CalleeAttrs.removeAttribute(Attribute::SExt);
-  }
-
-  // If they're still different, there's some facet we don't understand
-  // (currently only "inreg", but in future who knows). It may be OK but the
-  // only safe option is to reject the tail call.
-  if (CallerAttrs != CalleeAttrs)
+  // It's not safe to eliminate the sign / zero extension of the return value.
+  if (CallerAttrs.hasAttribute(AttributeSet::ReturnIndex, Attribute::ZExt) ||
+      CallerAttrs.hasAttribute(AttributeSet::ReturnIndex, Attribute::SExt))
     return false;
 
   const Value *RetVal = Ret->getOperand(0), *CallVal = I;
@@ -598,8 +571,7 @@ bool llvm::returnTypeIsEligibleForTailCall(const Function *F,
 
     // Finally, we can check whether the value produced by the tail call at this
     // index is compatible with the value we return.
-    if (!slotOnlyDiscardsData(RetVal, CallVal, TmpRetPath, TmpCallPath,
-                              AllowDifferingSizes, TLI))
+    if (!slotOnlyDiscardsData(RetVal, CallVal, TmpRetPath, TmpCallPath, TLI))
       return false;
 
     CallEmpty  = !nextRealType(CallSubTypes, CallPath);

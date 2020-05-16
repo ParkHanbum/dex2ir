@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=aarch64-none-linux-gnu < %s | FileCheck %s --check-prefix=CHECK
+; RUN: llc -mtriple=aarch64-none-linux-gnu < %s | FileCheck %s
 
 ; First, a simple example from Clang. The registers could plausibly be
 ; different, but probably won't be.
@@ -7,7 +7,8 @@
 
 define [1 x i64] @from_clang([1 x i64] %f.coerce, i32 %n) nounwind readnone {
 ; CHECK-LABEL: from_clang:
-; CHECK: bfi {{w[0-9]+}}, {{w[0-9]+}}, #3, #4
+; CHECK: bfi w0, w1, #3, #4
+; CHECK-NEXT: ret
 
 entry:
   %f.coerce.fca.0.extract = extractvalue [1 x i64] %f.coerce, 0
@@ -25,7 +26,6 @@ entry:
 
 define void @test_whole32(i32* %existing, i32* %new) {
 ; CHECK-LABEL: test_whole32:
-
 ; CHECK: bfi {{w[0-9]+}}, {{w[0-9]+}}, #26, #5
 
   %oldval = load volatile i32* %existing
@@ -62,10 +62,8 @@ define void @test_whole64(i64* %existing, i64* %new) {
 
 define void @test_whole32_from64(i64* %existing, i64* %new) {
 ; CHECK-LABEL: test_whole32_from64:
-
-
-; CHECK: bfxil {{x[0-9]+}}, {{x[0-9]+}}, #0, #16
-
+; CHECK: bfi {{w[0-9]+}}, {{w[0-9]+}}, #{{0|16}}, #16
+; CHECK-NOT: and
 ; CHECK: ret
 
   %oldval = load volatile i64* %existing
@@ -82,9 +80,8 @@ define void @test_whole32_from64(i64* %existing, i64* %new) {
 
 define void @test_32bit_masked(i32 *%existing, i32 *%new) {
 ; CHECK-LABEL: test_32bit_masked:
-
-; CHECK: and
 ; CHECK: bfi [[INSERT:w[0-9]+]], {{w[0-9]+}}, #3, #4
+; CHECK: and {{w[0-9]+}}, [[INSERT]], #0xff
 
   %oldval = load volatile i32* %existing
   %oldval_keep = and i32 %oldval, 135 ; = 0x87
@@ -101,8 +98,8 @@ define void @test_32bit_masked(i32 *%existing, i32 *%new) {
 
 define void @test_64bit_masked(i64 *%existing, i64 *%new) {
 ; CHECK-LABEL: test_64bit_masked:
-; CHECK: and
 ; CHECK: bfi [[INSERT:x[0-9]+]], {{x[0-9]+}}, #40, #8
+; CHECK: and {{x[0-9]+}}, [[INSERT]], #0xffff00000000
 
   %oldval = load volatile i64* %existing
   %oldval_keep = and i64 %oldval, 1095216660480 ; = 0xff_0000_0000
@@ -120,9 +117,8 @@ define void @test_64bit_masked(i64 *%existing, i64 *%new) {
 ; Mask is too complicated for literal ANDwwi, make sure other avenues are tried.
 define void @test_32bit_complexmask(i32 *%existing, i32 *%new) {
 ; CHECK-LABEL: test_32bit_complexmask:
-
-; CHECK: and
 ; CHECK: bfi {{w[0-9]+}}, {{w[0-9]+}}, #3, #4
+; CHECK: and {{w[0-9]+}}, {{w[0-9]+}}, {{w[0-9]+}}
 
   %oldval = load volatile i32* %existing
   %oldval_keep = and i32 %oldval, 647 ; = 0x287
@@ -141,7 +137,6 @@ define void @test_32bit_complexmask(i32 *%existing, i32 *%new) {
 define void @test_32bit_badmask(i32 *%existing, i32 *%new) {
 ; CHECK-LABEL: test_32bit_badmask:
 ; CHECK-NOT: bfi
-; CHECK-NOT: bfm
 ; CHECK: ret
 
   %oldval = load volatile i32* %existing
@@ -161,7 +156,6 @@ define void @test_32bit_badmask(i32 *%existing, i32 *%new) {
 define void @test_64bit_badmask(i64 *%existing, i64 *%new) {
 ; CHECK-LABEL: test_64bit_badmask:
 ; CHECK-NOT: bfi
-; CHECK-NOT: bfm
 ; CHECK: ret
 
   %oldval = load volatile i64* %existing
@@ -192,7 +186,8 @@ define void @test_32bit_with_shr(i32* %existing, i32* %new) {
   %combined = or i32 %oldval_keep, %newval_masked
   store volatile i32 %combined, i32* %existing
 ; CHECK: lsr [[BIT:w[0-9]+]], {{w[0-9]+}}, #14
-; CHECK: bfi {{w[0-9]+}}, [[BIT]], #26, #5
+; CHECK: bfi {{w[0-9]}}, [[BIT]], #26, #5
 
   ret void
 }
+

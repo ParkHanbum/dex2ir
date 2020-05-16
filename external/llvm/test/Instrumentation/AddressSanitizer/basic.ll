@@ -1,6 +1,6 @@
 ; Test basic address sanitizer instrumentation.
 ;
-; RUN: opt < %s -asan -asan-module -S | FileCheck %s
+; RUN: opt < %s -asan -S | FileCheck %s
 
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-unknown-linux-gnu"
@@ -34,7 +34,7 @@ define i32 @test_load(i32* %a) sanitize_address {
 
 
 entry:
-  %tmp1 = load i32* %a, align 4
+  %tmp1 = load i32* %a
   ret i32 %tmp1
 }
 
@@ -66,7 +66,7 @@ define void @test_store(i32* %a) sanitize_address {
 ;
 
 entry:
-  store i32 42, i32* %a, align 4
+  store i32 42, i32* %a
   ret void
 }
 
@@ -88,6 +88,25 @@ entry:
 ; CHECK: = alloca
 ; CHECK-NOT: = alloca
 ; CHECK: ret void
+
+; Check that asan does not touch allocas with alignment > 32.
+define void @alloca_alignment_test() sanitize_address {
+entry:
+  %x = alloca [10 x i8], align 64
+  %y = alloca [10 x i8], align 128
+  %z = alloca [10 x i8], align 256
+  call void @alloca_test_use([10 x i8]* %x)
+  call void @alloca_test_use([10 x i8]* %y)
+  call void @alloca_test_use([10 x i8]* %z)
+  ret void
+}
+
+; CHECK: define void @alloca_alignment_test()
+; CHECK: = alloca{{.*}} align 64
+; CHECK: = alloca{{.*}} align 128
+; CHECK: = alloca{{.*}} align 256
+; CHECK: ret void
+
 
 define void @LongDoubleTest(x86_fp80* nocapture %a) nounwind uwtable sanitize_address {
 entry:
@@ -115,18 +134,6 @@ define void @i40test(i40* %a, i40* %b) nounwind uwtable sanitize_address {
 ; CHECK: __asan_report_store_n{{.*}}, i64 5)
 ; CHECK: ret void
 
-define void @i64test_align1(i64* %b) nounwind uwtable sanitize_address {
-  entry:
-  store i64 0, i64* %b, align 1
-  ret void
-}
-
-; CHECK-LABEL: i64test_align1
-; CHECK: __asan_report_store_n{{.*}}, i64 8)
-; CHECK: __asan_report_store_n{{.*}}, i64 8)
-; CHECK: ret void
-
-
 define void @i80test(i80* %a, i80* %b) nounwind uwtable sanitize_address {
   entry:
   %t = load i80* %a
@@ -151,21 +158,4 @@ entry:
 ; CHECK-NOT: __asan_report
 ; CHECK: ret i32
 
-declare void @llvm.memset.p0i8.i64(i8* nocapture, i8, i64, i32, i1) nounwind
-declare void @llvm.memmove.p0i8.p0i8.i64(i8* nocapture, i8* nocapture readonly, i64, i32, i1) nounwind
-declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture readonly, i64, i32, i1) nounwind
-
-define void @memintr_test(i8* %a, i8* %b) nounwind uwtable sanitize_address {
-  entry:
-  tail call void @llvm.memset.p0i8.i64(i8* %a, i8 0, i64 100, i32 1, i1 false)
-  tail call void @llvm.memmove.p0i8.p0i8.i64(i8* %a, i8* %b, i64 100, i32 1, i1 false)
-  tail call void @llvm.memcpy.p0i8.p0i8.i64(i8* %a, i8* %b, i64 100, i32 1, i1 false)
-  ret void
-}
-
-; CHECK-LABEL: memintr_test
-; CHECK: __asan_memset
-; CHECK: __asan_memmove
-; CHECK: __asan_memcpy
-; CHECK: ret void
 

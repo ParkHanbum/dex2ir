@@ -46,8 +46,7 @@ class PCRelOperand<ValueType vt, AsmOperandClass asmop> : Operand<vt> {
 // address with address size VT.  SELF is the name of the operand and
 // ASMOP is the associated asm operand.
 class PCRelAddress<ValueType vt, string self, AsmOperandClass asmop>
-  : ComplexPattern<vt, 1, "selectPCRelAddress",
-                   [z_pcrel_wrapper, z_pcrel_offset]>,
+  : ComplexPattern<vt, 1, "selectPCRelAddress", [z_pcrel_wrapper]>,
     PCRelOperand<vt, asmop> {
   let MIOperandInfo = (ops !cast<Operand>(self));
 }
@@ -202,8 +201,28 @@ def S32Imm : ImmediateAsmOperand<"S32Imm">;
 def U32Imm : ImmediateAsmOperand<"U32Imm">;
 
 //===----------------------------------------------------------------------===//
+// 8-bit immediates
+//===----------------------------------------------------------------------===//
+
+def uimm8zx4 : Immediate<i8, [{
+  return isUInt<4>(N->getZExtValue());
+}], NOOP_SDNodeXForm, "U4Imm">;
+
+def uimm8zx6 : Immediate<i8, [{
+  return isUInt<6>(N->getZExtValue());
+}], NOOP_SDNodeXForm, "U6Imm">;
+
+def simm8    : Immediate<i8, [{}], SIMM8, "S8Imm">;
+def uimm8    : Immediate<i8, [{}], UIMM8, "U8Imm">;
+
+//===----------------------------------------------------------------------===//
 // i32 immediates
 //===----------------------------------------------------------------------===//
+
+// Immediates for 8-bit lengths.
+def imm32len8 : Immediate<i32, [{
+  return isUInt<8>(N->getZExtValue() - 1);
+}], NOOP_SDNodeXForm, "U32Imm">;
 
 // Immediates for the lower and upper 16 bits of an i32, with the other
 // bits of the i32 being zero.
@@ -226,14 +245,6 @@ def imm32lh16c : Immediate<i32, [{
 }], LH16, "U16Imm">;
 
 // Short immediates
-def imm32zx4 : Immediate<i32, [{
-  return isUInt<4>(N->getZExtValue());
-}], NOOP_SDNodeXForm, "U4Imm">;
-
-def imm32zx6 : Immediate<i32, [{
-  return isUInt<6>(N->getZExtValue());
-}], NOOP_SDNodeXForm, "U6Imm">;
-
 def imm32sx8 : Immediate<i32, [{
   return isInt<8>(N->getSExtValue());
 }], SIMM8, "S8Imm">;
@@ -327,10 +338,6 @@ def imm64sx8 : Immediate<i64, [{
   return isInt<8>(N->getSExtValue());
 }], SIMM8, "S8Imm">;
 
-def imm64zx8 : Immediate<i64, [{
-  return isUInt<8>(N->getSExtValue());
-}], UIMM8, "U8Imm">;
-
 def imm64sx16 : Immediate<i64, [{
   return isInt<16>(N->getSExtValue());
 }], SIMM16, "S16Imm">;
@@ -351,7 +358,7 @@ def imm64zx32n : Immediate<i64, [{
   return isUInt<32>(-N->getSExtValue());
 }], NEGIMM32, "U32Imm">;
 
-def imm64 : ImmLeaf<i64, [{}]>, Operand<i64>;
+def imm64 : ImmLeaf<i64, [{}]>;
 
 //===----------------------------------------------------------------------===//
 // Floating-point immediates
@@ -389,6 +396,19 @@ def pcrel32 : PCRelAddress<i64, "pcrel32", PCRel32> {
   let DecoderMethod = "decodePC32DBLOperand";
 }
 
+// A PC-relative offset of a global value when the value is used as a
+// call target.  The offset is sign-extended and multiplied by 2.
+def pcrel16call : PCRelAddress<i64, "pcrel16call", PCRel16> {
+  let PrintMethod = "printCallOperand";
+  let EncoderMethod = "getPLT16DBLEncoding";
+  let DecoderMethod = "decodePC16DBLOperand";
+}
+def pcrel32call : PCRelAddress<i64, "pcrel32call", PCRel32> {
+  let PrintMethod = "printCallOperand";
+  let EncoderMethod = "getPLT32DBLEncoding";
+  let DecoderMethod = "decodePC32DBLOperand";
+}
+
 //===----------------------------------------------------------------------===//
 // Addressing modes
 //===----------------------------------------------------------------------===//
@@ -415,7 +435,6 @@ def BDLAddr64Disp12Len8 : AddressAsmOperand<"BDLAddr",  "64", "12", "Len8">;
 // <type> is one of:
 //   shift    : base + displacement (32-bit)
 //   bdaddr   : base + displacement
-//   mviaddr  : like bdaddr, but reject cases with a natural index
 //   bdxaddr  : base + displacement + index
 //   laaddr   : like bdxaddr, but used for Load Address operations
 //   dynalloc : base + displacement + index + ADJDYNALLOC
@@ -441,8 +460,6 @@ def bdaddr12only      : BDMode <"BDAddr",   "64", "12", "Only">;
 def bdaddr12pair      : BDMode <"BDAddr",   "64", "12", "Pair">;
 def bdaddr20only      : BDMode <"BDAddr",   "64", "20", "Only">;
 def bdaddr20pair      : BDMode <"BDAddr",   "64", "20", "Pair">;
-def mviaddr12pair     : BDMode <"MVIAddr",  "64", "12", "Pair">;
-def mviaddr20pair     : BDMode <"MVIAddr",  "64", "20", "Pair">;
 def bdxaddr12only     : BDXMode<"BDXAddr",  "64", "12", "Only">;
 def bdxaddr12pair     : BDXMode<"BDXAddr",  "64", "12", "Pair">;
 def bdxaddr20only     : BDXMode<"BDXAddr",  "64", "20", "Only">;
@@ -463,13 +480,13 @@ def AccessReg : AsmOperandClass {
   let Name = "AccessReg";
   let ParserMethod = "parseAccessReg";
 }
-def access_reg : Immediate<i32, [{ return N->getZExtValue() < 16; }],
+def access_reg : Immediate<i8, [{ return N->getZExtValue() < 16; }],
                            NOOP_SDNodeXForm, "AccessReg"> {
   let ParserMatchClass = AccessReg;
 }
 
 // A 4-bit condition-code mask.
-def cond4 : PatLeaf<(i32 imm), [{ return (N->getZExtValue() < 16); }]>,
-            Operand<i32> {
+def cond4 : PatLeaf<(i8 imm), [{ return (N->getZExtValue() < 16); }]>,
+            Operand<i8> {
   let PrintMethod = "printCond4Operand";
 }

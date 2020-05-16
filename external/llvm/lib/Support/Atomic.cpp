@@ -7,17 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file implements atomic operations.
+//  This header file implements atomic operations.
 //
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/Atomic.h"
 #include "llvm/Config/llvm-config.h"
+#if defined(ANDROID_TARGET_BUILD)
+#include "cutils/atomic.h"
+#endif
 
 using namespace llvm;
 
 #if defined(_MSC_VER)
-#include <Intrin.h>
 #include <windows.h>
 #undef MemoryFence
 #endif
@@ -48,6 +50,9 @@ sys::cas_flag sys::CompareAndSwap(volatile sys::cas_flag* ptr,
   if (result == old_value)
     *ptr = new_value;
   return result;
+#elif defined(ANDROID_TARGET_BUILD)
+  return android_atomic_cmpxchg((int32_t)old_value, (int32_t)new_value,
+                                (volatile int*)ptr);
 #elif defined(GNU_ATOMICS)
   return __sync_val_compare_and_swap(ptr, old_value, new_value);
 #elif defined(_MSC_VER)
@@ -61,6 +66,8 @@ sys::cas_flag sys::AtomicIncrement(volatile sys::cas_flag* ptr) {
 #if LLVM_HAS_ATOMICS == 0
   ++(*ptr);
   return *ptr;
+#elif defined(ANDROID_TARGET_BUILD)
+  return android_atomic_inc((volatile int*)ptr);
 #elif defined(GNU_ATOMICS)
   return __sync_add_and_fetch(ptr, 1);
 #elif defined(_MSC_VER)
@@ -74,6 +81,8 @@ sys::cas_flag sys::AtomicDecrement(volatile sys::cas_flag* ptr) {
 #if LLVM_HAS_ATOMICS == 0
   --(*ptr);
   return *ptr;
+#elif defined(ANDROID_TARGET_BUILD)
+  return android_atomic_dec((volatile int*)ptr);
 #elif defined(GNU_ATOMICS)
   return __sync_sub_and_fetch(ptr, 1);
 #elif defined(_MSC_VER)
@@ -87,6 +96,8 @@ sys::cas_flag sys::AtomicAdd(volatile sys::cas_flag* ptr, sys::cas_flag val) {
 #if LLVM_HAS_ATOMICS == 0
   *ptr += val;
   return *ptr;
+#elif defined(ANDROID_TARGET_BUILD)
+  return android_atomic_add((int32_t)val, (volatile int*)ptr);
 #elif defined(GNU_ATOMICS)
   return __sync_add_and_fetch(ptr, val);
 #elif defined(_MSC_VER)

@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "sparseprop"
 #include "llvm/Analysis/SparsePropagation.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
@@ -19,8 +20,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "sparseprop"
 
 //===----------------------------------------------------------------------===//
 //                  AbstractLatticeFunction Implementation
@@ -148,7 +147,7 @@ void SparseSolver::getFeasibleSuccessors(TerminatorInst &TI,
       return;
 
     Constant *C = LatticeFunc->GetConstant(BCValue, BI->getCondition(), *this);
-    if (!C || !isa<ConstantInt>(C)) {
+    if (C == 0 || !isa<ConstantInt>(C)) {
       // Non-constant values can go either way.
       Succs[0] = Succs[1] = true;
       return;
@@ -190,7 +189,7 @@ void SparseSolver::getFeasibleSuccessors(TerminatorInst &TI,
     return;
   
   Constant *C = LatticeFunc->GetConstant(SCValue, SI.getCondition(), *this);
-  if (!C || !isa<ConstantInt>(C)) {
+  if (C == 0 || !isa<ConstantInt>(C)) {
     // All destinations are executable!
     Succs.assign(TI.getNumSuccessors(), true);
     return;
@@ -304,10 +303,11 @@ void SparseSolver::Solve(Function &F) {
 
       // "I" got into the work list because it made a transition.  See if any
       // users are both live and in need of updating.
-      for (User *U : I->users()) {
-        Instruction *UI = cast<Instruction>(U);
-        if (BBExecutable.count(UI->getParent()))   // Inst is executable?
-          visitInst(*UI);
+      for (Value::use_iterator UI = I->use_begin(), E = I->use_end();
+           UI != E; ++UI) {
+        Instruction *U = cast<Instruction>(*UI);
+        if (BBExecutable.count(U->getParent()))   // Inst is executable?
+          visitInst(*U);
       }
     }
 

@@ -14,8 +14,8 @@
 
 #include "AMDGPU.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
@@ -23,8 +23,6 @@
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "si-annotate-control-flow"
 
 namespace {
 
@@ -65,6 +63,7 @@ class SIAnnotateControlFlow : public FunctionPass {
 
   DominatorTree *DT;
   StackVector Stack;
+  SSAUpdater PhiInserter;
 
   bool isTopOfStack(BasicBlock *BB);
 
@@ -80,7 +79,7 @@ class SIAnnotateControlFlow : public FunctionPass {
 
   void insertElse(BranchInst *Term);
 
-  Value *handleLoopCondition(Value *Cond, PHINode *Broken);
+  void handleLoopCondition(Value *Cond);
 
   void handleLoop(BranchInst *Term);
 
@@ -90,17 +89,17 @@ public:
   SIAnnotateControlFlow():
     FunctionPass(ID) { }
 
-  bool doInitialization(Module &M) override;
+  virtual bool doInitialization(Module &M);
 
-  bool runOnFunction(Function &F) override;
+  virtual bool runOnFunction(Function &F);
 
-  const char *getPassName() const override {
+  virtual const char *getPassName() const {
     return "SI annotate control flow";
   }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<DominatorTreeWrapperPass>();
-    AU.addPreserved<DominatorTreeWrapperPass>();
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    AU.addRequired<DominatorTree>();
+    AU.addPreserved<DominatorTree>();
     FunctionPass::getAnalysisUsage(AU);
   }
 
@@ -117,7 +116,7 @@ bool SIAnnotateControlFlow::doInitialization(Module &M) {
   Void = Type::getVoidTy(Context);
   Boolean = Type::getInt1Ty(Context);
   Int64 = Type::getInt64Ty(Context);
-  ReturnStruct = StructType::get(Boolean, Int64, (Type *)nullptr);
+  ReturnStruct = StructType::get(Boolean, Int64, (Type *)0);
 
   BoolTrue = ConstantInt::getTrue(Context);
   BoolFalse = ConstantInt::getFalse(Context);
@@ -125,25 +124,25 @@ bool SIAnnotateControlFlow::doInitialization(Module &M) {
   Int64Zero = ConstantInt::get(Int64, 0);
 
   If = M.getOrInsertFunction(
-    IfIntrinsic, ReturnStruct, Boolean, (Type *)nullptr);
+    IfIntrinsic, ReturnStruct, Boolean, (Type *)0);
 
   Else = M.getOrInsertFunction(
-    ElseIntrinsic, ReturnStruct, Int64, (Type *)nullptr);
+    ElseIntrinsic, ReturnStruct, Int64, (Type *)0);
 
   Break = M.getOrInsertFunction(
-    BreakIntrinsic, Int64, Int64, (Type *)nullptr);
+    BreakIntrinsic, Int64, Int64, (Type *)0);
 
   IfBreak = M.getOrInsertFunction(
-    IfBreakIntrinsic, Int64, Boolean, Int64, (Type *)nullptr);
+    IfBreakIntrinsic, Int64, Boolean, Int64, (Type *)0);
 
   ElseBreak = M.getOrInsertFunction(
-    ElseBreakIntrinsic, Int64, Int64, Int64, (Type *)nullptr);
+    ElseBreakIntrinsic, Int64, Int64, Int64, (Type *)0);
 
   Loop = M.getOrInsertFunction(
-    LoopIntrinsic, Boolean, Int64, (Type *)nullptr);
+    LoopIntrinsic, Boolean, Int64, (Type *)0);
 
   EndCf = M.getOrInsertFunction(
-    EndCfIntrinsic, Void, Int64, (Type *)nullptr);
+    EndCfIntrinsic, Void, Int64, (Type *)0);
 
   return false;
 }
@@ -176,7 +175,7 @@ bool SIAnnotateControlFlow::isElse(PHINode *Phi) {
     } else {
       if (Phi->getIncomingValue(i) != BoolFalse)
         return false;
-
+ 
     }
   }
   return true;
@@ -203,26 +202,20 @@ void SIAnnotateControlFlow::insertElse(BranchInst *Term) {
 }
 
 /// \brief Recursively handle the condition leading to a loop
-Value *SIAnnotateControlFlow::handleLoopCondition(Value *Cond, PHINode *Broken) {
+void SIAnnotateControlFlow::handleLoopCondition(Value *Cond) {
   if (PHINode *Phi = dyn_cast<PHINode>(Cond)) {
-    BasicBlock *Parent = Phi->getParent();
-    PHINode *NewPhi = PHINode::Create(Int64, 0, "", &Parent->front());
-    Value *Ret = NewPhi;
 
-    // Handle all non-constant incoming values first
+    // Handle all non constant incoming values first
     for (unsigned i = 0, e = Phi->getNumIncomingValues(); i != e; ++i) {
       Value *Incoming = Phi->getIncomingValue(i);
-      BasicBlock *From = Phi->getIncomingBlock(i);
-      if (isa<ConstantInt>(Incoming)) {
-        NewPhi->addIncoming(Broken, From);
+      if (isa<ConstantInt>(Incoming))
         continue;
-      }
 
       Phi->setIncomingValue(i, BoolFalse);
-      Value *PhiArg = handleLoopCondition(Incoming, Broken);
-      NewPhi->addIncoming(PhiArg, From);
+      handleLoopCondition(Incoming);
     }
 
+    BasicBlock *Parent = Phi->getParent();
     BasicBlock *IDom = DT->getNode(Parent)->getIDom()->getBlock();
 
     for (unsigned i = 0, e = Phi->getNumIncomingValues(); i != e; ++i) {
@@ -235,28 +228,33 @@ Value *SIAnnotateControlFlow::handleLoopCondition(Value *Cond, PHINode *Broken) 
       if (From == IDom) {
         CallInst *OldEnd = dyn_cast<CallInst>(Parent->getFirstInsertionPt());
         if (OldEnd && OldEnd->getCalledFunction() == EndCf) {
-          Value *Args[] = { OldEnd->getArgOperand(0), NewPhi };
-          Ret = CallInst::Create(ElseBreak, Args, "", OldEnd);
+          Value *Args[] = {
+            OldEnd->getArgOperand(0),
+            PhiInserter.GetValueAtEndOfBlock(Parent)
+          };
+          Value *Ret = CallInst::Create(ElseBreak, Args, "", OldEnd);
+          PhiInserter.AddAvailableValue(Parent, Ret);
           continue;
         }
       }
+
       TerminatorInst *Insert = From->getTerminator();
-      Value *PhiArg = CallInst::Create(Break, Broken, "", Insert);
-      NewPhi->setIncomingValue(i, PhiArg);
+      Value *Arg = PhiInserter.GetValueAtEndOfBlock(From);
+      Value *Ret = CallInst::Create(Break, Arg, "", Insert);
+      PhiInserter.AddAvailableValue(From, Ret);
     }
     eraseIfUnused(Phi);
-    return Ret;
 
   } else if (Instruction *Inst = dyn_cast<Instruction>(Cond)) {
     BasicBlock *Parent = Inst->getParent();
     TerminatorInst *Insert = Parent->getTerminator();
-    Value *Args[] = { Cond, Broken };
-    return CallInst::Create(IfBreak, Args, "", Insert);
+    Value *Args[] = { Cond, PhiInserter.GetValueAtEndOfBlock(Parent) };
+    Value *Ret = CallInst::Create(IfBreak, Args, "", Insert);
+    PhiInserter.AddAvailableValue(Parent, Ret);
 
   } else {
-    llvm_unreachable("Unhandled loop condition!");
+    assert(0 && "Unhandled loop condition!");
   }
-  return 0;
 }
 
 /// \brief Handle a back edge (loop)
@@ -264,11 +262,15 @@ void SIAnnotateControlFlow::handleLoop(BranchInst *Term) {
   BasicBlock *Target = Term->getSuccessor(1);
   PHINode *Broken = PHINode::Create(Int64, 0, "", &Target->front());
 
+  PhiInserter.Initialize(Int64, "");
+  PhiInserter.AddAvailableValue(Target, Broken);
+
   Value *Cond = Term->getCondition();
   Term->setCondition(BoolTrue);
-  Value *Arg = handleLoopCondition(Cond, Broken);
+  handleLoopCondition(Cond);
 
   BasicBlock *BB = Term->getParent();
+  Value *Arg = PhiInserter.GetValueAtEndOfBlock(BB);
   for (pred_iterator PI = pred_begin(Target), PE = pred_end(Target);
        PI != PE; ++PI) {
 
@@ -287,7 +289,7 @@ void SIAnnotateControlFlow::closeControlFlow(BasicBlock *BB) {
 /// \brief Annotate the control flow with intrinsics so the backend can
 /// recognize if/then/else and loops.
 bool SIAnnotateControlFlow::runOnFunction(Function &F) {
-  DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+  DT = &getAnalysis<DominatorTree>();
 
   for (df_iterator<BasicBlock *> I = df_begin(&F.getEntryBlock()),
        E = df_end(&F.getEntryBlock()); I != E; ++I) {

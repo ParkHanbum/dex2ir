@@ -86,7 +86,8 @@ define i64 @f5(i64 %src1) {
 ; CHECK-LABEL: f5:
 ; CHECK: lgrl [[REG:%r[0-5]]], h@GOT
 ; CHECK: llgh [[VAL:%r[0-5]]], 0([[REG]])
-; CHECK: clgrjl %r2, [[VAL]],
+; CHECK: clgr %r2, [[VAL]]
+; CHECK-NEXT: jl
 ; CHECK: br %r14
 entry:
   %val = load i16 *@h, align 1
@@ -98,24 +99,5 @@ mulb:
   br label %exit
 exit:
   %res = phi i64 [ %src1, %entry ], [ %mul, %mulb ]
-  ret i64 %res
-}
-
-; Check the comparison can be reversed if that allows CLGHRL to be used.
-define i64 @f6(i64 %src2) {
-; CHECK-LABEL: f6:
-; CHECK: clghrl %r2, g
-; CHECK-NEXT: jh {{\.L.*}}
-; CHECK: br %r14
-entry:
-  %val = load i16 *@g
-  %src1 = zext i16 %val to i64
-  %cond = icmp ult i64 %src1, %src2
-  br i1 %cond, label %exit, label %mulb
-mulb:
-  %mul = mul i64 %src2, %src2
-  br label %exit
-exit:
-  %res = phi i64 [ %src2, %entry ], [ %mul, %mulb ]
   ret i64 %res
 }

@@ -14,7 +14,6 @@
 
 #include "XCore.h"
 #include "XCoreRegisterInfo.h"
-#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCFixedLenDisassembler.h"
 #include "llvm/MC/MCInst.h"
@@ -24,17 +23,16 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "xcore-disassembler"
-
 typedef MCDisassembler::DecodeStatus DecodeStatus;
 
 namespace {
 
 /// \brief A disassembler class for XCore.
 class XCoreDisassembler : public MCDisassembler {
+  OwningPtr<const MCRegisterInfo> RegInfo;
 public:
-  XCoreDisassembler(const MCSubtargetInfo &STI, MCContext &Ctx) :
-    MCDisassembler(STI, Ctx) {}
+  XCoreDisassembler(const MCSubtargetInfo &STI, const MCRegisterInfo *Info) :
+    MCDisassembler(STI), RegInfo(Info) {}
 
   /// \brief See MCDisassembler.
   virtual DecodeStatus getInstruction(MCInst &instr,
@@ -42,8 +40,9 @@ public:
                                       const MemoryObject &region,
                                       uint64_t address,
                                       raw_ostream &vStream,
-                                      raw_ostream &cStream) const override;
+                                      raw_ostream &cStream) const;
 
+  const MCRegisterInfo *getRegInfo() const { return RegInfo.get(); }
 };
 }
 
@@ -82,8 +81,7 @@ static bool readInstruction32(const MemoryObject &region,
 
 static unsigned getReg(const void *D, unsigned RC, unsigned RegNo) {
   const XCoreDisassembler *Dis = static_cast<const XCoreDisassembler*>(D);
-  const MCRegisterInfo *RegInfo = Dis->getContext().getRegisterInfo();
-  return *(RegInfo->getRegClass(RC).begin() + RegNo);
+  return *(Dis->getRegInfo()->getRegClass(RC).begin() + RegNo);
 }
 
 static DecodeStatus DecodeGRRegsRegisterClass(MCInst &Inst,
@@ -790,9 +788,8 @@ namespace llvm {
 }
 
 static MCDisassembler *createXCoreDisassembler(const Target &T,
-                                               const MCSubtargetInfo &STI,
-                                               MCContext &Ctx) {
-  return new XCoreDisassembler(STI, Ctx);
+                                               const MCSubtargetInfo &STI) {
+  return new XCoreDisassembler(STI, T.createMCRegInfo(""));
 }
 
 extern "C" void LLVMInitializeXCoreDisassembler() {

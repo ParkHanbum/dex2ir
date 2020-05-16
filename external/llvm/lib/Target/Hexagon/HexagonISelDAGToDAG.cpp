@@ -11,18 +11,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "hexagon-isel"
 #include "Hexagon.h"
 #include "HexagonISelLowering.h"
 #include "HexagonTargetMachine.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "hexagon-isel"
 
 static
 cl::opt<unsigned>
@@ -62,7 +61,7 @@ public:
   }
   bool hasNumUsesBelowThresGA(SDNode *N) const;
 
-  SDNode *Select(SDNode *N) override;
+  SDNode *Select(SDNode *N);
 
   // Complex Pattern Selectors.
   inline bool foldGlobalAddress(SDValue &N, SDValue &R);
@@ -79,15 +78,15 @@ public:
   bool SelectADDRriU6_1(SDValue& N, SDValue &R1, SDValue &R2);
   bool SelectADDRriU6_2(SDValue& N, SDValue &R1, SDValue &R2);
 
-  const char *getPassName() const override {
+  virtual const char *getPassName() const {
     return "Hexagon DAG->DAG Pattern Instruction Selection";
   }
 
   /// SelectInlineAsmMemoryOperand - Implement addressing mode selection for
   /// inline asm expressions.
-  bool SelectInlineAsmMemoryOperand(const SDValue &Op,
-                                    char ConstraintCode,
-                                    std::vector<SDValue> &OutOps) override;
+  virtual bool SelectInlineAsmMemoryOperand(const SDValue &Op,
+                                            char ConstraintCode,
+                                            std::vector<SDValue> &OutOps);
   bool SelectAddr(SDNode *Op, SDValue Addr, SDValue &Base, SDValue &Offset);
 
   SDNode *SelectLoad(SDNode *N);
@@ -187,7 +186,7 @@ FunctionPass *llvm::createHexagonISelDag(HexagonTargetMachine &TM,
 static void initializePassOnce(PassRegistry &Registry) {
   const char *Name = "Hexagon DAG->DAG Pattern Instruction Selection";
   PassInfo *PI = new PassInfo(Name, "hexagon-isel",
-                              &SelectionDAGISel::ID, nullptr, false, false);
+                              &SelectionDAGISel::ID, 0, false, false);
   Registry.registerPass(*PI, true);
 }
 
@@ -1239,7 +1238,7 @@ SDNode *HexagonDAGToDAGISel::SelectIntrinsicWOChain(SDNode *N) {
         SDNode *PdRs = CurDAG->getMachineNode(Hexagon::TFR_PdRs, dl, MVT::i1,
                                               SDValue(Arg, 0));
         Ops.push_back(SDValue(PdRs,0));
-      } else if (!RC && (dyn_cast<ConstantSDNode>(Arg) != nullptr)) {
+      } else if (RC == NULL && (dyn_cast<ConstantSDNode>(Arg) != NULL)) {
         // This is immediate operand. Lower it here making sure that we DO have
         // const SDNode for immediate value.
         int32_t Val = cast<ConstantSDNode>(Arg)->getSExtValue();
@@ -1345,10 +1344,8 @@ SDNode *HexagonDAGToDAGISel::SelectAdd(SDNode *N) {
 
 
 SDNode *HexagonDAGToDAGISel::Select(SDNode *N) {
-  if (N->isMachineOpcode()) {
-    N->setNodeId(-1);
-    return nullptr;   // Already selected.
-  }
+  if (N->isMachineOpcode())
+    return NULL;   // Already selected.
 
 
   switch (N->getOpcode()) {
@@ -1640,7 +1637,7 @@ bool HexagonDAGToDAGISel::hasNumUsesBelowThresGA(SDNode *N) const {
 }
 
 //===--------------------------------------------------------------------===//
-// Return true if the non-GP-relative global address can be folded.
+// Return true if the non GP-relative global address can be folded.
 //===--------------------------------------------------------------------===//
 inline bool HexagonDAGToDAGISel::foldGlobalAddress(SDValue &N, SDValue &R) {
   return foldGlobalAddressImpl(N, R, false);

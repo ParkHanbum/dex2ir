@@ -9,6 +9,7 @@
 
 #include "llvm/ExecutionEngine/JITMemoryManager.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
@@ -30,27 +31,27 @@ Function *makeFakeFunction() {
 // the code in the case that we don't have to allocate more memory to store the
 // function bodies.
 TEST(JITMemoryManagerTest, NoAllocations) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
   uintptr_t size;
   std::string Error;
 
   // Allocate the functions.
-  std::unique_ptr<Function> F1(makeFakeFunction());
+  OwningPtr<Function> F1(makeFakeFunction());
   size = 1024;
   uint8_t *FunctionBody1 = MemMgr->startFunctionBody(F1.get(), size);
   memset(FunctionBody1, 0xFF, 1024);
   MemMgr->endFunctionBody(F1.get(), FunctionBody1, FunctionBody1 + 1024);
   EXPECT_TRUE(MemMgr->CheckInvariants(Error)) << Error;
 
-  std::unique_ptr<Function> F2(makeFakeFunction());
+  OwningPtr<Function> F2(makeFakeFunction());
   size = 1024;
   uint8_t *FunctionBody2 = MemMgr->startFunctionBody(F2.get(), size);
   memset(FunctionBody2, 0xFF, 1024);
   MemMgr->endFunctionBody(F2.get(), FunctionBody2, FunctionBody2 + 1024);
   EXPECT_TRUE(MemMgr->CheckInvariants(Error)) << Error;
 
-  std::unique_ptr<Function> F3(makeFakeFunction());
+  OwningPtr<Function> F3(makeFakeFunction());
   size = 1024;
   uint8_t *FunctionBody3 = MemMgr->startFunctionBody(F3.get(), size);
   memset(FunctionBody3, 0xFF, 1024);
@@ -69,7 +70,7 @@ TEST(JITMemoryManagerTest, NoAllocations) {
 // Make three large functions that take up most of the space in the slab.  Then
 // try allocating three smaller functions that don't require additional slabs.
 TEST(JITMemoryManagerTest, TestCodeAllocation) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
   uintptr_t size;
   std::string Error;
@@ -80,7 +81,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
                                  smallFuncSize * 2);
 
   // Allocate big functions
-  std::unique_ptr<Function> F1(makeFakeFunction());
+  OwningPtr<Function> F1(makeFakeFunction());
   size = bigFuncSize;
   uint8_t *FunctionBody1 = MemMgr->startFunctionBody(F1.get(), size);
   ASSERT_LE(bigFuncSize, size);
@@ -88,7 +89,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
   MemMgr->endFunctionBody(F1.get(), FunctionBody1, FunctionBody1 + bigFuncSize);
   EXPECT_TRUE(MemMgr->CheckInvariants(Error)) << Error;
 
-  std::unique_ptr<Function> F2(makeFakeFunction());
+  OwningPtr<Function> F2(makeFakeFunction());
   size = bigFuncSize;
   uint8_t *FunctionBody2 = MemMgr->startFunctionBody(F2.get(), size);
   ASSERT_LE(bigFuncSize, size);
@@ -96,7 +97,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
   MemMgr->endFunctionBody(F2.get(), FunctionBody2, FunctionBody2 + bigFuncSize);
   EXPECT_TRUE(MemMgr->CheckInvariants(Error)) << Error;
 
-  std::unique_ptr<Function> F3(makeFakeFunction());
+  OwningPtr<Function> F3(makeFakeFunction());
   size = bigFuncSize;
   uint8_t *FunctionBody3 = MemMgr->startFunctionBody(F3.get(), size);
   ASSERT_LE(bigFuncSize, size);
@@ -108,7 +109,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
   EXPECT_EQ(3U, MemMgr->GetNumCodeSlabs());
 
   // Allocate small functions
-  std::unique_ptr<Function> F4(makeFakeFunction());
+  OwningPtr<Function> F4(makeFakeFunction());
   size = smallFuncSize;
   uint8_t *FunctionBody4 = MemMgr->startFunctionBody(F4.get(), size);
   ASSERT_LE(smallFuncSize, size);
@@ -117,7 +118,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
                           FunctionBody4 + smallFuncSize);
   EXPECT_TRUE(MemMgr->CheckInvariants(Error)) << Error;
 
-  std::unique_ptr<Function> F5(makeFakeFunction());
+  OwningPtr<Function> F5(makeFakeFunction());
   size = smallFuncSize;
   uint8_t *FunctionBody5 = MemMgr->startFunctionBody(F5.get(), size);
   ASSERT_LE(smallFuncSize, size);
@@ -126,7 +127,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
                           FunctionBody5 + smallFuncSize);
   EXPECT_TRUE(MemMgr->CheckInvariants(Error)) << Error;
 
-  std::unique_ptr<Function> F6(makeFakeFunction());
+  OwningPtr<Function> F6(makeFakeFunction());
   size = smallFuncSize;
   uint8_t *FunctionBody6 = MemMgr->startFunctionBody(F6.get(), size);
   ASSERT_LE(smallFuncSize, size);
@@ -156,7 +157,7 @@ TEST(JITMemoryManagerTest, TestCodeAllocation) {
 // Allocate five global ints of varying widths and alignment, and check their
 // alignment and overlap.
 TEST(JITMemoryManagerTest, TestSmallGlobalInts) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
   uint8_t  *a = (uint8_t *)MemMgr->allocateGlobal(8,  0);
   uint16_t *b = (uint16_t*)MemMgr->allocateGlobal(16, 2);
@@ -203,7 +204,7 @@ TEST(JITMemoryManagerTest, TestSmallGlobalInts) {
 // Allocate a small global, a big global, and a third global, and make sure we
 // only use two slabs for that.
 TEST(JITMemoryManagerTest, TestLargeGlobalArray) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
   size_t Size = 4 * MemMgr->GetDefaultDataSlabSize();
   uint64_t *a = (uint64_t*)MemMgr->allocateGlobal(64, 8);
@@ -233,7 +234,7 @@ TEST(JITMemoryManagerTest, TestLargeGlobalArray) {
 // Allocate lots of medium globals so that we can test moving the bump allocator
 // to a new slab.
 TEST(JITMemoryManagerTest, TestManyGlobals) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
   size_t SlabSize = MemMgr->GetDefaultDataSlabSize();
   size_t Size = 128;
@@ -256,7 +257,7 @@ TEST(JITMemoryManagerTest, TestManyGlobals) {
 // Allocate lots of function stubs so that we can test moving the stub bump
 // allocator to a new slab.
 TEST(JITMemoryManagerTest, TestManyStubs) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
   size_t SlabSize = MemMgr->GetDefaultStubSlabSize();
   size_t Size = 128;
@@ -267,29 +268,29 @@ TEST(JITMemoryManagerTest, TestManyStubs) {
 
   // After allocating a bunch of stubs, we should have two.
   for (int I = 0; I < Iters; ++I)
-    MemMgr->allocateStub(nullptr, Size, 8);
+    MemMgr->allocateStub(NULL, Size, 8);
   EXPECT_EQ(2U, MemMgr->GetNumStubSlabs());
 
   // And after much more, we should have three.
   for (int I = 0; I < Iters; ++I)
-    MemMgr->allocateStub(nullptr, Size, 8);
+    MemMgr->allocateStub(NULL, Size, 8);
   EXPECT_EQ(3U, MemMgr->GetNumStubSlabs());
 }
 
 // Check section allocation and alignment
 TEST(JITMemoryManagerTest, AllocateSection) {
-  std::unique_ptr<JITMemoryManager> MemMgr(
+  OwningPtr<JITMemoryManager> MemMgr(
       JITMemoryManager::CreateDefaultMemManager());
-  uint8_t *code1 = MemMgr->allocateCodeSection(256, 0, 1, StringRef());
-  uint8_t *data1 = MemMgr->allocateDataSection(256, 16, 2, StringRef(), true);
-  uint8_t *code2 = MemMgr->allocateCodeSection(257, 32, 3, StringRef());
-  uint8_t *data2 = MemMgr->allocateDataSection(256, 64, 4, StringRef(), false);
-  uint8_t *code3 = MemMgr->allocateCodeSection(258, 64, 5, StringRef());
+  uint8_t *code1 = MemMgr->allocateCodeSection(256, 0, 1);
+  uint8_t *data1 = MemMgr->allocateDataSection(256, 16, 2, true);
+  uint8_t *code2 = MemMgr->allocateCodeSection(257, 32, 3);
+  uint8_t *data2 = MemMgr->allocateDataSection(256, 64, 4, false);
+  uint8_t *code3 = MemMgr->allocateCodeSection(258, 64, 5);
 
-  EXPECT_NE((uint8_t*)nullptr, code1);
-  EXPECT_NE((uint8_t*)nullptr, code2);
-  EXPECT_NE((uint8_t*)nullptr, data1);
-  EXPECT_NE((uint8_t*)nullptr, data2);
+  EXPECT_NE((uint8_t*)0, code1);
+  EXPECT_NE((uint8_t*)0, code2);
+  EXPECT_NE((uint8_t*)0, data1);
+  EXPECT_NE((uint8_t*)0, data2);
 
   // Check alignment
   EXPECT_EQ((uint64_t)code1 & 0xf, 0u);

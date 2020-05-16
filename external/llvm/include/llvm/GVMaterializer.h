@@ -18,7 +18,7 @@
 #ifndef LLVM_GVMATERIALIZER_H
 #define LLVM_GVMATERIALIZER_H
 
-#include "llvm/Support/system_error.h"
+#include <string>
 
 namespace llvm {
 
@@ -41,9 +41,11 @@ public:
   /// dematerialized back to whatever backing store this GVMaterializer uses.
   virtual bool isDematerializable(const GlobalValue *GV) const = 0;
 
-  /// Materialize - make sure the given GlobalValue is fully read.
+  /// Materialize - make sure the given GlobalValue is fully read.  If the
+  /// module is corrupt, this returns true and fills in the optional string with
+  /// information about the problem.  If successful, this returns false.
   ///
-  virtual error_code Materialize(GlobalValue *GV) = 0;
+  virtual bool Materialize(GlobalValue *GV, std::string *ErrInfo = 0) = 0;
 
   /// Dematerialize - If the given GlobalValue is read in, and if the
   /// GVMaterializer supports it, release the memory for the GV, and set it up
@@ -53,8 +55,10 @@ public:
   virtual void Dematerialize(GlobalValue *) {}
 
   /// MaterializeModule - make sure the entire Module has been completely read.
+  /// On error, this returns true and fills in the optional string with
+  /// information about the problem.  If successful, this returns false.
   ///
-  virtual error_code MaterializeModule(Module *M) = 0;
+  virtual bool MaterializeModule(Module *M, std::string *ErrInfo = 0) = 0;
 };
 
 } // End llvm namespace

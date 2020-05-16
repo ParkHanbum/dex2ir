@@ -1,7 +1,7 @@
 ; RUN: llc < %s -march=x86 -mcpu=corei7 | FileCheck %s
 
 ;CHECK-LABEL: test:
-;CHECK-NOT: pshufd
+;CHECK-not: pshufd
 ;CHECK: ret
 define float @test(<4 x float>* %A) nounwind {
 entry:

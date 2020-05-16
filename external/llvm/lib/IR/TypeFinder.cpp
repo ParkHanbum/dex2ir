@@ -44,9 +44,6 @@ void TypeFinder::run(const Module &M, bool onlyNamed) {
   for (Module::const_iterator FI = M.begin(), E = M.end(); FI != E; ++FI) {
     incorporateType(FI->getType());
 
-    if (FI->hasPrefixData())
-      incorporateValue(FI->getPrefixData());
-
     // First incorporate the arguments.
     for (Function::const_arg_iterator AI = FI->arg_begin(),
            AE = FI->arg_end(); AI != AE; ++AI)
@@ -94,27 +91,19 @@ void TypeFinder::clear() {
 /// incorporateType - This method adds the type to the list of used structures
 /// if it's not in there already.
 void TypeFinder::incorporateType(Type *Ty) {
-  // Check to see if we've already visited this type.
+  // Check to see if we're already visited this type.
   if (!VisitedTypes.insert(Ty).second)
     return;
 
-  SmallVector<Type *, 4> TypeWorklist;
-  TypeWorklist.push_back(Ty);
-  do {
-    Ty = TypeWorklist.pop_back_val();
+  // If this is a structure or opaque type, add a name for the type.
+  if (StructType *STy = dyn_cast<StructType>(Ty))
+    if (!OnlyNamed || STy->hasName())
+      StructTypes.push_back(STy);
 
-    // If this is a structure or opaque type, add a name for the type.
-    if (StructType *STy = dyn_cast<StructType>(Ty))
-      if (!OnlyNamed || STy->hasName())
-        StructTypes.push_back(STy);
-
-    // Add all unvisited subtypes to worklist for processing
-    for (Type::subtype_reverse_iterator I = Ty->subtype_rbegin(),
-                                        E = Ty->subtype_rend();
-         I != E; ++I)
-      if (VisitedTypes.insert(*I).second)
-        TypeWorklist.push_back(*I);
-  } while (!TypeWorklist.empty());
+  // Recursively walk all contained types.
+  for (Type::subtype_iterator I = Ty->subtype_begin(),
+         E = Ty->subtype_end(); I != E; ++I)
+    incorporateType(*I);
 }
 
 /// incorporateValue - This method is used to walk operand lists finding types

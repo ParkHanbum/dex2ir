@@ -234,7 +234,6 @@ The following types have built-in support in YAML I/O:
 * float
 * double
 * StringRef
-* std::string
 * int64_t
 * int32_t
 * int16_t
@@ -399,42 +398,6 @@ the above schema, a same valid YAML document is:
     name:    Tom
     flags:   [ pointy, flat ]
 
-Sometimes a "flags" field might contains an enumeration part
-defined by a bit-mask.
-
-.. code-block:: c++
-
-    enum {
-      flagsFeatureA = 1,
-      flagsFeatureB = 2,
-      flagsFeatureC = 4,
-
-      flagsCPUMask = 24,
-
-      flagsCPU1 = 8,
-      flagsCPU2 = 16
-    };
-
-To support reading and writing such fields, you need to use the maskedBitSet()
-method and provide the bit values, their names and the enumeration mask.
-
-.. code-block:: c++
-
-    template <>
-    struct ScalarBitSetTraits<MyFlags> {
-      static void bitset(IO &io, MyFlags &value) {
-        io.bitSetCase(value, "featureA",  flagsFeatureA);
-        io.bitSetCase(value, "featureB",  flagsFeatureB);
-        io.bitSetCase(value, "featureC",  flagsFeatureC);
-        io.maskedBitSetCase(value, "CPU1",  flagsCPU1, flagsCPUMask);
-        io.maskedBitSetCase(value, "CPU2",  flagsCPU2, flagsCPUMask);
-      }
-    };
-
-YAML I/O (when writing) will apply the enumeration mask to the flags field,
-and compare the result and values from the bitset. As in case of a regular
-bitset, each that matches will cause the corresponding string to be added
-to the flow sequence.
 
 Custom Scalar
 -------------
@@ -445,7 +408,7 @@ some time format (e.g. 4-May-2012 10:30pm).  YAML I/O has a way to support
 custom formatting and parsing of scalar types by specializing ScalarTraits<> on
 your data type.  When writing, YAML I/O will provide the native type and
 your specialization must create a temporary llvm::StringRef.  When reading,
-YAML I/O will provide an llvm::StringRef of scalar and your specialization
+YAML I/O will provide a llvm::StringRef of scalar and your specialization
 must convert that to your native data type.  An outline of a custom scalar type
 looks like:
 
@@ -462,10 +425,8 @@ looks like:
       static StringRef input(StringRef scalar, T &value) {
         // do custom parsing here.  Return the empty string on success,
         // or an error message on failure.
-        return StringRef();
+        return StringRef(); 
       }
-      // Determine if this scalar needs quotes.
-      static bool mustQuote(StringRef) { return true; }
     };
     
 
@@ -588,7 +549,7 @@ coordinates into polar when reading YAML.
     };
 
 When writing YAML, the local variable "keys" will be a stack allocated 
-instance of NormalizedPolar, constructed from the supplied polar object which
+instance of NormalizedPolar, constructed from the suppled polar object which
 initializes it x and y fields.  The mapRequired() methods then write out the x
 and y values as key/value pairs.  
 
@@ -672,58 +633,6 @@ This works for both reading and writing. For example:
     };
 
 
-Tags
-----
-
-The YAML syntax supports tags as a way to specify the type of a node before
-it is parsed. This allows dynamic types of nodes.  But the YAML I/O model uses
-static typing, so there are limits to how you can use tags with the YAML I/O
-model. Recently, we added support to YAML I/O for checking/setting the optional 
-tag on a map. Using this functionality it is even possbile to support different 
-mappings, as long as they are convertable.  
-
-To check a tag, inside your mapping() method you can use io.mapTag() to specify
-what the tag should be.  This will also add that tag when writing yaml.
-
-Validation
-----------
-
-Sometimes in a yaml map, each key/value pair is valid, but the combination is
-not.  This is similar to something having no syntax errors, but still having
-semantic errors.  To support semantic level checking, YAML I/O allows
-an optional ``validate()`` method in a MappingTraits template specialization.  
-
-When parsing yaml, the ``validate()`` method is call *after* all key/values in 
-the map have been processed. Any error message returned by the ``validate()`` 
-method during input will be printed just a like a syntax error would be printed.
-When writing yaml, the ``validate()`` method is called *before* the yaml 
-key/values  are written.  Any error during output will trigger an ``assert()`` 
-because it is a programming error to have invalid struct values.
-
-
-.. code-block:: c++
-
-    using llvm::yaml::MappingTraits;
-    using llvm::yaml::IO;
-    
-    struct Stuff {
-      ...
-    };
-
-    template <>
-    struct MappingTraits<Stuff> {
-      static void mapping(IO &io, Stuff &stuff) {
-      ...
-      }
-      static StringRef validate(IO &io, Stuff &stuff) {
-        // Look at all fields in 'stuff' and if there
-        // are any bad values return a string describing
-        // the error.  Otherwise return an empty string.
-        return StringRef();
-      }
-    };
-
-
 Sequence
 ========
 
@@ -737,7 +646,7 @@ llvm::yaml::SequenceTraits on T and implement two methods:
   template <>
   struct SequenceTraits<MySeq> {
     static size_t size(IO &io, MySeq &list) { ... }
-    static MySeqEl &element(IO &io, MySeq &list, size_t index) { ... }
+    static MySeqEl element(IO &io, MySeq &list, size_t index) { ... }
   };
 
 The size() method returns how many elements are currently in your sequence.
@@ -760,7 +669,7 @@ add "static const bool flow = true;".  For instance:
   template <>
   struct SequenceTraits<MyList> {
     static size_t size(IO &io, MyList &list) { ... }
-    static MyListEl &element(IO &io, MyList &list, size_t index) { ... }
+    static MyListEl element(IO &io, MyList &list, size_t index) { ... }
     
     // The existence of this member causes YAML I/O to use a flow sequence
     static const bool flow = true;

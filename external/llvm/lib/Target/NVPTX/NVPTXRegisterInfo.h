@@ -16,10 +16,11 @@
 
 #include "ManagedStringPool.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include <sstream>
 
 #define GET_REGINFO_HEADER
 #include "NVPTXGenRegisterInfo.inc"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include <sstream>
 
 namespace llvm {
 
@@ -41,16 +42,22 @@ public:
   //------------------------------------------------------
 
   // NVPTX callee saved registers
-  const MCPhysReg *
-  getCalleeSavedRegs(const MachineFunction *MF = nullptr) const override;
+  virtual const uint16_t *
+  getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
-  BitVector getReservedRegs(const MachineFunction &MF) const override;
+  // NVPTX callee saved register classes
+  virtual const TargetRegisterClass *const *
+  getCalleeSavedRegClasses(const MachineFunction *MF) const;
 
-  void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
-                           unsigned FIOperandNum,
-                           RegScavenger *RS = nullptr) const override;
+  virtual BitVector getReservedRegs(const MachineFunction &MF) const;
 
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
+                                   unsigned FIOperandNum,
+                                   RegScavenger *RS = NULL) const;
+
+  virtual int getDwarfRegNum(unsigned RegNum, bool isEH) const;
+  virtual unsigned getFrameRegister(const MachineFunction &MF) const;
+  virtual unsigned getRARegister() const;
 
   ManagedStringPool *getStrPool() const {
     return const_cast<ManagedStringPool *>(&ManagedStrPool);

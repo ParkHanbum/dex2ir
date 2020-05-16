@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMXCoreAsmPrinter.a  CMakeFiles/LLVMXCoreAsmPrinter.dir/XCoreInstPrinter.cpp.o
+/usr/bin/ranlib ../../../libLLVMXCoreAsmPrinter.a

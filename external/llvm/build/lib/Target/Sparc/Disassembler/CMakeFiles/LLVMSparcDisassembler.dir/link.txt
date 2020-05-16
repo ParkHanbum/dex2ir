@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMSparcDisassembler.a  CMakeFiles/LLVMSparcDisassembler.dir/SparcDisassembler.cpp.o
+/usr/bin/ranlib ../../../libLLVMSparcDisassembler.a

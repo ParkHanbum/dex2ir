@@ -43,7 +43,7 @@ namespace llvm {
 
 Value* RuntimeSupportBuilderX86::EmitGetCurrentThread() {
   Function* ori_func = GetRuntimeSupportFunction(runtime_support::GetCurrentThread);
-  std::string inline_asm(StringPrintf("mov %%fs:%d, $0", Thread::SelfOffset().Int32Value()));
+  std::string inline_asm(StringPrintf("mov %%fs:%d, $0", Thread::SelfOffset<8>().Int32Value()));
   InlineAsm* func = InlineAsm::get(ori_func->getFunctionType(), inline_asm, "=r", false);
   CallInst* thread = irb_.CreateCall(func);
   thread->setDoesNotAccessMemory();

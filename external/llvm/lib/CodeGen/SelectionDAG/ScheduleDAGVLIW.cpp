@@ -18,6 +18,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "pre-RA-sched"
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "ScheduleDAGSDNodes.h"
 #include "llvm/ADT/Statistic.h"
@@ -33,8 +34,6 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 #include <climits>
 using namespace llvm;
-
-#define DEBUG_TYPE "pre-RA-sched"
 
 STATISTIC(NumNoops , "Number of noops inserted");
 STATISTIC(NumStalls, "Number of pipeline stalls");
@@ -73,8 +72,7 @@ public:
     : ScheduleDAGSDNodes(mf), AvailableQueue(availqueue), AA(aa) {
 
     const TargetMachine &tm = mf.getTarget();
-    HazardRec = tm.getInstrInfo()->CreateTargetHazardRecognizer(
-        tm.getSubtargetImpl(), this);
+    HazardRec = tm.getInstrInfo()->CreateTargetHazardRecognizer(&tm, this);
   }
 
   ~ScheduleDAGVLIW() {
@@ -82,7 +80,7 @@ public:
     delete AvailableQueue;
   }
 
-  void Schedule() override;
+  void Schedule();
 
 private:
   void releaseSucc(SUnit *SU, const SDep &D);
@@ -122,7 +120,7 @@ void ScheduleDAGVLIW::releaseSucc(SUnit *SU, const SDep &D) {
     dbgs() << "*** Scheduling failed! ***\n";
     SuccSU->dump(this);
     dbgs() << " has been released too many times!\n";
-    llvm_unreachable(nullptr);
+    llvm_unreachable(0);
   }
 #endif
   assert(!D.isWeak() && "unexpected artificial DAG edge");
@@ -206,12 +204,12 @@ void ScheduleDAGVLIW::listScheduleTopDown() {
     // don't advance the hazard recognizer.
     if (AvailableQueue->empty()) {
       // Reset DFA state.
-      AvailableQueue->scheduledNode(nullptr);
+      AvailableQueue->scheduledNode(0);
       ++CurCycle;
       continue;
     }
 
-    SUnit *FoundSUnit = nullptr;
+    SUnit *FoundSUnit = 0;
 
     bool HasNoopHazards = false;
     while (!AvailableQueue->empty()) {
@@ -258,7 +256,7 @@ void ScheduleDAGVLIW::listScheduleTopDown() {
       // processors without pipeline interlocks and other cases.
       DEBUG(dbgs() << "*** Emitting noop\n");
       HazardRec->EmitNoop();
-      Sequence.push_back(nullptr);   // NULL here means noop
+      Sequence.push_back(0);   // NULL here means noop
       ++NumNoops;
       ++CurCycle;
     }

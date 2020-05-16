@@ -1,5 +1,4 @@
 // RUN: llvm-tblgen -gen-intrinsic %s | FileCheck %s
-// XFAIL: vg_leak
 
 class IntrinsicProperty;
 

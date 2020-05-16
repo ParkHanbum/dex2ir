@@ -131,7 +131,7 @@ Next, we declare our pass itself:
 
   struct Hello : public FunctionPass {
 
-This declares a "``Hello``" class that is a subclass of :ref:`FunctionPass
+This declares a "``Hello``" class that is a subclass of `FunctionPass
 <writing-an-llvm-pass-FunctionPass>`.  The different builtin pass subclasses
 are described in detail :ref:`later <writing-an-llvm-pass-pass-classes>`, but
 for now, know that ``FunctionPass`` operates on a function at a time.
@@ -259,6 +259,7 @@ To see what happened to the other string you registered, try running
       -hello                    - Hello World Pass
       -indvars                  - Induction Variable Simplification
       -inline                   - Function Integration/Inlining
+      -insert-edge-profiling    - Insert instrumentation for edge profiling
   ...
 
 The pass name gets added as the information string for your pass, giving some

@@ -1,4 +1,5 @@
-; RUN: not llvm-dis < %s.bc 2>&1 | FileCheck %s
+; RUN: not llvm-dis < %s.bc > /dev/null 2> %t
+; RUN: FileCheck %s < %t
 ; PR8494
 
-; CHECK: Invalid record
+; CHECK: Invalid MODULE_CODE_FUNCTION record

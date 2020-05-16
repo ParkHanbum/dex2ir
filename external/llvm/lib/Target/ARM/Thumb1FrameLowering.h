@@ -11,40 +11,44 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ARM_THUMB1FRAMELOWERING_H
-#define LLVM_ARM_THUMB1FRAMELOWERING_H
+#ifndef __THUMB_FRAMEINFO_H_
+#define __THUMB_FRAMEINFO_H_
 
+#include "ARM.h"
 #include "ARMFrameLowering.h"
+#include "ARMSubtarget.h"
 #include "Thumb1InstrInfo.h"
 #include "Thumb1RegisterInfo.h"
 #include "llvm/Target/TargetFrameLowering.h"
 
 namespace llvm {
+  class ARMSubtarget;
 
 class Thumb1FrameLowering : public ARMFrameLowering {
 public:
-  explicit Thumb1FrameLowering(const ARMSubtarget &sti);
+  explicit Thumb1FrameLowering(const ARMSubtarget &sti)
+    : ARMFrameLowering(sti) {
+  }
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.
-  void emitPrologue(MachineFunction &MF) const override;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
+  void emitPrologue(MachineFunction &MF) const;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
 
   bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator MI,
                                  const std::vector<CalleeSavedInfo> &CSI,
-                                 const TargetRegisterInfo *TRI) const override;
+                                 const TargetRegisterInfo *TRI) const;
   bool restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                  MachineBasicBlock::iterator MI,
-                                  const std::vector<CalleeSavedInfo> &CSI,
-                                  const TargetRegisterInfo *TRI) const override;
+                                   MachineBasicBlock::iterator MI,
+                                   const std::vector<CalleeSavedInfo> &CSI,
+                                   const TargetRegisterInfo *TRI) const;
 
-  bool hasReservedCallFrame(const MachineFunction &MF) const override;
+  bool hasReservedCallFrame(const MachineFunction &MF) const;
 
-  void
-  eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator MI) const override;
+  void eliminateCallFramePseudoInstr(MachineFunction &MF,
+                                     MachineBasicBlock &MBB,
+                                     MachineBasicBlock::iterator MI) const;
 };
 
 } // End llvm namespace

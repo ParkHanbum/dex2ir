@@ -1,5 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -mcpu=cortex-a8 %s -o - | FileCheck %s
-
+; RUN: llc < %s -march=arm -mcpu=cortex-a8 | FileCheck %s
 define i32 @f(i32 %a, i32 %b, i32 %c) nounwind readnone ssp {
 entry:
 ; CHECK-NOT: smmls

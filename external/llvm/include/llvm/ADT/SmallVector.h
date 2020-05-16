@@ -22,7 +22,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <string>
 #include <cstring>
 #include <iterator>
 #include <memory>
@@ -54,7 +53,7 @@ public:
     return size_t((char*)CapacityX - (char*)BeginX);
   }
 
-  bool LLVM_ATTRIBUTE_UNUSED_RESULT empty() const { return BeginX == EndX; }
+  bool empty() const { return BeginX == EndX; }
 };
 
 template <typename T, unsigned N> struct SmallVectorStorage;
@@ -339,7 +338,7 @@ protected:
     // Use memcpy for PODs iterated by pointers (which includes SmallVector
     // iterators): std::uninitialized_copy optimizes to memmove, but we can
     // use memcpy here.
-    std::memcpy(Dest, I, (E-I)*sizeof(T));
+    memcpy(Dest, I, (E-I)*sizeof(T));
   }
 
   /// grow - double the size of the allocated memory, guaranteeing space for at
@@ -351,7 +350,7 @@ public:
   void push_back(const T &Elt) {
     if (this->EndX < this->CapacityX) {
     Retry:
-      std::memcpy(this->end(), &Elt, sizeof(T));
+      memcpy(this->end(), &Elt, sizeof(T));
       this->setEnd(this->end()+1);
       return;
     }
@@ -428,7 +427,7 @@ public:
       this->grow(N);
   }
 
-  T LLVM_ATTRIBUTE_UNUSED_RESULT pop_back_val() {
+  T pop_back_val() {
 #if LLVM_HAS_RVALUE_REFERENCES
     T Result = ::std::move(this->back());
 #else

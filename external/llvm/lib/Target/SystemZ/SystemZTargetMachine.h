@@ -15,15 +15,25 @@
 #ifndef SYSTEMZTARGETMACHINE_H
 #define SYSTEMZTARGETMACHINE_H
 
+#include "SystemZFrameLowering.h"
+#include "SystemZISelLowering.h"
+#include "SystemZInstrInfo.h"
+#include "SystemZRegisterInfo.h"
 #include "SystemZSubtarget.h"
+#include "SystemZSelectionDAGInfo.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
 
-class TargetFrameLowering;
-
 class SystemZTargetMachine : public LLVMTargetMachine {
   SystemZSubtarget        Subtarget;
+  const DataLayout        DL;
+  SystemZInstrInfo        InstrInfo;
+  SystemZTargetLowering   TLInfo;
+  SystemZSelectionDAGInfo TSInfo;
+  SystemZFrameLowering    FrameLowering;
 
 public:
   SystemZTargetMachine(const Target &T, StringRef TT, StringRef CPU,
@@ -32,30 +42,31 @@ public:
                        CodeGenOpt::Level OL);
 
   // Override TargetMachine.
-  const TargetFrameLowering *getFrameLowering() const override {
-    return getSubtargetImpl()->getFrameLowering();
+  virtual const TargetFrameLowering *getFrameLowering() const LLVM_OVERRIDE {
+    return &FrameLowering;
   }
-  const SystemZInstrInfo *getInstrInfo() const override {
-    return getSubtargetImpl()->getInstrInfo();
+  virtual const SystemZInstrInfo *getInstrInfo() const LLVM_OVERRIDE {
+    return &InstrInfo;
   }
-  const SystemZSubtarget *getSubtargetImpl() const override {
+  virtual const SystemZSubtarget *getSubtargetImpl() const LLVM_OVERRIDE {
     return &Subtarget;
   }
-  const DataLayout *getDataLayout() const override {
-    return getSubtargetImpl()->getDataLayout();
+  virtual const DataLayout *getDataLayout() const LLVM_OVERRIDE {
+    return &DL;
   }
-  const SystemZRegisterInfo *getRegisterInfo() const override {
-    return getSubtargetImpl()->getRegisterInfo();
+  virtual const SystemZRegisterInfo *getRegisterInfo() const LLVM_OVERRIDE {
+    return &InstrInfo.getRegisterInfo();
   }
-  const SystemZTargetLowering *getTargetLowering() const override {
-    return getSubtargetImpl()->getTargetLowering();
+  virtual const SystemZTargetLowering *getTargetLowering() const LLVM_OVERRIDE {
+    return &TLInfo;
   }
-  const TargetSelectionDAGInfo *getSelectionDAGInfo() const override {
-    return getSubtargetImpl()->getSelectionDAGInfo();
+  virtual const TargetSelectionDAGInfo *getSelectionDAGInfo() const
+    LLVM_OVERRIDE {
+    return &TSInfo;
   }
 
   // Override LLVMTargetMachine
-  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM) LLVM_OVERRIDE;
 };
 
 } // end namespace llvm

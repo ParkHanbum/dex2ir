@@ -1,4 +1,5 @@
 // RUN: llvm-tblgen < %s
+// XFAIL: vg_leak
 
 /* foo
 

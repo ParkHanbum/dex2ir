@@ -1,4 +1,4 @@
-//=- AArch64MachineFuctionInfo.h - AArch64 machine function info --*- C++ -*-=//
+//=- AArch64MachineFuctionInfo.h - AArch64 machine function info -*- C++ -*-==//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,19 +11,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef AArch64MACHINEFUNCTIONINFO_H
-#define AArch64MACHINEFUNCTIONINFO_H
+#ifndef AARCH64MACHINEFUNCTIONINFO_H
+#define AARCH64MACHINEFUNCTIONINFO_H
 
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/MC/MCLinkerOptimizationHint.h"
 
 namespace llvm {
 
-/// AArch64FunctionInfo - This class is derived from MachineFunctionInfo and
-/// contains private AArch64-specific information for each MachineFunction.
-class AArch64FunctionInfo : public MachineFunctionInfo {
+/// This class is derived from MachineFunctionInfo and contains private AArch64
+/// target-specific information for each MachineFunction.
+class AArch64MachineFunctionInfo : public MachineFunctionInfo {
+  virtual void anchor();
 
   /// Number of bytes of arguments this function has on the stack. If the callee
   /// is expected to restore the argument stack this should be a multiple of 16,
@@ -41,123 +39,111 @@ class AArch64FunctionInfo : public MachineFunctionInfo {
   /// callee is expected to pop the args.
   unsigned ArgumentStackToRestore;
 
-  /// HasStackFrame - True if this function has a stack frame. Set by
-  /// processFunctionBeforeCalleeSavedScan().
-  bool HasStackFrame;
+  /// If the stack needs to be adjusted on frame entry in two stages, this
+  /// records the size of the first adjustment just prior to storing
+  /// callee-saved registers. The callee-saved slots are addressed assuming
+  /// SP == <incoming-SP> - InitialStackAdjust.
+  unsigned InitialStackAdjust;
 
-  /// \brief Amount of stack frame size, not including callee-saved registers.
-  unsigned LocalStackSize;
+  /// Number of local-dynamic TLS accesses.
+  unsigned NumLocalDynamics;
 
-  /// \brief Number of TLS accesses using the special (combinable)
-  /// _TLS_MODULE_BASE_ symbol.
-  unsigned NumLocalDynamicTLSAccesses;
+  /// @see AArch64 Procedure Call Standard, B.3
+  ///
+  /// The Frame index of the area where LowerFormalArguments puts the
+  /// general-purpose registers that might contain variadic parameters.
+  int VariadicGPRIdx;
 
-  /// \brief FrameIndex for start of varargs area for arguments passed on the
-  /// stack.
-  int VarArgsStackIndex;
+  /// @see AArch64 Procedure Call Standard, B.3
+  ///
+  /// The size of the frame object used to store the general-purpose registers
+  /// which might contain variadic arguments. This is the offset from
+  /// VariadicGPRIdx to what's stored in __gr_top.
+  unsigned VariadicGPRSize;
 
-  /// \brief FrameIndex for start of varargs area for arguments passed in
-  /// general purpose registers.
-  int VarArgsGPRIndex;
+  /// @see AArch64 Procedure Call Standard, B.3
+  ///
+  /// The Frame index of the area where LowerFormalArguments puts the
+  /// floating-point registers that might contain variadic parameters.
+  int VariadicFPRIdx;
 
-  /// \brief Size of the varargs area for arguments passed in general purpose
-  /// registers.
-  unsigned VarArgsGPRSize;
+  /// @see AArch64 Procedure Call Standard, B.3
+  ///
+  /// The size of the frame object used to store the floating-point registers
+  /// which might contain variadic arguments. This is the offset from
+  /// VariadicFPRIdx to what's stored in __vr_top.
+  unsigned VariadicFPRSize;
 
-  /// \brief FrameIndex for start of varargs area for arguments passed in
-  /// floating-point registers.
-  int VarArgsFPRIndex;
+  /// @see AArch64 Procedure Call Standard, B.3
+  ///
+  /// The Frame index of an object pointing just past the last known stacked
+  /// argument on entry to a variadic function. This goes into the __stack field
+  /// of the va_list type.
+  int VariadicStackIdx;
 
-  /// \brief Size of the varargs area for arguments passed in floating-point
-  /// registers.
-  unsigned VarArgsFPRSize;
+  /// The offset of the frame pointer from the stack pointer on function
+  /// entry. This is expected to be negative.
+  int FramePointerOffset;
 
 public:
-  AArch64FunctionInfo()
-      : BytesInStackArgArea(0), ArgumentStackToRestore(0), HasStackFrame(false),
-        NumLocalDynamicTLSAccesses(0), VarArgsStackIndex(0), VarArgsGPRIndex(0),
-        VarArgsGPRSize(0), VarArgsFPRIndex(0), VarArgsFPRSize(0) {}
+  AArch64MachineFunctionInfo()
+    : BytesInStackArgArea(0),
+      ArgumentStackToRestore(0),
+      InitialStackAdjust(0),
+      NumLocalDynamics(0),
+      VariadicGPRIdx(0),
+      VariadicGPRSize(0),
+      VariadicFPRIdx(0),
+      VariadicFPRSize(0),
+      VariadicStackIdx(0),
+      FramePointerOffset(0) {}
 
-  explicit AArch64FunctionInfo(MachineFunction &MF)
-      : BytesInStackArgArea(0), ArgumentStackToRestore(0), HasStackFrame(false),
-        NumLocalDynamicTLSAccesses(0), VarArgsStackIndex(0), VarArgsGPRIndex(0),
-        VarArgsGPRSize(0), VarArgsFPRIndex(0), VarArgsFPRSize(0) {
-    (void)MF;
-  }
+  explicit AArch64MachineFunctionInfo(MachineFunction &MF)
+    : BytesInStackArgArea(0),
+      ArgumentStackToRestore(0),
+      InitialStackAdjust(0),
+      NumLocalDynamics(0),
+      VariadicGPRIdx(0),
+      VariadicGPRSize(0),
+      VariadicFPRIdx(0),
+      VariadicFPRSize(0),
+      VariadicStackIdx(0),
+      FramePointerOffset(0) {}
 
   unsigned getBytesInStackArgArea() const { return BytesInStackArgArea; }
-  void setBytesInStackArgArea(unsigned bytes) { BytesInStackArgArea = bytes; }
+  void setBytesInStackArgArea (unsigned bytes) { BytesInStackArgArea = bytes;}
 
   unsigned getArgumentStackToRestore() const { return ArgumentStackToRestore; }
   void setArgumentStackToRestore(unsigned bytes) {
     ArgumentStackToRestore = bytes;
   }
 
-  bool hasStackFrame() const { return HasStackFrame; }
-  void setHasStackFrame(bool s) { HasStackFrame = s; }
+  unsigned getInitialStackAdjust() const { return InitialStackAdjust; }
+  void setInitialStackAdjust(unsigned bytes) { InitialStackAdjust = bytes; }
 
-  void setLocalStackSize(unsigned Size) { LocalStackSize = Size; }
-  unsigned getLocalStackSize() const { return LocalStackSize; }
+  unsigned getNumLocalDynamicTLSAccesses() const { return NumLocalDynamics; }
+  void incNumLocalDynamicTLSAccesses() { ++NumLocalDynamics; }
 
-  void incNumLocalDynamicTLSAccesses() { ++NumLocalDynamicTLSAccesses; }
-  unsigned getNumLocalDynamicTLSAccesses() const {
-    return NumLocalDynamicTLSAccesses;
-  }
+  int getVariadicGPRIdx() const { return VariadicGPRIdx; }
+  void setVariadicGPRIdx(int Idx) { VariadicGPRIdx = Idx; }
 
-  int getVarArgsStackIndex() const { return VarArgsStackIndex; }
-  void setVarArgsStackIndex(int Index) { VarArgsStackIndex = Index; }
+  unsigned getVariadicGPRSize() const { return VariadicGPRSize; }
+  void setVariadicGPRSize(unsigned Size) { VariadicGPRSize = Size; }
 
-  int getVarArgsGPRIndex() const { return VarArgsGPRIndex; }
-  void setVarArgsGPRIndex(int Index) { VarArgsGPRIndex = Index; }
+  int getVariadicFPRIdx() const { return VariadicFPRIdx; }
+  void setVariadicFPRIdx(int Idx) { VariadicFPRIdx = Idx; }
 
-  unsigned getVarArgsGPRSize() const { return VarArgsGPRSize; }
-  void setVarArgsGPRSize(unsigned Size) { VarArgsGPRSize = Size; }
+  unsigned getVariadicFPRSize() const { return VariadicFPRSize; }
+  void setVariadicFPRSize(unsigned Size) { VariadicFPRSize = Size; }
 
-  int getVarArgsFPRIndex() const { return VarArgsFPRIndex; }
-  void setVarArgsFPRIndex(int Index) { VarArgsFPRIndex = Index; }
+  int getVariadicStackIdx() const { return VariadicStackIdx; }
+  void setVariadicStackIdx(int Idx) { VariadicStackIdx = Idx; }
 
-  unsigned getVarArgsFPRSize() const { return VarArgsFPRSize; }
-  void setVarArgsFPRSize(unsigned Size) { VarArgsFPRSize = Size; }
+  int getFramePointerOffset() const { return FramePointerOffset; }
+  void setFramePointerOffset(int Idx) { FramePointerOffset = Idx; }
 
-  typedef SmallPtrSet<const MachineInstr *, 16> SetOfInstructions;
-
-  const SetOfInstructions &getLOHRelated() const { return LOHRelated; }
-
-  // Shortcuts for LOH related types.
-  class MILOHDirective {
-    MCLOHType Kind;
-
-    /// Arguments of this directive. Order matters.
-    SmallVector<const MachineInstr *, 3> Args;
-
-  public:
-    typedef SmallVectorImpl<const MachineInstr *> LOHArgs;
-
-    MILOHDirective(MCLOHType Kind, const LOHArgs &Args)
-        : Kind(Kind), Args(Args.begin(), Args.end()) {
-      assert(isValidMCLOHType(Kind) && "Invalid LOH directive type!");
-    }
-
-    MCLOHType getKind() const { return Kind; }
-    const LOHArgs &getArgs() const { return Args; }
-  };
-
-  typedef MILOHDirective::LOHArgs MILOHArgs;
-  typedef SmallVector<MILOHDirective, 32> MILOHContainer;
-
-  const MILOHContainer &getLOHContainer() const { return LOHContainerSet; }
-
-  /// Add a LOH directive of this @p Kind and this @p Args.
-  void addLOHDirective(MCLOHType Kind, const MILOHArgs &Args) {
-    LOHContainerSet.push_back(MILOHDirective(Kind, Args));
-    LOHRelated.insert(Args.begin(), Args.end());
-  }
-
-private:
-  // Hold the lists of LOHs.
-  MILOHContainer LOHContainerSet;
-  SetOfInstructions LOHRelated;
 };
+
 } // End llvm namespace
 
-#endif // AArch64MACHINEFUNCTIONINFO_H
+#endif

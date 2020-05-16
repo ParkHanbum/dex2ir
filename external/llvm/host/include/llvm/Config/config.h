@@ -144,11 +144,13 @@
 /* Define to 1 if you have the `fmodf' function. */
 #define HAVE_FMODF 1
 
+#ifdef __APPLE__
 /* Define to 1 if you have the `futimes' function. */
 #define HAVE_FUTIMES 1
-
+#else
 /* Define to 1 if you have the `futimens' function. */
-/* #undef HAVE_FUTIMENS */
+#define HAVE_FUTIMENS 1
+#endif  // __APPLE__
 
 /* Define to 1 if you have the `getcwd' function. */
 #define HAVE_GETCWD 1
@@ -209,9 +211,6 @@
 
 /* Define to 1 if you have the `pthread' library (-lpthread). */
 #define HAVE_LIBPTHREAD 1
-
-/* Define to 1 if you have the `shell32' library (-lshell32). */
-#define HAVE_LIBSHELL32 1
 
 /* Define to 1 if you have the `udis86' library (-ludis86). */
 /* #undef HAVE_LIBUDIS86 */
@@ -531,7 +530,7 @@
 /* #undef HAVE___DIVDI3 */
 
 /* Define to 1 if you have the `__dso_handle' function. */
-/* #undef HAVE___DSO_HANDLE */
+#define HAVE___DSO_HANDLE 1
 
 /* Have host's __fixdfdi */
 /* #undef HAVE___FIXDFDI */
@@ -647,7 +646,7 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 5
+#define LLVM_VERSION_MINOR 3
 
 /* Define if the OS needs help to load dependent libraries for dlopen(). */
 /* #undef LTDL_DLOPEN_DEPLIBS */
@@ -680,13 +679,13 @@
 #define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LLVM 3.5.svn"
+#define PACKAGE_STRING "LLVM 3.1svn"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "llvm"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "3.5"
+#define PACKAGE_VERSION "3.1svn"
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #define RETSIGTYPE void

@@ -17,30 +17,28 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "deadargelim"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/IR/CallSite.h"
+#include "llvm/DIBuilder.h"
+#include "llvm/DebugInfo.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Constant.h"
-#include "llvm/IR/DIBuilder.h"
-#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <map>
 #include <set>
-#include <tuple>
 using namespace llvm;
-
-#define DEBUG_TYPE "deadargelim"
 
 STATISTIC(NumArgumentsEliminated, "Number of unread args removed");
 STATISTIC(NumRetValsEliminated  , "Number of unused return values removed");
@@ -64,7 +62,12 @@ namespace {
 
       /// Make RetOrArg comparable, so we can put it into a map.
       bool operator<(const RetOrArg &O) const {
-        return std::tie(F, Idx, IsArg) < std::tie(O.F, O.Idx, O.IsArg);
+        if (F != O.F)
+          return F < O.F;
+        else if (Idx != O.Idx)
+          return Idx < O.Idx;
+        else
+          return IsArg < O.IsArg;
       }
 
       /// Make RetOrArg comparable, so we can easily iterate the multimap.
@@ -127,7 +130,8 @@ namespace {
     // As the code generation for module is finished (and DIBuilder is
     // finalized) we assume that subprogram descriptors won't be changed, and
     // they are stored in map for short duration anyway.
-    DenseMap<const Function *, DISubprogram> FunctionDIs;
+    typedef DenseMap<Function*, DISubprogram> FunctionDIMap;
+    FunctionDIMap FunctionDIs;
 
   protected:
     // DAH uses this to specify a different ID.
@@ -139,16 +143,17 @@ namespace {
       initializeDAEPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnModule(Module &M) override;
+    bool runOnModule(Module &M);
 
     virtual bool ShouldHackArguments() const { return false; }
 
   private:
     Liveness MarkIfNotLive(RetOrArg Use, UseVector &MaybeLiveUses);
-    Liveness SurveyUse(const Use *U, UseVector &MaybeLiveUses,
+    Liveness SurveyUse(Value::const_use_iterator U, UseVector &MaybeLiveUses,
                        unsigned RetValNum = 0);
     Liveness SurveyUses(const Value *V, UseVector &MaybeLiveUses);
 
+    void CollectFunctionDIs(Module &M);
     void SurveyFunction(const Function &F);
     void MarkValue(const RetOrArg &RA, Liveness L,
                    const UseVector &MaybeLiveUses);
@@ -173,7 +178,7 @@ namespace {
     static char ID;
     DAH() : DAE(ID) {}
 
-    bool ShouldHackArguments() const override { return true; }
+    virtual bool ShouldHackArguments() const { return true; }
   };
 }
 
@@ -187,6 +192,35 @@ INITIALIZE_PASS(DAH, "deadarghaX0r",
 ///
 ModulePass *llvm::createDeadArgEliminationPass() { return new DAE(); }
 ModulePass *llvm::createDeadArgHackingPass() { return new DAH(); }
+
+/// CollectFunctionDIs - Map each function in the module to its debug info
+/// descriptor.
+void DAE::CollectFunctionDIs(Module &M) {
+  FunctionDIs.clear();
+
+  for (Module::named_metadata_iterator I = M.named_metadata_begin(),
+       E = M.named_metadata_end(); I != E; ++I) {
+    NamedMDNode &NMD = *I;
+    for (unsigned MDIndex = 0, MDNum = NMD.getNumOperands();
+         MDIndex < MDNum; ++MDIndex) {
+      MDNode *Node = NMD.getOperand(MDIndex);
+      if (!DIDescriptor(Node).isCompileUnit())
+        continue;
+      DICompileUnit CU(Node);
+      const DIArray &SPs = CU.getSubprograms();
+      for (unsigned SPIndex = 0, SPNum = SPs.getNumElements();
+           SPIndex < SPNum; ++SPIndex) {
+        DISubprogram SP(SPs.getElement(SPIndex));
+        assert((!SP || SP.isSubprogram()) &&
+          "A MDNode in subprograms of a CU should be null or a DISubprogram.");
+        if (!SP)
+          continue;
+        if (Function *F = SP.getFunction())
+          FunctionDIs[F] = SP;
+      }
+    }
+  }
+}
 
 /// DeleteDeadVarargs - If this is an function that takes a ... list, and if
 /// llvm.vastart is never called, the varargs list is dead for the function.
@@ -231,7 +265,7 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
   // to pass in a smaller number of arguments into the new function.
   //
   std::vector<Value*> Args;
-  for (Value::user_iterator I = Fn.user_begin(), E = Fn.user_end(); I != E; ) {
+  for (Value::use_iterator I = Fn.use_begin(), E = Fn.use_end(); I != E; ) {
     CallSite CS(*I++);
     if (!CS)
       continue;
@@ -296,7 +330,7 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
   }
 
   // Patch the pointer to LLVM function in debug info descriptor.
-  auto DI = FunctionDIs.find(&Fn);
+  FunctionDIMap::iterator DI = FunctionDIs.find(&Fn);
   if (DI != FunctionDIs.end())
     DI->second.replaceFunction(NF);
 
@@ -323,19 +357,6 @@ bool DAE::RemoveDeadArgumentsFromCallers(Function &Fn)
   if (Fn.hasLocalLinkage() && !Fn.getFunctionType()->isVarArg())
     return false;
 
-  // If a function seen at compile time is not necessarily the one linked to
-  // the binary being built, it is illegal to change the actual arguments
-  // passed to it. These functions can be captured by isWeakForLinker().
-  // *NOTE* that mayBeOverridden() is insufficient for this purpose as it
-  // doesn't include linkage types like AvailableExternallyLinkage and
-  // LinkOnceODRLinkage. Take link_odr* as an example, it indicates a set of
-  // *EQUIVALENT* globals that can be merged at link-time. However, the
-  // semantic of *EQUIVALENT*-functions includes parameters. Changing
-  // parameters breaks this assumption.
-  //
-  if (Fn.isWeakForLinker())
-    return false;
-
   if (Fn.use_empty())
     return false;
 
@@ -344,7 +365,7 @@ bool DAE::RemoveDeadArgumentsFromCallers(Function &Fn)
        I != E; ++I) {
     Argument *Arg = I;
 
-    if (Arg->use_empty() && !Arg->hasByValOrInAllocaAttr())
+    if (Arg->use_empty() && !Arg->hasByValAttr())
       UnusedArgs.push_back(Arg->getArgNo());
   }
 
@@ -353,9 +374,10 @@ bool DAE::RemoveDeadArgumentsFromCallers(Function &Fn)
 
   bool Changed = false;
 
-  for (Use &U : Fn.uses()) {
-    CallSite CS(U.getUser());
-    if (!CS || !CS.isCallee(&U))
+  for (Function::use_iterator I = Fn.use_begin(), E = Fn.use_end(); 
+       I != E; ++I) {
+    CallSite CS(*I);
+    if (!CS || !CS.isCallee(I))
       continue;
 
     // Now go through all unused args and replace them with "undef".
@@ -406,9 +428,9 @@ DAE::Liveness DAE::MarkIfNotLive(RetOrArg Use, UseVector &MaybeLiveUses) {
 /// RetValNum is the return value number to use when this use is used in a
 /// return instruction. This is used in the recursion, you should always leave
 /// it at 0.
-DAE::Liveness DAE::SurveyUse(const Use *U,
+DAE::Liveness DAE::SurveyUse(Value::const_use_iterator U,
                              UseVector &MaybeLiveUses, unsigned RetValNum) {
-    const User *V = U->getUser();
+    const User *V = *U;
     if (const ReturnInst *RI = dyn_cast<ReturnInst>(V)) {
       // The value is returned from a function. It's only live when the
       // function's return value is live. We use RetValNum here, for the case
@@ -419,7 +441,7 @@ DAE::Liveness DAE::SurveyUse(const Use *U,
       return MarkIfNotLive(Use, MaybeLiveUses);
     }
     if (const InsertValueInst *IV = dyn_cast<InsertValueInst>(V)) {
-      if (U->getOperandNo() != InsertValueInst::getAggregateOperandIndex()
+      if (U.getOperandNo() != InsertValueInst::getAggregateOperandIndex()
           && IV->hasIndices())
         // The use we are examining is inserted into an aggregate. Our liveness
         // depends on all uses of that aggregate, but if it is used as a return
@@ -430,8 +452,9 @@ DAE::Liveness DAE::SurveyUse(const Use *U,
       // we don't change RetValNum, but do survey all our uses.
 
       Liveness Result = MaybeLive;
-      for (const Use &UU : IV->uses()) {
-        Result = SurveyUse(&UU, MaybeLiveUses, RetValNum);
+      for (Value::const_use_iterator I = IV->use_begin(),
+           E = V->use_end(); I != E; ++I) {
+        Result = SurveyUse(I, MaybeLiveUses, RetValNum);
         if (Result == Live)
           break;
       }
@@ -454,7 +477,7 @@ DAE::Liveness DAE::SurveyUse(const Use *U,
           return Live;
 
         assert(CS.getArgument(ArgNo)
-               == CS->getOperand(U->getOperandNo())
+               == CS->getOperand(U.getOperandNo())
                && "Argument is not where we expected it");
 
         // Value passed to a normal call. It's only live when the corresponding
@@ -477,8 +500,9 @@ DAE::Liveness DAE::SurveyUses(const Value *V, UseVector &MaybeLiveUses) {
   // Assume it's dead (which will only hold if there are no uses at all..).
   Liveness Result = MaybeLive;
   // Check each use.
-  for (const Use &U : V->uses()) {
-    Result = SurveyUse(&U, MaybeLiveUses);
+  for (Value::const_use_iterator I = V->use_begin(),
+       E = V->use_end(); I != E; ++I) {
+    Result = SurveyUse(I, MaybeLiveUses);
     if (Result == Live)
       break;
   }
@@ -494,13 +518,6 @@ DAE::Liveness DAE::SurveyUses(const Value *V, UseVector &MaybeLiveUses) {
 // well as arguments to functions which have their "address taken".
 //
 void DAE::SurveyFunction(const Function &F) {
-  // Functions with inalloca parameters are expecting args in a particular
-  // register and memory layout.
-  if (F.getAttributes().hasAttrSomewhere(Attribute::InAlloca)) {
-    MarkLive(F);
-    return;
-  }
-
   unsigned RetCount = NumRetVals(&F);
   // Assume all return values are dead
   typedef SmallVector<Liveness, 5> RetVals;
@@ -532,11 +549,12 @@ void DAE::SurveyFunction(const Function &F) {
   unsigned NumLiveRetVals = 0;
   Type *STy = dyn_cast<StructType>(F.getReturnType());
   // Loop all uses of the function.
-  for (const Use &U : F.uses()) {
+  for (Value::const_use_iterator I = F.use_begin(), E = F.use_end();
+       I != E; ++I) {
     // If the function is PASSED IN as an argument, its address has been
     // taken.
-    ImmutableCallSite CS(U.getUser());
-    if (!CS || !CS.isCallee(&U)) {
+    ImmutableCallSite CS(*I);
+    if (!CS || !CS.isCallee(I)) {
       MarkLive(F);
       return;
     }
@@ -555,8 +573,9 @@ void DAE::SurveyFunction(const Function &F) {
     if (NumLiveRetVals != RetCount) {
       if (STy) {
         // Check all uses of the return value.
-        for (const User *U : TheCall->users()) {
-          const ExtractValueInst *Ext = dyn_cast<ExtractValueInst>(U);
+        for (Value::const_use_iterator I = TheCall->use_begin(),
+             E = TheCall->use_end(); I != E; ++I) {
+          const ExtractValueInst *Ext = dyn_cast<ExtractValueInst>(*I);
           if (Ext && Ext->hasIndices()) {
             // This use uses a part of our return value, survey the uses of
             // that part and store the results for this index only.
@@ -735,7 +754,7 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
 
   // Find out the new return value.
   Type *RetTy = FTy->getReturnType();
-  Type *NRetTy = nullptr;
+  Type *NRetTy = NULL;
   unsigned RetCount = NumRetVals(F);
 
   // -1 means unused, other numbers are the new index
@@ -859,7 +878,7 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
   //
   std::vector<Value*> Args;
   while (!F->use_empty()) {
-    CallSite CS(F->user_back());
+    CallSite CS(F->use_back());
     Instruction *Call = CS.getInstruction();
 
     AttributesVec.clear();
@@ -1021,7 +1040,7 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
         Value *RetVal;
 
         if (NFTy->getReturnType()->isVoidTy()) {
-          RetVal = nullptr;
+          RetVal = 0;
         } else {
           assert (RetTy->isStructTy());
           // The original return value was a struct, insert
@@ -1056,7 +1075,7 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
       }
 
   // Patch the pointer to LLVM function in debug info descriptor.
-  auto DI = FunctionDIs.find(F);
+  FunctionDIMap::iterator DI = FunctionDIs.find(F);
   if (DI != FunctionDIs.end())
     DI->second.replaceFunction(NF);
 
@@ -1070,7 +1089,7 @@ bool DAE::runOnModule(Module &M) {
   bool Changed = false;
 
   // Collect debug info descriptors for functions.
-  FunctionDIs = makeSubprogramMap(M);
+  CollectFunctionDIs(M);
 
   // First pass: Do a simple check to see if any functions can have their "..."
   // removed.  We can do this if they never call va_start.  This loop cannot be

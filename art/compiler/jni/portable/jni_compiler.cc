@@ -251,7 +251,7 @@ CompiledMethod* JniCompiler::Compile() {
 
   cunit_->Materialize();
 
-  return new CompiledMethod(*driver_, cunit_->GetInstructionSet(), cunit_->GetElfObject(),
+  return new CompiledMethod(driver_, cunit_->GetInstructionSet(), cunit_->GetElfObject(),
                             func_name);
 }
 

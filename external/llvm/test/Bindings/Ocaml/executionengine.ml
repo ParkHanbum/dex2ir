@@ -1,7 +1,4 @@
-(* RUN: rm -rf %t.builddir
- * RUN: mkdir -p %t.builddir
- * RUN: cp %s %t.builddir
- * RUN: %ocamlopt -warn-error A llvm.cmxa llvm_target.cmxa llvm_executionengine.cmxa %t.builddir/executionengine.ml -o %t
+(* RUN: %ocamlopt -warn-error A llvm.cmxa llvm_target.cmxa llvm_executionengine.cmxa %s -o %t
  * RUN: %t
  * XFAIL: vg_leak
  *)
@@ -103,11 +100,11 @@ let test_executionengine () =
   (* run_static_dtors *)
   ExecutionEngine.run_static_dtors ee;
 
-  (* Show that the data layout binding links and runs.*)
-  let dl = ExecutionEngine.data_layout ee in
+  (* Show that the target data binding links and runs.*)
+  let td = ExecutionEngine.target_data ee in
 
   (* Demonstrate that a garbage pointer wasn't returned. *)
-  let ty = DataLayout.intptr_type context dl in
+  let ty = intptr_type td in
   if ty != i32_type && ty != i64_type then bomb "target_data did not work";
   
   (* dispose *)

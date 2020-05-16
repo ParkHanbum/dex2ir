@@ -16,7 +16,6 @@
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -24,6 +23,7 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cctype>
@@ -33,8 +33,8 @@ namespace {
 
   class OcamlGCMetadataPrinter : public GCMetadataPrinter {
   public:
-    void beginAssembly(AsmPrinter &AP) override;
-    void finishAssembly(AsmPrinter &AP) override;
+    void beginAssembly(AsmPrinter &AP);
+    void finishAssembly(AsmPrinter &AP);
   };
 
 }

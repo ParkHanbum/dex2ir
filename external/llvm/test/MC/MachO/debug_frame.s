@@ -3,7 +3,6 @@
 // Make sure MC can handle file level .cfi_startproc and .cfi_endproc that creates
 // an empty frame.
 // rdar://10017184
-_proc:
 .cfi_startproc
 .cfi_endproc
 

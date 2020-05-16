@@ -7,16 +7,13 @@ mips_mc_desc_TBLGEN_TABLES := \
   MipsGenSubtargetInfo.inc
 
 mips_mc_desc_SRC_FILES := \
-  MipsABIFlagsSection.cpp \
   MipsAsmBackend.cpp \
   MipsELFObjectWriter.cpp \
   MipsELFStreamer.cpp \
   MipsMCAsmInfo.cpp \
   MipsMCCodeEmitter.cpp \
-  MipsMCExpr.cpp \
   MipsMCTargetDesc.cpp \
-  MipsNaClELFStreamer.cpp \
-  MipsTargetStreamer.cpp
+  MipsReginfo.cpp
 
 # For the host
 # =====================================================
@@ -39,7 +36,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
-ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
+ifeq ($(TARGET_ARCH),mips)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 

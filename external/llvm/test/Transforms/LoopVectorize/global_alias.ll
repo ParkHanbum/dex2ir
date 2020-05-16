@@ -1,4 +1,4 @@
-; RUN: opt < %s -O1 -loop-vectorize -force-vector-unroll=1 -force-vector-width=4 -dce -instcombine -S | FileCheck %s
+; RUN: opt < %s -O3 -loop-vectorize -force-vector-unroll=1 -force-vector-width=4 -dce -instcombine -S | FileCheck %s
 
 target datalayout = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:64:128-a0:0:64-n32-S64"
 
@@ -336,8 +336,9 @@ for.end:                                          ; preds = %for.cond
 ;   return Foo.A[a];
 ; }
 ; CHECK-LABEL: define i32 @noAlias07(
-; CHECK: store <4 x i32>
+; CHECK: sub nsw <4 x i32>
 ; CHECK: ret
+
 define i32 @noAlias07(i32 %a) #0 {
 entry:
   %a.addr = alloca i32, align 4
@@ -387,7 +388,7 @@ for.end:                                          ; preds = %for.cond
 ;   return Foo.A[a];
 ; }
 ; CHECK-LABEL: define i32 @noAlias08(
-; CHECK: sub <4 x i32>
+; CHECK: sub nsw <4 x i32>
 ; CHECK: ret
 
 define i32 @noAlias08(i32 %a) #0 {
@@ -439,7 +440,7 @@ for.end:                                          ; preds = %for.cond
 ;   return Foo.A[a];
 ; }
 ; CHECK-LABEL: define i32 @noAlias09(
-; CHECK: sub <4 x i32>
+; CHECK: sub nsw <4 x i32>
 ; CHECK: ret
 
 define i32 @noAlias09(i32 %a) #0 {
@@ -491,7 +492,7 @@ for.end:                                          ; preds = %for.cond
 ;   return *(PA+a);
 ; }
 ; CHECK-LABEL: define i32 @noAlias10(
-; CHECK-NOT: sub {{.*}} <4 x i32>
+; CHECK-NOT: sub nsw <4 x i32>
 ; CHECK: ret
 ;
 ; TODO: This test vectorizes (with run-time check) on real targets with -O3)
@@ -551,7 +552,7 @@ for.end:                                          ; preds = %for.cond
 ;   return Bar.A[N][a];
 ; }
 ; CHECK-LABEL: define i32 @noAlias11(
-; CHECK: store <4 x i32>
+; CHECK: sub nsw <4 x i32>
 ; CHECK: ret
 
 define i32 @noAlias11(i32 %a) #0 {
@@ -611,7 +612,7 @@ for.end:                                          ; preds = %for.cond
 ;   return Bar.A[N][a];
 ; }
 ; CHECK-LABEL: define i32 @noAlias12(
-; CHECK: store <4 x i32>
+; CHECK: sub nsw <4 x i32>
 ; CHECK: ret
 
 define i32 @noAlias12(i32 %a) #0 {
@@ -721,7 +722,7 @@ for.end:                                          ; preds = %for.cond
 ;   return Foo.A[a];
 ; }
 ; CHECK-LABEL: define i32 @noAlias14(
-; CHECK: sub <4 x i32>
+; CHECK: sub nsw <4 x i32>
 ; CHECK: ret
 
 define i32 @noAlias14(i32 %a) #0 {

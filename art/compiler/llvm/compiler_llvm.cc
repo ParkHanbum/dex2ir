@@ -154,7 +154,7 @@ CompileDexMethod(DexCompilationUnit* dex_compilation_unit, InvokeType invoke_typ
 
   cunit->Materialize();
 
-  return new CompiledMethod(*compiler_driver_, compiler_driver_->GetInstructionSet(),
+  return new CompiledMethod(compiler_driver_, compiler_driver_->GetInstructionSet(),
                             cunit->GetElfObject(),
                             dex_compilation_unit->GetVerifiedMethod()->GetDexGcMap(),
                             cunit->GetDexCompilationUnit()->GetSymbol());

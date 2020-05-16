@@ -18,9 +18,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/CallGraph.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
@@ -32,18 +32,19 @@ namespace {
   struct ExternalFunctionsPassedConstants : public ModulePass {
     static char ID; // Pass ID, replacement for typeid
     ExternalFunctionsPassedConstants() : ModulePass(ID) {}
-    bool runOnModule(Module &M) override {
+    virtual bool runOnModule(Module &M) {
       for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I) {
         if (!I->isDeclaration()) continue;
-
+        
         bool PrintedFn = false;
-        for (User *U : I->users()) {
-          Instruction *UI = dyn_cast<Instruction>(U);
-          if (!UI) continue;
-
-          CallSite CS(cast<Value>(UI));
+        for (Value::use_iterator UI = I->use_begin(), E = I->use_end();
+             UI != E; ++UI) {
+          Instruction *User = dyn_cast<Instruction>(*UI);
+          if (!User) continue;
+          
+          CallSite CS(cast<Value>(User));
           if (!CS) continue;
-
+          
           for (CallSite::arg_iterator AI = CS.arg_begin(),
                E = CS.arg_end(); AI != E; ++AI) {
             if (!isa<Constant>(*AI)) continue;
@@ -52,7 +53,7 @@ namespace {
               errs() << "Function '" << I->getName() << "':\n";
               PrintedFn = true;
             }
-            errs() << *UI;
+            errs() << *User;
             break;
           }
         }
@@ -61,7 +62,7 @@ namespace {
       return false;
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
     }
   };
@@ -77,12 +78,12 @@ namespace {
     static char ID; // Pass ID, replacement for typeid
     CallGraphPrinter() : ModulePass(ID) {}
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
-      AU.addRequiredTransitive<CallGraphWrapperPass>();
+      AU.addRequiredTransitive<CallGraph>();
     }
-    bool runOnModule(Module &M) override {
-      getAnalysis<CallGraphWrapperPass>().print(errs(), &M);
+    virtual bool runOnModule(Module &M) {
+      getAnalysis<CallGraph>().print(errs(), &M);
       return false;
     }
   };

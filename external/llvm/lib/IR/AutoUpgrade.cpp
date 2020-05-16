@@ -11,18 +11,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/IR/AutoUpgrade.h"
-#include "llvm/IR/CFG.h"
-#include "llvm/IR/CallSite.h"
+#include "llvm/AutoUpgrade.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/DebugInfo.h"
-#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/CFG.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstring>
 using namespace llvm;
@@ -90,20 +88,6 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
     }
     break;
   }
-  case 'o':
-    // We only need to change the name to match the mangling including the
-    // address space.
-    if (F->arg_size() == 2 && Name.startswith("objectsize.")) {
-      Type *Tys[2] = { F->getReturnType(), F->arg_begin()->getType() };
-      if (F->getName() != Intrinsic::getName(Intrinsic::objectsize, Tys)) {
-        F->setName(Name + ".old");
-        NewFn = Intrinsic::getDeclaration(F->getParent(),
-                                          Intrinsic::objectsize, Tys);
-        return true;
-      }
-    }
-    break;
-
   case 'x': {
     if (Name.startswith("x86.sse2.pcmpeq.") ||
         Name.startswith("x86.sse2.pcmpgt.") ||
@@ -113,12 +97,8 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         Name == "x86.avx.movnt.dq.256" ||
         Name == "x86.avx.movnt.pd.256" ||
         Name == "x86.avx.movnt.ps.256" ||
-        Name == "x86.sse42.crc32.64.8" ||
-        Name == "x86.avx.vbroadcast.ss" ||
-        Name == "x86.avx.vbroadcast.ss.256" ||
-        Name == "x86.avx.vbroadcast.sd.256" ||
         (Name.startswith("x86.xop.vpcom") && F->arg_size() == 2)) {
-      NewFn = nullptr;
+      NewFn = 0;
       return true;
     }
     // SSE4.1 ptest functions may have an old signature.
@@ -161,7 +141,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
 }
 
 bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
-  NewFn = nullptr;
+  NewFn = 0;
   bool Upgraded = UpgradeIntrinsicFunction1(F, NewFn);
 
   // Upgrade intrinsic attributes.  This does not change the function.
@@ -173,62 +153,7 @@ bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
   return Upgraded;
 }
 
-static bool UpgradeGlobalStructors(GlobalVariable *GV) {
-  ArrayType *ATy = dyn_cast<ArrayType>(GV->getType()->getElementType());
-  StructType *OldTy =
-      ATy ? dyn_cast<StructType>(ATy->getElementType()) : nullptr;
-
-  // Only upgrade an array of a two field struct with the appropriate field
-  // types.
-  if (!OldTy || OldTy->getNumElements() != 2)
-    return false;
-
-  // Get the upgraded 3 element type.
-  PointerType *VoidPtrTy = Type::getInt8Ty(GV->getContext())->getPointerTo();
-  Type *Tys[3] = {
-    OldTy->getElementType(0),
-    OldTy->getElementType(1),
-    VoidPtrTy
-  };
-  StructType *NewTy =
-      StructType::get(GV->getContext(), Tys, /*isPacked=*/false);
-
-  // Build new constants with a null third field filled in.
-  Constant *OldInitC = GV->getInitializer();
-  ConstantArray *OldInit = dyn_cast<ConstantArray>(OldInitC);
-  if (!OldInit && !isa<ConstantAggregateZero>(OldInitC))
-    return false;
-  std::vector<Constant *> Initializers;
-  if (OldInit) {
-    for (Use &U : OldInit->operands()) {
-      ConstantStruct *Init = cast<ConstantStruct>(&U);
-      Constant *NewInit =
-        ConstantStruct::get(NewTy, Init->getOperand(0), Init->getOperand(1),
-                            Constant::getNullValue(VoidPtrTy), nullptr);
-      Initializers.push_back(NewInit);
-    }
-  }
-  assert(Initializers.size() == ATy->getNumElements());
-
-  // Replace the old GV with a new one.
-  ATy = ArrayType::get(NewTy, Initializers.size());
-  Constant *NewInit = ConstantArray::get(ATy, Initializers);
-  GlobalVariable *NewGV = new GlobalVariable(
-      *GV->getParent(), ATy, GV->isConstant(), GV->getLinkage(), NewInit, "",
-      GV, GV->getThreadLocalMode(), GV->getType()->getAddressSpace(),
-      GV->isExternallyInitialized());
-  NewGV->copyAttributesFrom(GV);
-  NewGV->takeName(GV);
-  assert(GV->use_empty() && "program cannot use initializer list");
-  GV->eraseFromParent();
-  return true;
-}
-
 bool llvm::UpgradeGlobalVariable(GlobalVariable *GV) {
-  if (GV->getName() == "llvm.global_ctors" ||
-      GV->getName() == "llvm.global_dtors")
-    return UpgradeGlobalStructors(GV);
-
   // Nothing to do yet.
   return false;
 }
@@ -332,25 +257,6 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Function *VPCOM = Intrinsic::getDeclaration(F->getParent(), intID);
       Rep = Builder.CreateCall3(VPCOM, CI->getArgOperand(0),
                                 CI->getArgOperand(1), Builder.getInt8(Imm));
-    } else if (Name == "llvm.x86.sse42.crc32.64.8") {
-      Function *CRC32 = Intrinsic::getDeclaration(F->getParent(),
-                                               Intrinsic::x86_sse42_crc32_32_8);
-      Value *Trunc0 = Builder.CreateTrunc(CI->getArgOperand(0), Type::getInt32Ty(C));
-      Rep = Builder.CreateCall2(CRC32, Trunc0, CI->getArgOperand(1));
-      Rep = Builder.CreateZExt(Rep, CI->getType(), "");
-    } else if (Name.startswith("llvm.x86.avx.vbroadcast")) {
-      // Replace broadcasts with a series of insertelements.
-      Type *VecTy = CI->getType();
-      Type *EltTy = VecTy->getVectorElementType();
-      unsigned EltNum = VecTy->getVectorNumElements();
-      Value *Cast = Builder.CreateBitCast(CI->getArgOperand(0),
-                                          EltTy->getPointerTo());
-      Value *Load = Builder.CreateLoad(Cast);
-      Type *I32Ty = Type::getInt32Ty(C);
-      Rep = UndefValue::get(VecTy);
-      for (unsigned I = 0; I < EltNum; ++I)
-        Rep = Builder.CreateInsertElement(Rep, Load,
-                                          ConstantInt::get(I32Ty, I));
     } else {
       bool PD128 = false, PD256 = false, PS128 = false, PS256 = false;
       if (Name == "llvm.x86.avx.vpermil.pd.256")
@@ -408,14 +314,6 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
            "Mismatch between function args and call args");
     CI->replaceAllUsesWith(Builder.CreateCall2(NewFn, CI->getArgOperand(0),
                                                Builder.getFalse(), Name));
-    CI->eraseFromParent();
-    return;
-
-  case Intrinsic::objectsize:
-    CI->replaceAllUsesWith(Builder.CreateCall2(NewFn,
-                                               CI->getArgOperand(0),
-                                               CI->getArgOperand(1),
-                                               Name));
     CI->eraseFromParent();
     return;
 
@@ -482,7 +380,7 @@ void llvm::UpgradeCallsToIntrinsic(Function* F) {
   if (UpgradeIntrinsicFunction(F, NewFn)) {
     if (NewFn != F) {
       // Replace all uses to the old function with the new one if necessary.
-      for (Value::user_iterator UI = F->user_begin(), UE = F->user_end();
+      for (Value::use_iterator UI = F->use_begin(), UE = F->use_end();
            UI != UE; ) {
         if (CallInst *CI = dyn_cast<CallInst>(*UI++))
           UpgradeIntrinsicCall(CI, NewFn);
@@ -493,94 +391,3 @@ void llvm::UpgradeCallsToIntrinsic(Function* F) {
   }
 }
 
-void llvm::UpgradeInstWithTBAATag(Instruction *I) {
-  MDNode *MD = I->getMetadata(LLVMContext::MD_tbaa);
-  assert(MD && "UpgradeInstWithTBAATag should have a TBAA tag");
-  // Check if the tag uses struct-path aware TBAA format.
-  if (isa<MDNode>(MD->getOperand(0)) && MD->getNumOperands() >= 3)
-    return;
-
-  if (MD->getNumOperands() == 3) {
-    Value *Elts[] = {
-      MD->getOperand(0),
-      MD->getOperand(1)
-    };
-    MDNode *ScalarType = MDNode::get(I->getContext(), Elts);
-    // Create a MDNode <ScalarType, ScalarType, offset 0, const>
-    Value *Elts2[] = {
-      ScalarType, ScalarType,
-      Constant::getNullValue(Type::getInt64Ty(I->getContext())),
-      MD->getOperand(2)
-    };
-    I->setMetadata(LLVMContext::MD_tbaa, MDNode::get(I->getContext(), Elts2));
-  } else {
-    // Create a MDNode <MD, MD, offset 0>
-    Value *Elts[] = {MD, MD,
-      Constant::getNullValue(Type::getInt64Ty(I->getContext()))};
-    I->setMetadata(LLVMContext::MD_tbaa, MDNode::get(I->getContext(), Elts));
-  }
-}
-
-Instruction *llvm::UpgradeBitCastInst(unsigned Opc, Value *V, Type *DestTy,
-                                      Instruction *&Temp) {
-  if (Opc != Instruction::BitCast)
-    return nullptr;
-
-  Temp = nullptr;
-  Type *SrcTy = V->getType();
-  if (SrcTy->isPtrOrPtrVectorTy() && DestTy->isPtrOrPtrVectorTy() &&
-      SrcTy->getPointerAddressSpace() != DestTy->getPointerAddressSpace()) {
-    LLVMContext &Context = V->getContext();
-
-    // We have no information about target data layout, so we assume that
-    // the maximum pointer size is 64bit.
-    Type *MidTy = Type::getInt64Ty(Context);
-    Temp = CastInst::Create(Instruction::PtrToInt, V, MidTy);
-
-    return CastInst::Create(Instruction::IntToPtr, Temp, DestTy);
-  }
-
-  return nullptr;
-}
-
-Value *llvm::UpgradeBitCastExpr(unsigned Opc, Constant *C, Type *DestTy) {
-  if (Opc != Instruction::BitCast)
-    return nullptr;
-
-  Type *SrcTy = C->getType();
-  if (SrcTy->isPtrOrPtrVectorTy() && DestTy->isPtrOrPtrVectorTy() &&
-      SrcTy->getPointerAddressSpace() != DestTy->getPointerAddressSpace()) {
-    LLVMContext &Context = C->getContext();
-
-    // We have no information about target data layout, so we assume that
-    // the maximum pointer size is 64bit.
-    Type *MidTy = Type::getInt64Ty(Context);
-
-    return ConstantExpr::getIntToPtr(ConstantExpr::getPtrToInt(C, MidTy),
-                                     DestTy);
-  }
-
-  return nullptr;
-}
-
-/// Check the debug info version number, if it is out-dated, drop the debug
-/// info. Return true if module is modified.
-bool llvm::UpgradeDebugInfo(Module &M) {
-  unsigned Version = getDebugMetadataVersionFromModule(M);
-  if (Version == DEBUG_METADATA_VERSION)
-    return false;
-
-  bool RetCode = StripDebugInfo(M);
-  if (RetCode) {
-    DiagnosticInfoDebugMetadataVersion DiagVersion(M, Version);
-    M.getContext().diagnose(DiagVersion);
-  }
-  return RetCode;
-}
-
-void llvm::UpgradeMDStringConstant(std::string &String) {
-  const std::string OldPrefix = "llvm.vectorizer.";
-  if (String.find(OldPrefix) == 0) {
-        String.replace(0, OldPrefix.size(), "llvm.loop.vectorize.");
-  }
-}

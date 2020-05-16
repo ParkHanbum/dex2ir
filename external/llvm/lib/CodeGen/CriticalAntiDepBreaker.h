@@ -55,12 +55,12 @@ class TargetRegisterInfo;
     typedef std::multimap<unsigned, MachineOperand *>::const_iterator
       RegRefIter;
 
-    /// KillIndices - The index of the most recent kill (proceeding bottom-up),
+    /// KillIndices - The index of the most recent kill (proceding bottom-up),
     /// or ~0u if the register is not live.
     std::vector<unsigned> KillIndices;
 
-    /// DefIndices - The index of the most recent complete def (proceeding
-    /// bottom up), or ~0u if the register is live.
+    /// DefIndices - The index of the most recent complete def (proceding bottom
+    /// up), or ~0u if the register is live.
     std::vector<unsigned> DefIndices;
 
     /// KeepRegs - A set of registers which are live and cannot be changed to
@@ -72,7 +72,7 @@ class TargetRegisterInfo;
     ~CriticalAntiDepBreaker();
 
     /// Start - Initialize anti-dep breaking for a new basic block.
-    void StartBlock(MachineBasicBlock *BB) override;
+    void StartBlock(MachineBasicBlock *BB);
 
     /// BreakAntiDependencies - Identifiy anti-dependencies along the critical
     /// path
@@ -82,16 +82,15 @@ class TargetRegisterInfo;
                                    MachineBasicBlock::iterator Begin,
                                    MachineBasicBlock::iterator End,
                                    unsigned InsertPosIndex,
-                                   DbgValueVector &DbgValues) override;
+                                   DbgValueVector &DbgValues);
 
     /// Observe - Update liveness information to account for the current
     /// instruction, which will not be scheduled.
     ///
-    void Observe(MachineInstr *MI, unsigned Count,
-                 unsigned InsertPosIndex) override;
+    void Observe(MachineInstr *MI, unsigned Count, unsigned InsertPosIndex);
 
     /// Finish - Finish anti-dep breaking for a basic block.
-    void FinishBlock() override;
+    void FinishBlock();
 
   private:
     void PrescanInstruction(MachineInstr *MI);

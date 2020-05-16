@@ -82,15 +82,14 @@ namespace {
 class State {
  public:
   static int currentStateNum;
-  // stateNum is the only member used for equality/ordering, all other members
-  // can be mutated even in const State objects.
-  const int stateNum;
-  mutable bool isInitial;
-  mutable std::set<unsigned> stateInfo;
-  typedef std::map<unsigned, const State *> TransitionMap;
-  mutable TransitionMap Transitions;
+  int stateNum;
+  bool isInitial;
+  std::set<unsigned> stateInfo;
+  typedef std::map<unsigned, State *> TransitionMap;
+  TransitionMap Transitions;
 
   State();
+  State(const State &S);
 
   bool operator<(const State &s) const {
     return stateNum < s.stateNum;
@@ -109,16 +108,16 @@ class State {
   // AddInsnClass - Return all combinations of resource reservation
   // which are possible from this state (PossibleStates).
   //
-  void AddInsnClass(unsigned InsnClass, std::set<unsigned> &PossibleStates) const;
+  void AddInsnClass(unsigned InsnClass, std::set<unsigned> &PossibleStates);
   // 
   // addTransition - Add a transition from this state given the input InsnClass
   //
-  void addTransition(unsigned InsnClass, const State *To) const;
+  void addTransition(unsigned InsnClass, State *To);
   //
   // hasTransition - Returns true if there is a transition from this state
   // given the input InsnClass
   //
-  bool hasTransition(unsigned InsnClass) const;
+  bool hasTransition(unsigned InsnClass);
 };
 } // End anonymous namespace.
 
@@ -129,9 +128,10 @@ namespace {
 class DFA {
 public:
   DFA();
+  ~DFA();
 
   // Set of states. Need to keep this sorted to emit the transition table.
-  typedef std::set<State> StateSet;
+  typedef std::set<State *, less_ptr<State> > StateSet;
   StateSet states;
 
   State *currentState;
@@ -139,7 +139,8 @@ public:
   //
   // Modify the DFA.
   //
-  const State &newState();
+  void initialize();
+  void addState(State *);
 
   //
   // writeTable: Print out a table representing the DFA.
@@ -155,12 +156,21 @@ public:
 State::State() :
   stateNum(currentStateNum++), isInitial(false) {}
 
-DFA::DFA(): currentState(nullptr) {}
+
+State::State(const State &S) :
+  stateNum(currentStateNum++), isInitial(S.isInitial),
+  stateInfo(S.stateInfo) {}
+
+DFA::DFA(): currentState(NULL) {}
+
+DFA::~DFA() {
+  DeleteContainerPointers(states);
+}
 
 // 
 // addTransition - Add a transition from this state given the input InsnClass
 //
-void State::addTransition(unsigned InsnClass, const State *To) const {
+void State::addTransition(unsigned InsnClass, State *To) {
   assert(!Transitions.count(InsnClass) &&
       "Cannot have multiple transitions for the same input");
   Transitions[InsnClass] = To;
@@ -170,7 +180,7 @@ void State::addTransition(unsigned InsnClass, const State *To) const {
 // hasTransition - Returns true if there is a transition from this state
 // given the input InsnClass
 //
-bool State::hasTransition(unsigned InsnClass) const {
+bool State::hasTransition(unsigned InsnClass) {
   return Transitions.count(InsnClass) > 0;
 }
 
@@ -179,7 +189,7 @@ bool State::hasTransition(unsigned InsnClass) const {
 // which are possible from this state (PossibleStates).
 //
 void State::AddInsnClass(unsigned InsnClass,
-                            std::set<unsigned> &PossibleStates) const {
+                            std::set<unsigned> &PossibleStates) {
   //
   // Iterate over all resource states in currentState.
   //
@@ -238,10 +248,15 @@ bool State::canAddInsnClass(unsigned InsnClass) const {
 }
 
 
-const State &DFA::newState() {
-  auto IterPair = states.insert(State());
-  assert(IterPair.second && "State already exists");
-  return *IterPair.first;
+void DFA::initialize() {
+  assert(currentState && "Missing current state");
+  currentState->isInitial = true;
+}
+
+
+void DFA::addState(State *S) {
+  assert(!states.count(S) && "State already exists");
+  states.insert(S);
 }
 
 
@@ -277,16 +292,16 @@ void DFA::writeTableAndAPI(raw_ostream &OS, const std::string &TargetName) {
   // to construct the StateEntry table.
   int ValidTransitions = 0;
   for (unsigned i = 0; i < states.size(); ++i, ++SI) {
-    assert ((SI->stateNum == (int) i) && "Mismatch in state numbers");
+    assert (((*SI)->stateNum == (int) i) && "Mismatch in state numbers");
     StateEntry[i] = ValidTransitions;
     for (State::TransitionMap::iterator
-        II = SI->Transitions.begin(), IE = SI->Transitions.end();
+        II = (*SI)->Transitions.begin(), IE = (*SI)->Transitions.end();
         II != IE; ++II) {
       OS << "{" << II->first << ", "
          << II->second->stateNum
          << "},    ";
     }
-    ValidTransitions += SI->Transitions.size();
+    ValidTransitions += (*SI)->Transitions.size();
 
     // If there are no valid transitions from this stage, we need a sentinel
     // transition.
@@ -432,11 +447,12 @@ void DFAPacketizerEmitter::run(raw_ostream &OS) {
   // Run a worklist algorithm to generate the DFA.
   //
   DFA D;
-  const State *Initial = &D.newState();
+  State *Initial = new State;
   Initial->isInitial = true;
   Initial->stateInfo.insert(0x0);
-  SmallVector<const State*, 32> WorkList;
-  std::map<std::set<unsigned>, const State*> Visited;
+  D.addState(Initial);
+  SmallVector<State*, 32> WorkList;
+  std::map<std::set<unsigned>, State*> Visited;
 
   WorkList.push_back(Initial);
 
@@ -458,7 +474,7 @@ void DFAPacketizerEmitter::run(raw_ostream &OS) {
   //             Add S' to Visited
   //
   while (!WorkList.empty()) {
-    const State *current = WorkList.pop_back_val();
+    State *current = WorkList.pop_back_val();
     for (DenseSet<unsigned>::iterator CI = allInsnClasses.begin(),
            CE = allInsnClasses.end(); CI != CE; ++CI) {
       unsigned InsnClass = *CI;
@@ -470,7 +486,7 @@ void DFAPacketizerEmitter::run(raw_ostream &OS) {
       //
       if (!current->hasTransition(InsnClass) &&
           current->canAddInsnClass(InsnClass)) {
-        const State *NewState;
+        State *NewState = NULL;
         current->AddInsnClass(InsnClass, NewStateResources);
         assert(NewStateResources.size() && "New states must be generated");
 
@@ -478,12 +494,13 @@ void DFAPacketizerEmitter::run(raw_ostream &OS) {
         // If we have seen this state before, then do not create a new state.
         //
         //
-        auto VI = Visited.find(NewStateResources);
-        if (VI != Visited.end())
+        std::map<std::set<unsigned>, State*>::iterator VI;
+        if ((VI = Visited.find(NewStateResources)) != Visited.end())
           NewState = VI->second;
         else {
-          NewState = &D.newState();
+          NewState = new State;
           NewState->stateInfo = NewStateResources;
+          D.addState(NewState);
           Visited[NewStateResources] = NewState;
           WorkList.push_back(NewState);
         }

@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 
 define float @f(float %a, float %b) nounwind  {
 	%tmp = fdiv float %a, %b

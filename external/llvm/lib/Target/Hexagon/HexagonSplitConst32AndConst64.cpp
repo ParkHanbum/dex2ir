@@ -16,49 +16,51 @@
 // scheduled after register allocation.
 //
 //===----------------------------------------------------------------------===//
-
-#include "HexagonMachineFunctionInfo.h"
-#include "HexagonSubtarget.h"
-#include "HexagonTargetMachine.h"
-#include "HexagonTargetObjectFile.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/CodeGen/LatencyPriorityQueue.h"
-#include "llvm/CodeGen/MachineDominators.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/CodeGen/MachineLoopInfo.h"
-#include "llvm/CodeGen/MachineRegisterInfo.h"
+#define DEBUG_TYPE "xfer"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
-#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/LatencyPriorityQueue.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
-#include "llvm/Support/CommandLine.h"
+#include "llvm/CodeGen/MachineDominators.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "HexagonTargetMachine.h"
+#include "HexagonSubtarget.h"
+#include "HexagonMachineFunctionInfo.h"
 #include <map>
+#include <iostream>
+
+#include "llvm/Support/CommandLine.h"
+#define DEBUG_TYPE "xfer"
+
 
 using namespace llvm;
-
-#define DEBUG_TYPE "xfer"
 
 namespace {
 
 class HexagonSplitConst32AndConst64 : public MachineFunctionPass {
-  const HexagonTargetMachine &QTM;
+    const HexagonTargetMachine& QTM;
+    const HexagonSubtarget &QST;
 
  public:
     static char ID;
-    HexagonSplitConst32AndConst64(const HexagonTargetMachine &TM)
-        : MachineFunctionPass(ID), QTM(TM) {}
+    HexagonSplitConst32AndConst64(const HexagonTargetMachine& TM)
+      : MachineFunctionPass(ID), QTM(TM), QST(*TM.getSubtargetImpl()) {}
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Hexagon Split Const32s and Const64s";
     }
-    bool runOnMachineFunction(MachineFunction &Fn) override;
+    bool runOnMachineFunction(MachineFunction &Fn);
 };
 
 
@@ -66,12 +68,6 @@ char HexagonSplitConst32AndConst64::ID = 0;
 
 
 bool HexagonSplitConst32AndConst64::runOnMachineFunction(MachineFunction &Fn) {
-
-  const HexagonTargetObjectFile &TLOF =
-      (const HexagonTargetObjectFile &)
-      QTM.getTargetLowering()->getObjFileLowering();
-  if (TLOF.IsSmallDataEnabled())
-    return true;
 
   const TargetInstrInfo *TII = QTM.getInstrInfo();
 

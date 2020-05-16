@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "WindowsSupport.h"
+#include "Windows.h"
 
 #ifdef __MINGW32__
  #include <imagehlp.h>
@@ -58,7 +58,7 @@ extern "C" {
         stricmp(ModuleName, "msvcr70") != 0 &&
 #ifndef __MINGW32__
         // Mingw32 uses msvcrt.dll by default. Don't ignore it.
-        // Otherwise the user should be aware what they are doing.
+        // Otherwise, user should be aware, what he's doing :)
         stricmp(ModuleName, "msvcrt") != 0 &&
 #endif
         stricmp(ModuleName, "msvcrt20") != 0 &&
@@ -71,7 +71,7 @@ extern "C" {
 
 DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *filename,
                                                    std::string *errMsg) {
-  SmartScopedLock<true> lock(*SymbolsMutex);
+  SmartScopedLock<true> lock(getMutex());
 
   if (!filename) {
     // When no file is specified, enumerate all DLLs and EXEs in the process.
@@ -83,15 +83,8 @@ DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *filename,
     // This is mostly to ensure that the return value still shows up as "valid".
     return DynamicLibrary(&OpenedHandles);
   }
-
-  SmallVector<wchar_t, MAX_PATH> filenameUnicode;
-  if (std::error_code ec = windows::UTF8ToUTF16(filename, filenameUnicode)) {
-    SetLastError(ec.value());
-    MakeErrMsg(errMsg, std::string(filename) + ": Can't convert to UTF-16: ");
-    return DynamicLibrary();
-  }
   
-  HMODULE a_handle = LoadLibraryW(filenameUnicode.data());
+  HMODULE a_handle = LoadLibrary(filename);
 
   if (a_handle == 0) {
     MakeErrMsg(errMsg, std::string(filename) + ": Can't open : ");
@@ -121,10 +114,10 @@ DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *filename,
 #undef EXPLICIT_SYMBOL2
 
 void* DynamicLibrary::SearchForAddressOfSymbol(const char* symbolName) {
-  SmartScopedLock<true> Lock(*SymbolsMutex);
+  SmartScopedLock<true> Lock(getMutex());
 
   // First check symbols added via AddSymbol().
-  if (ExplicitSymbols.isConstructed()) {
+  if (ExplicitSymbols) {
     StringMap<void *>::iterator i = ExplicitSymbols->find(symbolName);
 
     if (i != ExplicitSymbols->end())

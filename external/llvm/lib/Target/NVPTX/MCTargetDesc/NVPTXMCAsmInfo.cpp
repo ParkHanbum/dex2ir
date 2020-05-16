@@ -33,6 +33,10 @@ NVPTXMCAsmInfo::NVPTXMCAsmInfo(const StringRef &TT) {
 
   CommentString = "//";
 
+  PrivateGlobalPrefix = "$L__";
+
+  AllowPeriodsInName = false;
+
   HasSetDirective = false;
 
   HasSingleParameterDotFile = false;
@@ -47,6 +51,7 @@ NVPTXMCAsmInfo::NVPTXMCAsmInfo(const StringRef &TT) {
   Data16bitsDirective = " .b16 ";
   Data32bitsDirective = " .b32 ";
   Data64bitsDirective = " .b64 ";
+  PrivateGlobalPrefix = "";
   ZeroDirective = " .b8";
   AsciiDirective = " .b8";
   AscizDirective = " .b8";

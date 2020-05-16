@@ -1,7 +1,4 @@
-(* RUN: rm -rf %t.builddir
- * RUN: mkdir -p %t.builddir
- * RUN: cp %s %t.builddir
- * RUN: %ocamlopt -warn-error A unix.cmxa llvm.cmxa llvm_bitwriter.cmxa %t.builddir/bitwriter.ml -o %t
+(* RUN: %ocamlopt -warn-error A unix.cmxa llvm.cmxa llvm_bitwriter.cmxa %s -o %t
  * RUN: %t %t.bc
  * RUN: llvm-dis < %t.bc
  * XFAIL: vg_leak

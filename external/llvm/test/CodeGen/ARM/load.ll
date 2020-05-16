@@ -1,4 +1,9 @@
-; RUN: llc -mtriple=arm-eabi %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm > %t
+; RUN: grep ldrsb %t
+; RUN: grep ldrb %t
+; RUN: grep ldrsh %t
+; RUN: grep ldrh %t
+
 
 define i32 @f1(i8* %p) {
 entry:
@@ -27,9 +32,3 @@ entry:
         %tmp4 = zext i16 %tmp to i32             ; <i32> [#uses=1]
         ret i32 %tmp4
 }
-
-; CHECK: ldrsb
-; CHECK: ldrb
-; CHECK: ldrsh
-; CHECK: ldrh
-

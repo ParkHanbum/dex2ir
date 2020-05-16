@@ -21,9 +21,7 @@ namespace llvm {
   class MachineBlockFrequencyInfo;
   class MachineLoopInfo;
 
-  /// \brief Normalize the spill weight of a live interval
-  ///
-  /// The spill weight of a live interval is computed as:
+  /// normalizeSpillWeight - The spill weight of a live interval is computed as:
   ///
   ///   (sum(use freq) + sum(def freq)) / (K + size)
   ///
@@ -40,38 +38,44 @@ namespace llvm {
     return UseDefFreq / (Size + 25*SlotIndex::InstrDist);
   }
 
-  /// \brief Calculate auxiliary information for a virtual register such as its
-  /// spill weight and allocation hint.
+  /// VirtRegAuxInfo - Calculate auxiliary information for a virtual
+  /// register such as its spill weight and allocation hint.
   class VirtRegAuxInfo {
-  public:
-    typedef float (*NormalizingFn)(float, unsigned);
-
-  private:
     MachineFunction &MF;
     LiveIntervals &LIS;
     const MachineLoopInfo &Loops;
     const MachineBlockFrequencyInfo &MBFI;
     DenseMap<unsigned, float> Hint;
-    NormalizingFn normalize;
-
   public:
     VirtRegAuxInfo(MachineFunction &mf, LiveIntervals &lis,
                    const MachineLoopInfo &loops,
-                   const MachineBlockFrequencyInfo &mbfi,
-                   NormalizingFn norm = normalizeSpillWeight)
-        : MF(mf), LIS(lis), Loops(loops), MBFI(mbfi), normalize(norm) {}
+                   const MachineBlockFrequencyInfo &mbfi)
+        : MF(mf), LIS(lis), Loops(loops), MBFI(mbfi) {}
 
-    /// \brief (re)compute li's spill weight and allocation hint.
-    void calculateSpillWeightAndHint(LiveInterval &li);
+    /// CalculateWeightAndHint - (re)compute li's spill weight and allocation
+    /// hint.
+    void CalculateWeightAndHint(LiveInterval &li);
   };
 
-  /// \brief Compute spill weights and allocation hints for all virtual register
+  /// CalculateSpillWeights - Compute spill weights for all virtual register
   /// live intervals.
-  void calculateSpillWeightsAndHints(LiveIntervals &LIS, MachineFunction &MF,
-                                     const MachineLoopInfo &MLI,
-                                     const MachineBlockFrequencyInfo &MBFI,
-                                     VirtRegAuxInfo::NormalizingFn norm =
-                                         normalizeSpillWeight);
+  class CalculateSpillWeights : public MachineFunctionPass {
+  public:
+    static char ID;
+
+    CalculateSpillWeights() : MachineFunctionPass(ID) {
+      initializeCalculateSpillWeightsPass(*PassRegistry::getPassRegistry());
+    }
+
+    virtual void getAnalysisUsage(AnalysisUsage &au) const;
+
+    virtual bool runOnMachineFunction(MachineFunction &fn);
+
+  private:
+    /// Returns true if the given live interval is zero length.
+    bool isZeroLengthInterval(LiveInterval *li) const;
+  };
+
 }
 
 #endif // LLVM_CODEGEN_CALCSPILLWEIGHTS_H

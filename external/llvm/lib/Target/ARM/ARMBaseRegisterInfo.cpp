@@ -44,48 +44,27 @@
 using namespace llvm;
 
 ARMBaseRegisterInfo::ARMBaseRegisterInfo(const ARMSubtarget &sti)
-    : ARMGenRegisterInfo(ARM::LR, 0, 0, ARM::PC), STI(sti), BasePtr(ARM::R6) {
-  if (STI.isTargetMachO()) {
-    if (STI.isTargetDarwin() || STI.isThumb1Only())
-      FramePtr = ARM::R7;
-    else
-      FramePtr = ARM::R11;
-  } else if (STI.isTargetWindows())
-    FramePtr = ARM::R11;
-  else // ARM EABI
-    FramePtr = STI.isThumb() ? ARM::R7 : ARM::R11;
+  : ARMGenRegisterInfo(ARM::LR, 0, 0, ARM::PC), STI(sti),
+    FramePtr((STI.isTargetDarwin() || STI.isThumb()) ? ARM::R7 : ARM::R11),
+    BasePtr(ARM::R6) {
 }
 
-const MCPhysReg*
+const uint16_t*
 ARMBaseRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
-  const MCPhysReg *RegList = (STI.isTargetIOS() && !STI.isAAPCS_ABI())
-                                ? CSR_iOS_SaveList
-                                : CSR_AAPCS_SaveList;
-
-  if (!MF) return RegList;
-
-  const Function *F = MF->getFunction();
-  if (F->getCallingConv() == CallingConv::GHC) {
+  bool ghcCall = false;
+ 
+  if (MF) {
+    const Function *F = MF->getFunction();
+    ghcCall = (F ? F->getCallingConv() == CallingConv::GHC : false);
+  }
+ 
+  if (ghcCall)
     // GHC set of callee saved regs is empty as all those regs are
     // used for passing STG regs around
     return CSR_NoRegs_SaveList;
-  } else if (F->hasFnAttribute("interrupt")) {
-    if (STI.isMClass()) {
-      // M-class CPUs have hardware which saves the registers needed to allow a
-      // function conforming to the AAPCS to function as a handler.
-      return CSR_AAPCS_SaveList;
-    } else if (F->getFnAttribute("interrupt").getValueAsString() == "FIQ") {
-      // Fast interrupt mode gives the handler a private copy of R8-R14, so less
-      // need to be saved to restore user-mode state.
-      return CSR_FIQ_SaveList;
-    } else {
-      // Generally only R13-R14 (i.e. SP, LR) are automatically preserved by
-      // exception handling.
-      return CSR_GenericInt_SaveList;
-    }
-  }
-
-  return RegList;
+  else
+    return (STI.isTargetIOS() && !STI.isAAPCS_ABI())
+      ? CSR_iOS_SaveList : CSR_AAPCS_SaveList;
 }
 
 const uint32_t*
@@ -114,7 +93,7 @@ ARMBaseRegisterInfo::getThisReturnPreservedMask(CallingConv::ID CC) const {
   // should return NULL
   if (CC == CallingConv::GHC)
     // This is academic becase all GHC calls are (supposed to be) tail calls
-    return nullptr;
+    return NULL;
   return (STI.isTargetIOS() && !STI.isAAPCS_ABI())
     ? CSR_iOS_ThisReturn_RegMask : CSR_AAPCS_ThisReturn_RegMask;
 }
@@ -180,7 +159,7 @@ ARMBaseRegisterInfo::getPointerRegClass(const MachineFunction &MF, unsigned Kind
 const TargetRegisterClass *
 ARMBaseRegisterInfo::getCrossCopyRegClass(const TargetRegisterClass *RC) const {
   if (RC == &ARM::CCRRegClass)
-    return nullptr;  // Can't copy CCR registers.
+    return 0;  // Can't copy CCR registers.
   return RC;
 }
 
@@ -392,6 +371,14 @@ ARMBaseRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return ARM::SP;
 }
 
+unsigned ARMBaseRegisterInfo::getEHExceptionRegister() const {
+  llvm_unreachable("What is the exception register");
+}
+
+unsigned ARMBaseRegisterInfo::getEHHandlerRegister() const {
+  llvm_unreachable("What is the exception handler register");
+}
+
 /// emitLoadConstPool - Emits a load from constpool to materialize the
 /// specified immediate.
 void ARMBaseRegisterInfo::
@@ -413,11 +400,6 @@ emitLoadConstPool(MachineBasicBlock &MBB,
     .addConstantPoolIndex(Idx)
     .addImm(0).addImm(Pred).addReg(PredReg)
     .setMIFlags(MIFlags);
-}
-
-bool ARMBaseRegisterInfo::mayOverrideLocalAssignment() const {
-  // The native linux build hits a downstream codegen bug when this is enabled.
-  return STI.isTargetDarwin();
 }
 
 bool ARMBaseRegisterInfo::
@@ -602,8 +584,10 @@ materializeFrameBaseRegister(MachineBasicBlock *MBB,
     AddDefaultCC(MIB);
 }
 
-void ARMBaseRegisterInfo::resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
-                                            int64_t Offset) const {
+void
+ARMBaseRegisterInfo::resolveFrameIndex(MachineBasicBlock::iterator I,
+                                       unsigned BaseReg, int64_t Offset) const {
+  MachineInstr &MI = *I;
   MachineBasicBlock &MBB = *MI.getParent();
   MachineFunction &MF = *MBB.getParent();
   const ARMBaseInstrInfo &TII =

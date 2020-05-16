@@ -118,7 +118,7 @@ class BlockFrequencyImpl {
 
   /// isBackedge - Return if edge Src -> Dst is a reachable backedge.
   ///
-  bool isBackedge(BlockT *Src, BlockT *Dst) const {
+  bool isBackedge(BlockT *Src, BlockT *Dst) {
     unsigned a = RPO.lookup(Src);
     if (!a)
       return false;

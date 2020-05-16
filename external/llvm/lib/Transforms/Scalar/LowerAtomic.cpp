@@ -12,14 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "loweratomic"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Pass.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "loweratomic"
 
 static bool LowerAtomicCmpXchgInst(AtomicCmpXchgInst *CXI) {
   IRBuilder<> Builder(CXI->getParent(), CXI);
@@ -32,10 +31,7 @@ static bool LowerAtomicCmpXchgInst(AtomicCmpXchgInst *CXI) {
   Value *Res = Builder.CreateSelect(Equal, Val, Orig);
   Builder.CreateStore(Res, Ptr);
 
-  Res = Builder.CreateInsertValue(UndefValue::get(CXI->getType()), Orig, 0);
-  Res = Builder.CreateInsertValue(Res, Equal, 1);
-
-  CXI->replaceAllUsesWith(Res);
+  CXI->replaceAllUsesWith(Orig);
   CXI->eraseFromParent();
   return true;
 }
@@ -46,7 +42,7 @@ static bool LowerAtomicRMWInst(AtomicRMWInst *RMWI) {
   Value *Val = RMWI->getValOperand();
 
   LoadInst *Orig = Builder.CreateLoad(Ptr);
-  Value *Res = nullptr;
+  Value *Res = NULL;
 
   switch (RMWI->getOperation()) {
   default: llvm_unreachable("Unexpected RMW operation");
@@ -115,9 +111,7 @@ namespace {
     LowerAtomic() : BasicBlockPass(ID) {
       initializeLowerAtomicPass(*PassRegistry::getPassRegistry());
     }
-    bool runOnBasicBlock(BasicBlock &BB) override {
-      if (skipOptnoneFunction(BB))
-        return false;
+    bool runOnBasicBlock(BasicBlock &BB) {
       bool Changed = false;
       for (BasicBlock::iterator DI = BB.begin(), DE = BB.end(); DI != DE; ) {
         Instruction *Inst = DI++;

@@ -23,18 +23,19 @@ namespace {
 class AMDGPUMCObjectWriter : public MCObjectWriter {
 public:
   AMDGPUMCObjectWriter(raw_ostream &OS) : MCObjectWriter(OS, true) { }
-  void ExecutePostLayoutBinding(MCAssembler &Asm,
-                                const MCAsmLayout &Layout) override {
+  virtual void ExecutePostLayoutBinding(MCAssembler &Asm,
+                                        const MCAsmLayout &Layout) {
     //XXX: Implement if necessary.
   }
-  void RecordRelocation(const MCAssembler &Asm, const MCAsmLayout &Layout,
-                        const MCFragment *Fragment, const MCFixup &Fixup,
-                        MCValue Target, bool &IsPCRel,
-                        uint64_t &FixedValue) override {
+  virtual void RecordRelocation(const MCAssembler &Asm,
+                                const MCAsmLayout &Layout,
+                                const MCFragment *Fragment,
+                                const MCFixup &Fixup,
+                                MCValue Target, uint64_t &FixedValue) {
     assert(!"Not implemented");
   }
 
-  void WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout) override;
+  virtual void WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout);
 
 };
 
@@ -43,19 +44,19 @@ public:
   AMDGPUAsmBackend(const Target &T)
     : MCAsmBackend() {}
 
-  unsigned getNumFixupKinds() const override { return 0; };
-  void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
-                  uint64_t Value, bool IsPCRel) const override;
-  bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
-                            const MCRelaxableFragment *DF,
-                            const MCAsmLayout &Layout) const override {
+  virtual unsigned getNumFixupKinds() const { return 0; };
+  virtual void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
+                          uint64_t Value) const;
+  virtual bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
+                                    const MCRelaxableFragment *DF,
+                                    const MCAsmLayout &Layout) const {
     return false;
   }
-  void relaxInstruction(const MCInst &Inst, MCInst &Res) const override {
+  virtual void relaxInstruction(const MCInst &Inst, MCInst &Res) const {
     assert(!"Not implemented");
   }
-  bool mayNeedRelaxation(const MCInst &Inst) const override { return false; }
-  bool writeNopData(uint64_t Count, MCObjectWriter *OW) const override {
+  virtual bool mayNeedRelaxation(const MCInst &Inst) const { return false; }
+  virtual bool writeNopData(uint64_t Count, MCObjectWriter *OW) const {
     return true;
   }
 };
@@ -70,8 +71,7 @@ void AMDGPUMCObjectWriter::WriteObject(MCAssembler &Asm,
 }
 
 void AMDGPUAsmBackend::applyFixup(const MCFixup &Fixup, char *Data,
-                                  unsigned DataSize, uint64_t Value,
-                                  bool IsPCRel) const {
+                                  unsigned DataSize, uint64_t Value) const {
 
   uint16_t *Dst = (uint16_t*)(Data + Fixup.getOffset());
   assert(Fixup.getKind() == FK_PCRel_4);
@@ -88,16 +88,14 @@ class ELFAMDGPUAsmBackend : public AMDGPUAsmBackend {
 public:
   ELFAMDGPUAsmBackend(const Target &T) : AMDGPUAsmBackend(T) { }
 
-  MCObjectWriter *createObjectWriter(raw_ostream &OS) const override {
+  MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
     return createAMDGPUELFObjectWriter(OS);
   }
 };
 
 } // end anonymous namespace
 
-MCAsmBackend *llvm::createAMDGPUAsmBackend(const Target &T,
-                                           const MCRegisterInfo &MRI,
-                                           StringRef TT,
+MCAsmBackend *llvm::createAMDGPUAsmBackend(const Target &T, StringRef TT,
                                            StringRef CPU) {
   return new ELFAMDGPUAsmBackend(T);
 }

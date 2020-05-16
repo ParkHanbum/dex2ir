@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi %s -o /dev/null
+; RUN: llc < %s -march=arm
 
 define void @f(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e) {
 entry:

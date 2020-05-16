@@ -16,15 +16,14 @@
 #include "SymbolTableListTraitsImpl.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/LeakDetector.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/ValueHandle.h"
+#include "llvm/Support/ConstantRange.h"
+#include "llvm/Support/LeakDetector.h"
+#include "llvm/Support/ValueHandle.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -66,7 +65,7 @@ class MDNodeOperand : public CallbackVH {
 
 public:
   MDNodeOperand(Value *V) : CallbackVH(V) {}
-  virtual ~MDNodeOperand();
+  ~MDNodeOperand() {}
 
   void set(Value *V) {
     unsigned IsFirst = this->getValPtrInt();
@@ -78,16 +77,14 @@ public:
   /// the list.
   void setAsFirstOperand(unsigned V) { this->setValPtrInt(V); }
 
-  void deleted() override;
-  void allUsesReplacedWith(Value *NV) override;
+  virtual void deleted();
+  virtual void allUsesReplacedWith(Value *NV);
 };
 } // end namespace llvm.
 
-// Provide out-of-line definition to prevent weak vtable.
-MDNodeOperand::~MDNodeOperand() {}
 
 void MDNodeOperand::deleted() {
-  getParent()->replaceOperand(this, nullptr);
+  getParent()->replaceOperand(this, 0);
 }
 
 void MDNodeOperand::allUsesReplacedWith(Value *NV) {
@@ -148,10 +145,10 @@ MDNode::~MDNode() {
 }
 
 static const Function *getFunctionForValue(Value *V) {
-  if (!V) return nullptr;
+  if (!V) return NULL;
   if (Instruction *I = dyn_cast<Instruction>(V)) {
     BasicBlock *BB = I->getParent();
-    return BB ? BB->getParent() : nullptr;
+    return BB ? BB->getParent() : 0;
   }
   if (Argument *A = dyn_cast<Argument>(V))
     return A->getParent();
@@ -159,15 +156,15 @@ static const Function *getFunctionForValue(Value *V) {
     return BB->getParent();
   if (MDNode *MD = dyn_cast<MDNode>(V))
     return MD->getFunction();
-  return nullptr;
+  return NULL;
 }
 
 #ifndef NDEBUG
 static const Function *assertLocalFunction(const MDNode *N) {
-  if (!N->isFunctionLocal()) return nullptr;
+  if (!N->isFunctionLocal()) return 0;
 
   // FIXME: This does not handle cyclic function local metadata.
-  const Function *F = nullptr, *NewF = nullptr;
+  const Function *F = 0, *NewF = 0;
   for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
     if (Value *V = N->getOperand(i)) {
       if (MDNode *MD = dyn_cast<MDNode>(V))
@@ -175,11 +172,10 @@ static const Function *assertLocalFunction(const MDNode *N) {
       else
         NewF = getFunctionForValue(V);
     }
-    if (!F)
+    if (F == 0)
       F = NewF;
-    else
-      assert((NewF == nullptr || F == NewF) &&
-             "inconsistent function-local metadata");
+    else 
+      assert((NewF == 0 || F == NewF) &&"inconsistent function-local metadata");
   }
   return F;
 }
@@ -193,11 +189,11 @@ const Function *MDNode::getFunction() const {
 #ifndef NDEBUG
   return assertLocalFunction(this);
 #else
-  if (!isFunctionLocal()) return nullptr;
+  if (!isFunctionLocal()) return NULL;
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i)
     if (const Function *F = getFunctionForValue(getOperand(i)))
       return F;
-  return nullptr;
+  return NULL;
 #endif
 }
 
@@ -225,8 +221,8 @@ MDNode *MDNode::getMDNode(LLVMContext &Context, ArrayRef<Value*> Vals,
   // Note that if the operands are later nulled out, the node will be
   // removed from the uniquing map.
   FoldingSetNodeID ID;
-  for (Value *V : Vals)
-    ID.AddPointer(V);
+  for (unsigned i = 0; i != Vals.size(); ++i)
+    ID.AddPointer(Vals[i]);
 
   void *InsertPoint;
   MDNode *N = pImpl->MDNodeSet.FindNodeOrInsertPos(ID, InsertPoint);
@@ -237,7 +233,8 @@ MDNode *MDNode::getMDNode(LLVMContext &Context, ArrayRef<Value*> Vals,
   bool isFunctionLocal = false;
   switch (FL) {
   case FL_Unknown:
-    for (Value *V : Vals) {
+    for (unsigned i = 0; i != Vals.size(); ++i) {
+      Value *V = Vals[i];
       if (!V) continue;
       if (isFunctionLocalValue(V)) {
         isFunctionLocal = true;
@@ -336,14 +333,14 @@ void MDNode::replaceOperand(MDNodeOperand *Op, Value *To) {
   // Likewise if the MDNode is function-local but for a different function.
   if (To && isFunctionLocalValue(To)) {
     if (!isFunctionLocal())
-      To = nullptr;
+      To = 0;
     else {
       const Function *F = getFunction();
       const Function *FV = getFunctionForValue(To);
       // Metadata can be function-local without having an associated function.
       // So only consider functions to have changed if non-null.
       if (F && FV && F != FV)
-        To = nullptr;
+        To = 0;
     }
   }
   
@@ -367,7 +364,7 @@ void MDNode::replaceOperand(MDNodeOperand *Op, Value *To) {
   // anymore.  This commonly occurs during destruction, and uniquing these
   // brings little reuse.  Also, this means we don't need to include
   // isFunctionLocal bits in FoldingSetNodeIDs for MDNodes.
-  if (!To) {
+  if (To == 0) {
     setIsNotUniqued();
     return;
   }
@@ -408,7 +405,7 @@ void MDNode::replaceOperand(MDNodeOperand *Op, Value *To) {
 
 MDNode *MDNode::getMostGenericFPMath(MDNode *A, MDNode *B) {
   if (!A || !B)
-    return nullptr;
+    return NULL;
 
   APFloat AVal = cast<ConstantFP>(A->getOperand(0))->getValueAPF();
   APFloat BVal = cast<ConstantFP>(B->getOperand(0))->getValueAPF();
@@ -458,7 +455,7 @@ MDNode *MDNode::getMostGenericRange(MDNode *A, MDNode *B) {
   // the ones that overlap.
 
   if (!A || !B)
-    return nullptr;
+    return NULL;
 
   if (A == B)
     return A;
@@ -513,7 +510,7 @@ MDNode *MDNode::getMostGenericRange(MDNode *A, MDNode *B) {
     ConstantRange Range(cast<ConstantInt>(EndPoints[0])->getValue(),
                         cast<ConstantInt>(EndPoints[1])->getValue());
     if (Range.isFullSet())
-      return nullptr;
+      return NULL;
   }
 
   return MDNode::get(A->getContext(), EndPoints);
@@ -528,7 +525,7 @@ static SmallVector<TrackingVH<MDNode>, 4> &getNMDOps(void *Operands) {
 }
 
 NamedMDNode::NamedMDNode(const Twine &N)
-  : Name(N.str()), Parent(nullptr),
+  : Name(N.str()), Parent(0),
     Operands(new SmallVector<TrackingVH<MDNode>, 4>()) {
 }
 
@@ -576,7 +573,7 @@ StringRef NamedMDNode::getName() const {
 //
 
 void Instruction::setMetadata(StringRef Kind, MDNode *Node) {
-  if (!Node && !hasMetadata()) return;
+  if (Node == 0 && !hasMetadata()) return;
   setMetadata(getContext().getMDKindID(Kind), Node);
 }
 
@@ -584,55 +581,11 @@ MDNode *Instruction::getMetadataImpl(StringRef Kind) const {
   return getMetadataImpl(getContext().getMDKindID(Kind));
 }
 
-void Instruction::dropUnknownMetadata(ArrayRef<unsigned> KnownIDs) {
-  SmallSet<unsigned, 5> KnownSet;
-  KnownSet.insert(KnownIDs.begin(), KnownIDs.end());
-
-  // Drop debug if needed
-  if (KnownSet.erase(LLVMContext::MD_dbg))
-    DbgLoc = DebugLoc();
-
-  if (!hasMetadataHashEntry())
-    return; // Nothing to remove!
-
-  DenseMap<const Instruction *, LLVMContextImpl::MDMapTy> &MetadataStore =
-      getContext().pImpl->MetadataStore;
-
-  if (KnownSet.empty()) {
-    // Just drop our entry at the store.
-    MetadataStore.erase(this);
-    setHasMetadataHashEntry(false);
-    return;
-  }
-
-  LLVMContextImpl::MDMapTy &Info = MetadataStore[this];
-  unsigned I;
-  unsigned E;
-  // Walk the array and drop any metadata we don't know.
-  for (I = 0, E = Info.size(); I != E;) {
-    if (KnownSet.count(Info[I].first)) {
-      ++I;
-      continue;
-    }
-
-    Info[I] = Info.back();
-    Info.pop_back();
-    --E;
-  }
-  assert(E == Info.size());
-
-  if (E == 0) {
-    // Drop our entry at the store.
-    MetadataStore.erase(this);
-    setHasMetadataHashEntry(false);
-  }
-}
-
 /// setMetadata - Set the metadata of of the specified kind to the specified
 /// node.  This updates/replaces metadata if already present, or removes it if
 /// Node is null.
 void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
-  if (!Node && !hasMetadata()) return;
+  if (Node == 0 && !hasMetadata()) return;
 
   // Handle 'dbg' as a special case since it is not stored in the hash table.
   if (KindID == LLVMContext::MD_dbg) {
@@ -649,9 +602,9 @@ void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
       setHasMetadataHashEntry(true);
     } else {
       // Handle replacement of an existing value.
-      for (auto &P : Info)
-        if (P.first == KindID) {
-          P.second = Node;
+      for (unsigned i = 0, e = Info.size(); i != e; ++i)
+        if (Info[i].first == KindID) {
+          Info[i].second = Node;
           return;
         }
     }
@@ -663,7 +616,7 @@ void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
 
   // Otherwise, we're removing metadata from an instruction.
   assert((hasMetadataHashEntry() ==
-          (getContext().pImpl->MetadataStore.count(this) > 0)) &&
+          getContext().pImpl->MetadataStore.count(this)) &&
          "HasMetadata bit out of date!");
   if (!hasMetadataHashEntry())
     return;  // Nothing to remove!
@@ -692,15 +645,16 @@ MDNode *Instruction::getMetadataImpl(unsigned KindID) const {
   if (KindID == LLVMContext::MD_dbg)
     return DbgLoc.getAsMDNode(getContext());
   
-  if (!hasMetadataHashEntry()) return nullptr;
+  if (!hasMetadataHashEntry()) return 0;
   
   LLVMContextImpl::MDMapTy &Info = getContext().pImpl->MetadataStore[this];
   assert(!Info.empty() && "bit out of sync with hash table");
 
-  for (const auto &I : Info)
-    if (I.first == KindID)
-      return I.second;
-  return nullptr;
+  for (LLVMContextImpl::MDMapTy::iterator I = Info.begin(), E = Info.end();
+       I != E; ++I)
+    if (I->first == KindID)
+      return I->second;
+  return 0;
 }
 
 void Instruction::getAllMetadataImpl(SmallVectorImpl<std::pair<unsigned,

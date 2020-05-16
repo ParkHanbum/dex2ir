@@ -47,7 +47,7 @@ TargetMachine *EngineBuilder::selectTarget(const Triple &TargetTriple,
     TheTriple.setTriple(sys::getProcessTriple());
 
   // Adjust the triple to match what the user requested.
-  const Target *TheTarget = nullptr;
+  const Target *TheTarget = 0;
   if (!MArch.empty()) {
     for (TargetRegistry::iterator it = TargetRegistry::begin(),
            ie = TargetRegistry::end(); it != ie; ++it) {
@@ -61,7 +61,7 @@ TargetMachine *EngineBuilder::selectTarget(const Triple &TargetTriple,
       if (ErrorStr)
         *ErrorStr = "No available targets are compatible with this -march, "
                     "see -version for the available targets.\n";
-      return nullptr;
+      return 0;
     }
 
     // Adjust the triple to match (if known), otherwise stick with the
@@ -72,10 +72,10 @@ TargetMachine *EngineBuilder::selectTarget(const Triple &TargetTriple,
   } else {
     std::string Error;
     TheTarget = TargetRegistry::lookupTarget(TheTriple.getTriple(), Error);
-    if (!TheTarget) {
+    if (TheTarget == 0) {
       if (ErrorStr)
         *ErrorStr = Error;
-      return nullptr;
+      return 0;
     }
   }
 
@@ -91,7 +91,7 @@ TargetMachine *EngineBuilder::selectTarget(const Triple &TargetTriple,
   // FIXME: non-iOS ARM FastISel is broken with MCJIT.
   if (UseMCJIT &&
       TheTriple.getArch() == Triple::arm &&
-      !TheTriple.isiOS() &&
+      TheTriple.getOS() != Triple::IOS &&
       OptLevel == CodeGenOpt::None) {
     OptLevel = CodeGenOpt::Less;
   }

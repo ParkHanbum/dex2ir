@@ -19,6 +19,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "scheduler"
 #include "llvm/CodeGen/ResourcePriorityQueue.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
@@ -29,8 +30,6 @@
 #include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "scheduler"
 
 static cl::opt<bool> DisableDFASched("disable-dfa-sched", cl::Hidden,
   cl::ZeroOrMore, cl::init(false),
@@ -50,7 +49,7 @@ ResourcePriorityQueue::ResourcePriorityQueue(SelectionDAGISel *IS) :
    TLI = IS->getTargetLowering();
 
    const TargetMachine &tm = (*IS->MF).getTarget();
-   ResourcesModel = tm.getInstrInfo()->CreateTargetScheduleState(&tm,nullptr);
+   ResourcesModel = tm.getInstrInfo()->CreateTargetScheduleState(&tm,NULL);
    // This hard requirement could be relaxed, but for now
    // do not let it procede.
    assert (ResourcesModel && "Unimplemented CreateTargetScheduleState.");
@@ -215,7 +214,7 @@ bool resource_sort::operator()(const SUnit *LHS, const SUnit *RHS) const {
 /// getSingleUnscheduledPred - If there is exactly one unscheduled predecessor
 /// of SU, return it, otherwise return null.
 SUnit *ResourcePriorityQueue::getSingleUnscheduledPred(SUnit *SU) {
-  SUnit *OnlyAvailablePred = nullptr;
+  SUnit *OnlyAvailablePred = 0;
   for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
        I != E; ++I) {
     SUnit &Pred = *I->getSUnit();
@@ -223,7 +222,7 @@ SUnit *ResourcePriorityQueue::getSingleUnscheduledPred(SUnit *SU) {
       // We found an available, but not scheduled, predecessor.  If it's the
       // only one we have found, keep track of it... otherwise give up.
       if (OnlyAvailablePred && OnlyAvailablePred != &Pred)
-        return nullptr;
+        return 0;
       OnlyAvailablePred = &Pred;
     }
   }
@@ -390,9 +389,10 @@ signed ResourcePriorityQueue::regPressureDelta(SUnit *SU, bool RawPressure) {
 // Constants used to denote relative importance of
 // heuristic components for cost computation.
 static const unsigned PriorityOne = 200;
-static const unsigned PriorityTwo = 50;
-static const unsigned PriorityThree = 15;
-static const unsigned PriorityFour = 5;
+static const unsigned PriorityTwo = 100;
+static const unsigned PriorityThree = 50;
+static const unsigned PriorityFour = 15;
+static const unsigned PriorityFive = 5;
 static const unsigned ScaleOne = 20;
 static const unsigned ScaleTwo = 10;
 static const unsigned ScaleThree = 5;
@@ -442,14 +442,14 @@ signed ResourcePriorityQueue::SUSchedulingCost(SUnit *SU) {
     ResCount -= (regPressureDelta(SU) * ScaleTwo);
   }
 
-  // These are platform-specific things.
+  // These are platform specific things.
   // Will need to go into the back end
   // and accessed from here via a hook.
   for (SDNode *N = SU->getNode(); N; N = N->getGluedNode()) {
     if (N->isMachineOpcode()) {
       const MCInstrDesc &TID = TII->get(N->getMachineOpcode());
       if (TID.isCall())
-        ResCount += (PriorityTwo + (ScaleThree*N->getNumValues()));
+        ResCount += (PriorityThree + (ScaleThree*N->getNumValues()));
     }
     else
       switch (N->getOpcode()) {
@@ -457,11 +457,11 @@ signed ResourcePriorityQueue::SUSchedulingCost(SUnit *SU) {
       case ISD::TokenFactor:
       case ISD::CopyFromReg:
       case ISD::CopyToReg:
-        ResCount += PriorityFour;
+        ResCount += PriorityFive;
         break;
 
       case ISD::INLINEASM:
-        ResCount += PriorityThree;
+        ResCount += PriorityFour;
         break;
       }
   }
@@ -582,7 +582,7 @@ void ResourcePriorityQueue::adjustPriorityOfUnscheduledPreds(SUnit *SU) {
   if (SU->isAvailable) return;  // All preds scheduled.
 
   SUnit *OnlyAvailablePred = getSingleUnscheduledPred(SU);
-  if (!OnlyAvailablePred || !OnlyAvailablePred->isAvailable)
+  if (OnlyAvailablePred == 0 || !OnlyAvailablePred->isAvailable)
     return;
 
   // Okay, we found a single predecessor that is available, but not scheduled.
@@ -599,12 +599,12 @@ void ResourcePriorityQueue::adjustPriorityOfUnscheduledPreds(SUnit *SU) {
 /// to be placed in scheduling sequence.
 SUnit *ResourcePriorityQueue::pop() {
   if (empty())
-    return nullptr;
+    return 0;
 
   std::vector<SUnit *>::iterator Best = Queue.begin();
   if (!DisableDFASched) {
     signed BestCost = SUSchedulingCost(*Best);
-    for (std::vector<SUnit *>::iterator I = std::next(Queue.begin()),
+    for (std::vector<SUnit *>::iterator I = llvm::next(Queue.begin()),
            E = Queue.end(); I != E; ++I) {
 
       if (SUSchedulingCost(*I) > BestCost) {
@@ -615,14 +615,14 @@ SUnit *ResourcePriorityQueue::pop() {
   }
   // Use default TD scheduling mechanism.
   else {
-    for (std::vector<SUnit *>::iterator I = std::next(Queue.begin()),
+    for (std::vector<SUnit *>::iterator I = llvm::next(Queue.begin()),
        E = Queue.end(); I != E; ++I)
       if (Picker(*Best, *I))
         Best = I;
   }
 
   SUnit *V = *Best;
-  if (Best != std::prev(Queue.end()))
+  if (Best != prior(Queue.end()))
     std::swap(*Best, Queue.back());
 
   Queue.pop_back();
@@ -634,7 +634,7 @@ SUnit *ResourcePriorityQueue::pop() {
 void ResourcePriorityQueue::remove(SUnit *SU) {
   assert(!Queue.empty() && "Queue is empty!");
   std::vector<SUnit *>::iterator I = std::find(Queue.begin(), Queue.end(), SU);
-  if (I != std::prev(Queue.end()))
+  if (I != prior(Queue.end()))
     std::swap(*I, Queue.back());
 
   Queue.pop_back();

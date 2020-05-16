@@ -2,11 +2,9 @@
 Test discovery functions.
 """
 
-import copy
 import os
 import sys
 
-import lit.run
 from lit.TestingConfig import TestingConfig
 from lit import LitConfig, Test
 
@@ -40,12 +38,11 @@ def getTestSuite(item, litConfig, cache):
             ts, relative = search(parent)
             return (ts, relative + (base,))
 
-        # We found a test suite, create a new config for it and load it.
+        # We found a config file, load it.
         if litConfig.debug:
             litConfig.note('loading suite config %r' % cfgpath)
 
-        cfg = TestingConfig.fromdefaults(litConfig)
-        cfg.load_from_path(cfgpath, litConfig)
+        cfg = TestingConfig.frompath(cfgpath, None, litConfig, mustExist = True)
         source_root = os.path.realpath(cfg.test_source_root or path)
         exec_root = os.path.realpath(cfg.test_exec_root or path)
         return Test.TestSuite(cfg.name, source_root, exec_root, cfg), ()
@@ -81,21 +78,14 @@ def getLocalConfig(ts, path_in_suite, litConfig, cache):
         else:
             parent = search(path_in_suite[:-1])
 
-        # Check if there is a local configuration file.
+        # Load the local configuration.
         source_path = ts.getSourcePath(path_in_suite)
         cfgpath = os.path.join(source_path, litConfig.local_config_name)
-
-        # If not, just reuse the parent config.
-        if not os.path.exists(cfgpath):
-            return parent
-
-        # Otherwise, copy the current config and load the local configuration
-        # file into it.
-        config = copy.copy(parent)
         if litConfig.debug:
             litConfig.note('loading local config %r' % cfgpath)
-        config.load_from_path(cfgpath, litConfig)
-        return config
+        return TestingConfig.frompath(cfgpath, parent, litConfig,
+                                    mustExist = False,
+                                    config = parent.clone(cfgpath))
 
     def search(path_in_suite):
         key = (ts, path_in_suite)
@@ -200,7 +190,9 @@ def find_tests_for_inputs(lit_config, inputs):
     # Expand '@...' form in inputs.
     actual_inputs = []
     for input in inputs:
-        if input.startswith('@'):
+        if os.path.exists(input) or not input.startswith('@'):
+            actual_inputs.append(input)
+        else:
             f = open(input[1:])
             try:
                 for ln in f:
@@ -209,8 +201,6 @@ def find_tests_for_inputs(lit_config, inputs):
                         actual_inputs.append(ln)
             finally:
                 f.close()
-        else:
-            actual_inputs.append(input)
                     
     # Load the tests from the inputs.
     tests = []
@@ -247,9 +237,7 @@ def load_test_suite(inputs):
                                     isWindows = (platform.system()=='Windows'),
                                     params = {})
 
-    # Perform test discovery.
-    run = lit.run.Run(litConfig, find_tests_for_inputs(litConfig, inputs))
+    tests = find_tests_for_inputs(litConfig, inputs)
 
     # Return a unittest test suite which just runs the tests in order.
-    return unittest.TestSuite([LitTestCase(test, run)
-                               for test in run.tests])
+    return unittest.TestSuite([LitTestCase(test, litConfig) for test in tests])

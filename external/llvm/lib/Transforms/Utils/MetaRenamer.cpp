@@ -48,11 +48,11 @@ namespace {
       initializeMetaRenamerPass(*PassRegistry::getPassRegistry());
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
     }
 
-    bool runOnModule(Module &M) override {
+    bool runOnModule(Module &M) {
       static const char *const metaNames[] = {
         // See http://en.wikipedia.org/wiki/Metasyntactic_variable
         "foo", "bar", "baz", "quux", "barney", "snork", "zot", "blam", "hoge",

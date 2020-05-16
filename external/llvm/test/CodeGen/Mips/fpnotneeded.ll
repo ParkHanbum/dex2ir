@@ -1,6 +1,4 @@
-; RUN: llc  -mtriple=mipsel-linux-gnu -march=mipsel -mcpu=mips32 -relocation-model=static -O3 < %s -mips-os16  | FileCheck %s -check-prefix=32
-
-; RUN: llc  -mtriple=mipsel-linux-gnu -march=mipsel -mcpu=mips32 -relocation-model=static -O3 -mips16-constant-islands < %s -mips-os16  | FileCheck %s -check-prefix=cisle
+; RUN: llc  -march=mipsel -mcpu=mips32 -relocation-model=static -O3 < %s -mips-os16  | FileCheck %s -check-prefix=32
 
 @i = global i32 1, align 4
 @f = global float 1.000000e+00, align 4
@@ -10,7 +8,7 @@ entry:
   ret void
 }
 
-; 32: 	.set	mips16
+; 32: 	.set	mips16                  # @vv
 ; 32: 	.ent	vv
 
 ; 32:	save	{{.+}}
@@ -23,7 +21,7 @@ entry:
   ret i32 %0
 }
 
-; 32: 	.set	mips16
+; 32: 	.set	mips16                  # @iv
 ; 32: 	.ent	iv
 
 ; 32:	save	{{.+}}
@@ -39,7 +37,7 @@ entry:
   ret void
 }
 
-; 32: 	.set	mips16
+; 32: 	.set	mips16                  # @vif
 ; 32: 	.ent	vif
 
 ; 32:	save	{{.+}}
@@ -52,16 +50,14 @@ entry:
   ret void
 }
 
-; 32: 	.set	mips16
+; 32: 	.set	mips16                  # @foo
 ; 32: 	.ent	foo
 
 ; 32:	save	{{.+}}
 ; 32:	restore	{{.+}} 
 ; 32:	.end	foo
 
-; cisle:	.end	foo
-
-attributes #0 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="true" "no-frame-pointer-elim-non-leaf" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #0 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="true" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
 
 
 define float @fv() #0 {
@@ -69,7 +65,7 @@ entry:
   ret float 1.000000e+00
 }
 
-; 32: 	.set	nomips16
+; 32: 	.set	nomips16                  # @fv
 ; 32: 	.ent	fv
 ; 32:	.set	noreorder
 ; 32:	.set	nomacro

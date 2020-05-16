@@ -1,4 +1,4 @@
-//===-- AMDGPUAsmPrinter.h - Print AMDGPU assembly code ---------*- C++ -*-===//
+//===-- AMDGPUAsmPrinter.h - Print AMDGPU assembly code -------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -16,65 +16,28 @@
 #define AMDGPU_ASMPRINTER_H
 
 #include "llvm/CodeGen/AsmPrinter.h"
-#include <string>
-#include <vector>
 
 namespace llvm {
 
 class AMDGPUAsmPrinter : public AsmPrinter {
-private:
-  struct SIProgramInfo {
-    SIProgramInfo() :
-      NumVGPR(0),
-      NumSGPR(0),
-      Priority(0),
-      FloatMode(0),
-      Priv(0),
-      DX10Clamp(0),
-      DebugMode(0),
-      IEEEMode(0),
-      CodeLen(0) {}
 
-    // Fields set in PGM_RSRC1 pm4 packet.
-    uint32_t NumVGPR;
-    uint32_t NumSGPR;
-    uint32_t Priority;
-    uint32_t FloatMode;
-    uint32_t Priv;
-    uint32_t DX10Clamp;
-    uint32_t DebugMode;
-    uint32_t IEEEMode;
+public:
+  explicit AMDGPUAsmPrinter(TargetMachine &TM, MCStreamer &Streamer)
+    : AsmPrinter(TM, Streamer) { }
 
-    // Bonus information for debugging.
-    uint64_t CodeLen;
-  };
+  virtual bool runOnMachineFunction(MachineFunction &MF);
 
-  void getSIProgramInfo(SIProgramInfo &Out, MachineFunction &MF) const;
-  void findNumUsedRegistersSI(MachineFunction &MF,
-                              unsigned &NumSGPR,
-                              unsigned &NumVGPR) const;
+  virtual const char *getPassName() const {
+    return "AMDGPU Assembly Printer";
+  }
 
   /// \brief Emit register usage information so that the GPU driver
   /// can correctly setup the GPU state.
   void EmitProgramInfoR600(MachineFunction &MF);
-  void EmitProgramInfoSI(MachineFunction &MF, const SIProgramInfo &KernelInfo);
-
-public:
-  explicit AMDGPUAsmPrinter(TargetMachine &TM, MCStreamer &Streamer);
-
-  bool runOnMachineFunction(MachineFunction &MF) override;
-
-  const char *getPassName() const override {
-    return "AMDGPU Assembly Printer";
-  }
+  void EmitProgramInfoSI(MachineFunction &MF);
 
   /// Implemented in AMDGPUMCInstLower.cpp
-  void EmitInstruction(const MachineInstr *MI) override;
-
-protected:
-  bool DisasmEnabled;
-  std::vector<std::string> DisasmLines, HexLines;
-  size_t DisasmLineMaxLen;
+  virtual void EmitInstruction(const MachineInstr *MI);
 };
 
 } // End anonymous llvm

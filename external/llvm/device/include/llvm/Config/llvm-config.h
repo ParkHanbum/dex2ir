@@ -87,7 +87,7 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 5
+#define LLVM_VERSION_MINOR 3
 
 #include "llvm/Config/llvm-platform-config.h"
 

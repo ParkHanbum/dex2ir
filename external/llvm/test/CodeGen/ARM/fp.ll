@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -float-abi=soft -mattr=+vfp2 %s -o - | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+vfp2 | FileCheck %s
 
 define float @f(i32 %a) {
 ;CHECK-LABEL: f:

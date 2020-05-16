@@ -15,17 +15,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "AMDGPUtti"
 #include "AMDGPU.h"
 #include "AMDGPUTargetMachine.h"
-#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Target/CostTable.h"
 #include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/CostTable.h"
 using namespace llvm;
-
-#define DEBUG_TYPE "AMDGPUtti"
 
 // Declare the pass initialization routine locally as target-specific passes
 // don't have a target-wide initialization entry point, and so we rely on the
@@ -36,7 +33,7 @@ void initializeAMDGPUTTIPass(PassRegistry &);
 
 namespace {
 
-class AMDGPUTTI final : public ImmutablePass, public TargetTransformInfo {
+class AMDGPUTTI : public ImmutablePass, public TargetTransformInfo {
   const AMDGPUTargetMachine *TM;
   const AMDGPUSubtarget *ST;
   const AMDGPUTargetLowering *TLI;
@@ -46,7 +43,7 @@ class AMDGPUTTI final : public ImmutablePass, public TargetTransformInfo {
   unsigned getScalarizationOverhead(Type *Ty, bool Insert, bool Extract) const;
 
 public:
-  AMDGPUTTI() : ImmutablePass(ID), TM(nullptr), ST(nullptr), TLI(nullptr) {
+  AMDGPUTTI() : ImmutablePass(ID), TM(0), ST(0), TLI(0) {
     llvm_unreachable("This pass cannot be directly constructed");
   }
 
@@ -56,9 +53,11 @@ public:
     initializeAMDGPUTTIPass(*PassRegistry::getPassRegistry());
   }
 
-  void initializePass() override { pushTTIStack(this); }
+  virtual void initializePass() { pushTTIStack(this); }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
+  virtual void finalizePass() { popTTIStack(); }
+
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     TargetTransformInfo::getAnalysisUsage(AU);
   }
 
@@ -66,16 +65,13 @@ public:
   static char ID;
 
   /// Provide necessary pointer adjustments for the two base classes.
-  void *getAdjustedAnalysisPointer(const void *ID) override {
+  virtual void *getAdjustedAnalysisPointer(const void *ID) {
     if (ID == &TargetTransformInfo::ID)
       return (TargetTransformInfo *)this;
     return this;
   }
 
-  bool hasBranchDivergence() const override;
-
-  void getUnrollingPreferences(Loop *L,
-                               UnrollingPreferences &UP) const override;
+  virtual bool hasBranchDivergence() const;
 
   /// @}
 };
@@ -92,32 +88,3 @@ llvm::createAMDGPUTargetTransformInfoPass(const AMDGPUTargetMachine *TM) {
 }
 
 bool AMDGPUTTI::hasBranchDivergence() const { return true; }
-
-void AMDGPUTTI::getUnrollingPreferences(Loop *L,
-                                        UnrollingPreferences &UP) const {
-  for (Loop::block_iterator BI = L->block_begin(), BE = L->block_end();
-                                                  BI != BE; ++BI) {
-    BasicBlock *BB = *BI;
-    for (BasicBlock::const_iterator I = BB->begin(), E = BB->end();
-                                                      I != E; ++I) {
-      const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I);
-      if (!GEP)
-        continue;
-      const Value *Ptr = GEP->getPointerOperand();
-      const AllocaInst *Alloca = dyn_cast<AllocaInst>(GetUnderlyingObject(Ptr));
-      if (Alloca) {
-        // We want to do whatever we can to limit the number of alloca
-        // instructions that make it through to the code generator.  allocas
-        // require us to use indirect addressing, which is slow and prone to
-        // compiler bugs.  If this loop does an address calculation on an
-        // alloca ptr, then we want to use a higher than normal loop unroll
-        // threshold. This will give SROA a better chance to eliminate these
-        // allocas.
-        //
-        // Don't use the maximum allowed value here as it will make some
-        // programs way too big.
-        UP.Threshold = 500;
-      }
-    }
-  }
-}

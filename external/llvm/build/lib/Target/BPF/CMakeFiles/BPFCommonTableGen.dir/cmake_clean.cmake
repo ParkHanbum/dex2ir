@@ -1,0 +1,40 @@
+file(REMOVE_RECURSE
+  "BPFGenRegisterInfo.inc.tmp"
+  "BPFGenRegisterInfo.inc"
+  "BPFGenInstrInfo.inc.tmp"
+  "BPFGenInstrInfo.inc"
+  "BPFGenAsmWriter.inc.tmp"
+  "BPFGenAsmWriter.inc"
+  "X86GenAsmMatcher.inc.tmp"
+  "X86GenAsmMatcher.inc"
+  "BPFGenDAGISel.inc.tmp"
+  "BPFGenDAGISel.inc"
+  "BPFGenMCCodeEmitter.inc.tmp"
+  "BPFGenMCCodeEmitter.inc"
+  "BPFGenCallingConv.inc.tmp"
+  "BPFGenCallingConv.inc"
+  "BPFGenSubtargetInfo.inc.tmp"
+  "BPFGenSubtargetInfo.inc"
+  "CMakeFiles/BPFCommonTableGen"
+  "BPFGenRegisterInfo.inc"
+  "BPFGenInstrInfo.inc"
+  "BPFGenAsmWriter.inc"
+  "X86GenAsmMatcher.inc"
+  "BPFGenDAGISel.inc"
+  "BPFGenMCCodeEmitter.inc"
+  "BPFGenCallingConv.inc"
+  "BPFGenSubtargetInfo.inc"
+  "BPFGenRegisterInfo.inc.tmp"
+  "BPFGenInstrInfo.inc.tmp"
+  "BPFGenAsmWriter.inc.tmp"
+  "X86GenAsmMatcher.inc.tmp"
+  "BPFGenDAGISel.inc.tmp"
+  "BPFGenMCCodeEmitter.inc.tmp"
+  "BPFGenCallingConv.inc.tmp"
+  "BPFGenSubtargetInfo.inc.tmp"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang )
+  include(CMakeFiles/BPFCommonTableGen.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

@@ -21,37 +21,6 @@
 #include <algorithm>
 using namespace llvm;
 
-/// Make sure GV is visible from both modules. Delete is true if it is
-/// being deleted from this module.
-/// This also makes sure GV cannot be dropped so that references from
-/// the split module remain valid.
-static void makeVisible(GlobalValue &GV, bool Delete) {
-  bool Local = GV.hasLocalLinkage();
-  if (Local || Delete) {
-    GV.setLinkage(GlobalValue::ExternalLinkage);
-    if (Local)
-      GV.setVisibility(GlobalValue::HiddenVisibility);
-    return;
-  }
-
-  if (!GV.hasLinkOnceLinkage()) {
-    assert(!GV.isDiscardableIfUnused());
-    return;
-  }
-
-  // Map linkonce* to weak* so that llvm doesn't drop this GV.
-  switch(GV.getLinkage()) {
-  default:
-    llvm_unreachable("Unexpected linkage");
-  case GlobalValue::LinkOnceAnyLinkage:
-    GV.setLinkage(GlobalValue::WeakAnyLinkage);
-    return;
-  case GlobalValue::LinkOnceODRLinkage:
-    GV.setLinkage(GlobalValue::WeakODRLinkage);
-    return;
-  }
-}
-
 namespace {
   /// @brief A pass to extract specific functions and their dependencies.
   class GVExtractorPass : public ModulePass {
@@ -67,7 +36,7 @@ namespace {
     explicit GVExtractorPass(std::vector<GlobalValue*>& GVs, bool deleteS = true)
       : ModulePass(ID), Named(GVs.begin(), GVs.end()), deleteStuff(deleteS) {}
 
-    bool runOnModule(Module &M) override {
+    bool runOnModule(Module &M) {
       // Visit the global inline asm.
       if (!deleteStuff)
         M.setModuleInlineAsm("");
@@ -91,10 +60,15 @@ namespace {
             continue;
         }
 
-	makeVisible(*I, Delete);
+        bool Local = I->isDiscardableIfUnused();
+        if (Local)
+          I->setVisibility(GlobalValue::HiddenVisibility);
+
+        if (Local || Delete)
+          I->setLinkage(GlobalValue::ExternalLinkage);
 
         if (Delete)
-          I->setInitializer(nullptr);
+          I->setInitializer(0);
       }
 
       // Visit the Functions.
@@ -106,7 +80,12 @@ namespace {
             continue;
         }
 
-	makeVisible(*I, Delete);
+        bool Local = I->isDiscardableIfUnused();
+        if (Local)
+          I->setVisibility(GlobalValue::HiddenVisibility);
+
+        if (Local || Delete)
+          I->setLinkage(GlobalValue::ExternalLinkage);
 
         if (Delete)
           I->deleteBody();
@@ -118,10 +97,12 @@ namespace {
         Module::alias_iterator CurI = I;
         ++I;
 
-	bool Delete = deleteStuff == (bool)Named.count(CurI);
-	makeVisible(*CurI, Delete);
+        if (CurI->isDiscardableIfUnused()) {
+          CurI->setVisibility(GlobalValue::HiddenVisibility);
+          CurI->setLinkage(GlobalValue::ExternalLinkage);
+        }
 
-        if (Delete) {
+        if (deleteStuff == (bool)Named.count(CurI)) {
           Type *Ty =  CurI->getType()->getElementType();
 
           CurI->removeFromParent();
@@ -133,7 +114,7 @@ namespace {
           } else {
             Declaration =
               new GlobalVariable(M, Ty, false, GlobalValue::ExternalLinkage,
-                                 nullptr, CurI->getName());
+                                 0, CurI->getName());
 
           }
           CurI->replaceAllUsesWith(Declaration);

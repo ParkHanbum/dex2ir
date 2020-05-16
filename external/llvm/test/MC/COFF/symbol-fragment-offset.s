@@ -36,10 +36,10 @@ L_.str2:
 
 // CHECK: {
 // CHECK:   Machine:                   IMAGE_FILE_MACHINE_I386 (0x14C)
-// CHECK:   SectionCount:              3
+// CHECK:   SectionCount:              2
 // CHECK:   TimeDateStamp:             {{[0-9]+}}
 // CHECK:   PointerToSymbolTable:      0x{{[0-9A-F]+}}
-// CHECK:   SymbolCount:               9
+// CHECK:   SymbolCount:               7
 // CHECK:   OptionalHeaderSize:        0
 // CHECK:   Characteristics [ (0x0)
 // CHECK:   ]

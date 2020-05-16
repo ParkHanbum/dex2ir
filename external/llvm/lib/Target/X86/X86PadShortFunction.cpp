@@ -15,9 +15,9 @@
 
 #include <algorithm>
 
+#define DEBUG_TYPE "x86-pad-short-functions"
 #include "X86.h"
 #include "X86InstrInfo.h"
-#include "X86Subtarget.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -29,8 +29,6 @@
 #include "llvm/Target/TargetInstrInfo.h"
 
 using namespace llvm;
-
-#define DEBUG_TYPE "x86-pad-short-functions"
 
 STATISTIC(NumBBsPadded, "Number of basic blocks padded");
 
@@ -51,11 +49,11 @@ namespace {
   struct PadShortFunc : public MachineFunctionPass {
     static char ID;
     PadShortFunc() : MachineFunctionPass(ID)
-                   , Threshold(4), TM(nullptr), TII(nullptr) {}
+                   , Threshold(4), TM(0), TII(0) {}
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    virtual bool runOnMachineFunction(MachineFunction &MF);
 
-    const char *getPassName() const override {
+    virtual const char *getPassName() const {
       return "X86 Atom pad short functions";
     }
 
@@ -102,9 +100,6 @@ bool PadShortFunc::runOnMachineFunction(MachineFunction &MF) {
   }
 
   TM = &MF.getTarget();
-  if (!TM->getSubtarget<X86Subtarget>().padShortFunctions())
-    return false;
-
   TII = TM->getInstrInfo();
 
   // Search through basic blocks and mark the ones that have early returns

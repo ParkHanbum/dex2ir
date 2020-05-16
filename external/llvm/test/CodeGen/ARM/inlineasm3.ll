@@ -1,5 +1,4 @@
-; RUN: llc -mtriple=arm-eabi -float-abi=soft -mattr=+neon,+v6t2 -no-integrated-as %s -o - \
-; RUN:  | FileCheck %s
+; RUN: llc < %s -march=arm -mattr=+neon,+v6t2 | FileCheck %s
 
 ; Radar 7449043
 %struct.int32x4_t = type { <4 x i32> }

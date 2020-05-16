@@ -50,7 +50,6 @@ public:
     FlagClass,
     JoinedClass,
     SeparateClass,
-    RemainingArgsClass,
     CommaJoinedClass,
     MultiArgClass,
     JoinedOrSeparateClass,
@@ -150,7 +149,6 @@ public:
     case SeparateClass:
     case MultiArgClass:
     case JoinedOrSeparateClass:
-    case RemainingArgsClass:
       return RenderSeparateStyle;
     }
     llvm_unreachable("Unexpected kind!");

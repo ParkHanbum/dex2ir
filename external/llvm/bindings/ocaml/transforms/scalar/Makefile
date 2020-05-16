@@ -13,6 +13,7 @@
 
 LEVEL := ../../../..
 LIBRARYNAME := llvm_scalar_opts
+DONT_BUILD_RELINKED := 1
 UsedComponents := scalaropts
 UsedOcamlInterfaces := llvm
 

@@ -382,9 +382,7 @@ public:
 
   // Miscellaneous inspection routines.
   size_type max_size() const { return size_type(-1); }
-  bool LLVM_ATTRIBUTE_UNUSED_RESULT empty() const {
-    return Head == 0 || Head == getTail();
-  }
+  bool empty() const { return Head == 0 || Head == getTail(); }
 
   // Front and back accessor functions...
   reference front() {
@@ -536,7 +534,7 @@ public:
   // Functionality derived from other functions defined above...
   //
 
-  size_type LLVM_ATTRIBUTE_UNUSED_RESULT size() const {
+  size_type size() const {
     if (Head == 0) return 0; // Don't require construction of sentinel if empty.
     return std::distance(begin(), end());
   }

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Thumb1InstrInfo.h"
+#include "ARM.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineMemOperand.h"

@@ -22,10 +22,6 @@ include "llvm/Target/Target.td"
 
 def Mode64Bit : SubtargetFeature<"64bit-mode", "In64BitMode", "true",
                                   "64-bit mode (x86_64)">;
-def Mode32Bit : SubtargetFeature<"32bit-mode", "In32BitMode", "true",
-                                  "32-bit mode (80386)">;
-def Mode16Bit : SubtargetFeature<"16bit-mode", "In16BitMode", "true",
-                                  "16-bit mode (i8086)">;
 
 //===----------------------------------------------------------------------===//
 // X86 Subtarget features
@@ -54,10 +50,10 @@ def FeatureSSE3    : SubtargetFeature<"sse3", "X86SSELevel", "SSE3",
 def FeatureSSSE3   : SubtargetFeature<"ssse3", "X86SSELevel", "SSSE3",
                                       "Enable SSSE3 instructions",
                                       [FeatureSSE3]>;
-def FeatureSSE41   : SubtargetFeature<"sse4.1", "X86SSELevel", "SSE41",
+def FeatureSSE41   : SubtargetFeature<"sse41", "X86SSELevel", "SSE41",
                                       "Enable SSE 4.1 instructions",
                                       [FeatureSSSE3]>;
-def FeatureSSE42   : SubtargetFeature<"sse4.2", "X86SSELevel", "SSE42",
+def FeatureSSE42   : SubtargetFeature<"sse42", "X86SSELevel", "SSE42",
                                       "Enable SSE 4.2 instructions",
                                       [FeatureSSE41]>;
 def Feature3DNow   : SubtargetFeature<"3dnow", "X863DNowLevel", "ThreeDNow",
@@ -72,13 +68,11 @@ def Feature3DNowA  : SubtargetFeature<"3dnowa", "X863DNowLevel", "ThreeDNowA",
 def Feature64Bit   : SubtargetFeature<"64bit", "HasX86_64", "true",
                                       "Support 64-bit instructions",
                                       [FeatureCMOV]>;
-def FeatureCMPXCHG16B : SubtargetFeature<"cx16", "HasCmpxchg16b", "true",
+def FeatureCMPXCHG16B : SubtargetFeature<"cmpxchg16b", "HasCmpxchg16b", "true",
                                       "64-bit with cmpxchg16b",
                                       [Feature64Bit]>;
 def FeatureSlowBTMem : SubtargetFeature<"slow-bt-mem", "IsBTMemSlow", "true",
                                        "Bit testing of memory is slow">;
-def FeatureSlowSHLD : SubtargetFeature<"slow-shld", "IsSHLDSlow", "true",
-                                       "SHLD instruction is slow">;
 def FeatureFastUAMem : SubtargetFeature<"fast-unaligned-mem",
                                         "IsUAMemFast", "true",
                                         "Fast unaligned memory access">;
@@ -92,16 +86,16 @@ def FeatureAVX     : SubtargetFeature<"avx", "X86SSELevel", "AVX",
 def FeatureAVX2    : SubtargetFeature<"avx2", "X86SSELevel", "AVX2",
                                       "Enable AVX2 instructions",
                                       [FeatureAVX]>;
-def FeatureAVX512   : SubtargetFeature<"avx512f", "X86SSELevel", "AVX512F",
+def FeatureAVX512   : SubtargetFeature<"avx-512", "X86SSELevel", "AVX512",
                                       "Enable AVX-512 instructions",
                                       [FeatureAVX2]>;
-def FeatureERI      : SubtargetFeature<"avx512er", "HasERI", "true",
+def FeatureERI      : SubtargetFeature<"avx-512-eri", "HasERI", "true",
                       "Enable AVX-512 Exponential and Reciprocal Instructions",
                                       [FeatureAVX512]>;
-def FeatureCDI      : SubtargetFeature<"avx512cd", "HasCDI", "true",
+def FeatureCDI      : SubtargetFeature<"avx-512-cdi", "HasCDI", "true",
                       "Enable AVX-512 Conflict Detection Instructions",
                                       [FeatureAVX512]>;
-def FeaturePFI      : SubtargetFeature<"avx512pf", "HasPFI", "true",
+def FeaturePFI      : SubtargetFeature<"avx-512-pfi", "HasPFI", "true",
                       "Enable AVX-512 PreFetch Instructions",
                                       [FeatureAVX512]>;
 
@@ -123,15 +117,12 @@ def FeatureVectorUAMem : SubtargetFeature<"vector-unaligned-mem",
 def FeatureAES     : SubtargetFeature<"aes", "HasAES", "true",
                                       "Enable AES instructions",
                                       [FeatureSSE2]>;
-def FeatureTBM     : SubtargetFeature<"tbm", "HasTBM", "true",
-                                      "Enable TBM instructions">;
 def FeatureMOVBE   : SubtargetFeature<"movbe", "HasMOVBE", "true",
                                       "Support MOVBE instruction">;
-def FeatureRDRAND  : SubtargetFeature<"rdrnd", "HasRDRAND", "true",
+def FeatureRDRAND  : SubtargetFeature<"rdrand", "HasRDRAND", "true",
                                       "Support RDRAND instruction">;
 def FeatureF16C    : SubtargetFeature<"f16c", "HasF16C", "true",
-                       "Support 16-bit floating point conversion instructions",
-                       [FeatureAVX]>;
+                       "Support 16-bit floating point conversion instructions">;
 def FeatureFSGSBase : SubtargetFeature<"fsgsbase", "HasFSGSBase", "true",
                                        "Support FS/GS Base instructions">;
 def FeatureLZCNT   : SubtargetFeature<"lzcnt", "HasLZCNT", "true",
@@ -146,9 +137,6 @@ def FeatureHLE     : SubtargetFeature<"hle", "HasHLE", "true",
                                       "Support HLE">;
 def FeatureADX     : SubtargetFeature<"adx", "HasADX", "true",
                                       "Support ADX instructions">;
-def FeatureSHA     : SubtargetFeature<"sha", "HasSHA", "true",
-                                      "Enable SHA instructions",
-                                      [FeatureSSE2]>;
 def FeaturePRFCHW  : SubtargetFeature<"prfchw", "HasPRFCHW", "true",
                                       "Support PRFCHW instructions">;
 def FeatureRDSEED  : SubtargetFeature<"rdseed", "HasRDSEED", "true",
@@ -166,10 +154,6 @@ def FeatureCallRegIndirect : SubtargetFeature<"call-reg-indirect",
                                      "Call register indirect">;
 def FeatureLEAUsesAG : SubtargetFeature<"lea-uses-ag", "LEAUsesAG", "true",
                                    "LEA instruction needs inputs at AG stage">;
-def FeatureSlowLEA : SubtargetFeature<"slow-lea", "SlowLEA", "true",
-                                   "LEA instruction with certain arguments is slow">;
-def FeatureSlowIncDec : SubtargetFeature<"slow-incdec", "SlowIncDec", "true",
-                                   "INC and DEC instructions are slower than ADD and SUB">;
 
 //===----------------------------------------------------------------------===//
 // X86 processors supported.
@@ -179,8 +163,6 @@ include "X86Schedule.td"
 
 def ProcIntelAtom : SubtargetFeature<"atom", "X86ProcFamily", "IntelAtom",
                     "Intel Atom processors">;
-def ProcIntelSLM  : SubtargetFeature<"slm", "X86ProcFamily", "IntelSLM",
-                    "Intel Silvermont processors">;
 
 class Proc<string Name, list<SubtargetFeature> Features>
  : ProcessorModel<Name, GenericModel, Features>;
@@ -199,7 +181,8 @@ def : Proc<"pentium3m",       [FeatureSSE1, FeatureSlowBTMem]>;
 def : Proc<"pentium-m",       [FeatureSSE2, FeatureSlowBTMem]>;
 def : Proc<"pentium4",        [FeatureSSE2]>;
 def : Proc<"pentium4m",       [FeatureSSE2, FeatureSlowBTMem]>;
-
+def : Proc<"x86-64",          [FeatureSSE2, Feature64Bit, FeatureSlowBTMem,
+                               FeatureFastUAMem]>;
 // Intel Core Duo.
 def : ProcessorModel<"yonah", SandyBridgeModel,
                      [FeatureSSE3, FeatureSlowBTMem]>;
@@ -223,15 +206,6 @@ def : ProcessorModel<"atom", AtomModel,
                       FeatureLEAUsesAG,
                       FeaturePadShortFunctions]>;
 
-// Atom Silvermont.
-def : ProcessorModel<"slm",  SLMModel, [ProcIntelSLM,
-                               FeatureSSE42, FeatureCMPXCHG16B,
-                               FeatureMOVBE, FeaturePOPCNT,
-                               FeaturePCLMUL, FeatureAES,
-                               FeatureCallRegIndirect,
-                               FeaturePRFCHW,
-                               FeatureSlowLEA, FeatureSlowIncDec,
-                               FeatureSlowBTMem, FeatureFastUAMem]>;
 // "Arrandale" along with corei3 and corei5
 def : ProcessorModel<"corei7", SandyBridgeModel,
                      [FeatureSSE42, FeatureCMPXCHG16B, FeatureSlowBTMem,
@@ -273,94 +247,56 @@ def : ProcessorModel<"knl", HaswellModel,
                       FeatureCMPXCHG16B, FeatureFastUAMem, FeaturePOPCNT,
                       FeatureAES, FeaturePCLMUL, FeatureRDRAND, FeatureF16C,
                       FeatureFSGSBase, FeatureMOVBE, FeatureLZCNT, FeatureBMI,
-                      FeatureBMI2, FeatureFMA, FeatureRTM, FeatureHLE,
-                      FeatureSlowIncDec]>;
+                      FeatureBMI2, FeatureFMA, FeatureRTM, FeatureHLE]>;
 
 def : Proc<"k6",              [FeatureMMX]>;
 def : Proc<"k6-2",            [Feature3DNow]>;
 def : Proc<"k6-3",            [Feature3DNow]>;
-def : Proc<"athlon",          [Feature3DNowA, FeatureSlowBTMem,
-                               FeatureSlowSHLD]>;
-def : Proc<"athlon-tbird",    [Feature3DNowA, FeatureSlowBTMem,
-                               FeatureSlowSHLD]>;
-def : Proc<"athlon-4",        [FeatureSSE1,   Feature3DNowA, FeatureSlowBTMem, 
-                               FeatureSlowSHLD]>;
-def : Proc<"athlon-xp",       [FeatureSSE1,   Feature3DNowA, FeatureSlowBTMem,
-                               FeatureSlowSHLD]>;
-def : Proc<"athlon-mp",       [FeatureSSE1,   Feature3DNowA, FeatureSlowBTMem,
-                               FeatureSlowSHLD]>;
+def : Proc<"athlon",          [Feature3DNowA, FeatureSlowBTMem]>;
+def : Proc<"athlon-tbird",    [Feature3DNowA, FeatureSlowBTMem]>;
+def : Proc<"athlon-4",        [FeatureSSE1,   Feature3DNowA, FeatureSlowBTMem]>;
+def : Proc<"athlon-xp",       [FeatureSSE1,   Feature3DNowA, FeatureSlowBTMem]>;
+def : Proc<"athlon-mp",       [FeatureSSE1,   Feature3DNowA, FeatureSlowBTMem]>;
 def : Proc<"k8",              [FeatureSSE2,   Feature3DNowA, Feature64Bit,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"opteron",         [FeatureSSE2,   Feature3DNowA, Feature64Bit,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"athlon64",        [FeatureSSE2,   Feature3DNowA, Feature64Bit,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"athlon-fx",       [FeatureSSE2,   Feature3DNowA, Feature64Bit,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"k8-sse3",         [FeatureSSE3,   Feature3DNowA, FeatureCMPXCHG16B,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"opteron-sse3",    [FeatureSSE3,   Feature3DNowA, FeatureCMPXCHG16B,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"athlon64-sse3",   [FeatureSSE3,   Feature3DNowA, FeatureCMPXCHG16B,
-                               FeatureSlowBTMem, FeatureSlowSHLD]>;
+                               FeatureSlowBTMem]>;
 def : Proc<"amdfam10",        [FeatureSSE4A,
                                Feature3DNowA, FeatureCMPXCHG16B, FeatureLZCNT,
-                               FeaturePOPCNT, FeatureSlowBTMem,
-                               FeatureSlowSHLD]>;
+                               FeaturePOPCNT, FeatureSlowBTMem]>;
 // Bobcat
 def : Proc<"btver1",          [FeatureSSSE3, FeatureSSE4A, FeatureCMPXCHG16B,
-                               FeaturePRFCHW, FeatureLZCNT, FeaturePOPCNT,
-                               FeatureSlowSHLD]>;
+                               FeatureLZCNT, FeaturePOPCNT]>;
 // Jaguar
 def : Proc<"btver2",          [FeatureAVX, FeatureSSE4A, FeatureCMPXCHG16B,
-                               FeaturePRFCHW, FeatureAES, FeaturePCLMUL,
-                               FeatureBMI, FeatureF16C, FeatureMOVBE,
-                               FeatureLZCNT, FeaturePOPCNT, FeatureSlowSHLD]>;
+                               FeatureAES, FeaturePCLMUL, FeatureBMI,
+                               FeatureF16C, FeatureMOVBE, FeatureLZCNT,
+                               FeaturePOPCNT]>;
 // Bulldozer
 def : Proc<"bdver1",          [FeatureXOP, FeatureFMA4, FeatureCMPXCHG16B,
-                               FeatureAES, FeaturePRFCHW, FeaturePCLMUL,
-                               FeatureLZCNT, FeaturePOPCNT, FeatureSlowSHLD]>;
+                               FeatureAES, FeaturePCLMUL,
+                               FeatureLZCNT, FeaturePOPCNT]>;
 // Piledriver
 def : Proc<"bdver2",          [FeatureXOP, FeatureFMA4, FeatureCMPXCHG16B,
-                               FeatureAES, FeaturePRFCHW, FeaturePCLMUL,
+                               FeatureAES, FeaturePCLMUL,
                                FeatureF16C, FeatureLZCNT,
-                               FeaturePOPCNT, FeatureBMI, FeatureTBM,
-                               FeatureFMA, FeatureSlowSHLD]>;
-
-// Steamroller
-def : Proc<"bdver3",          [FeatureXOP, FeatureFMA4, FeatureCMPXCHG16B,
-                               FeatureAES, FeaturePRFCHW, FeaturePCLMUL,
-                               FeatureF16C, FeatureLZCNT,
-                               FeaturePOPCNT, FeatureBMI,  FeatureTBM,
-                               FeatureFMA, FeatureFSGSBase]>;
-
-// Excavator
-def : Proc<"bdver4",          [FeatureAVX2, FeatureXOP, FeatureFMA4,
-                               FeatureCMPXCHG16B, FeatureAES, FeaturePRFCHW,
-                               FeaturePCLMUL, FeatureF16C, FeatureLZCNT,
-                               FeaturePOPCNT, FeatureBMI, FeatureBMI2,
-                               FeatureTBM, FeatureFMA, FeatureFSGSBase]>;
-
+                               FeaturePOPCNT, FeatureBMI, FeatureFMA]>;
 def : Proc<"geode",           [Feature3DNowA]>;
 
 def : Proc<"winchip-c6",      [FeatureMMX]>;
 def : Proc<"winchip2",        [Feature3DNow]>;
 def : Proc<"c3",              [Feature3DNow]>;
 def : Proc<"c3-2",            [FeatureSSE1]>;
-
-// We also provide a generic 64-bit specific x86 processor model which tries to
-// be good for modern chips without enabling instruction set encodings past the
-// basic SSE2 and 64-bit ones. It disables slow things from any mainstream and
-// modern 64-bit x86 chip, and enables features that are generally beneficial.
-// 
-// We currently use the Sandy Bridge model as the default scheduling model as
-// we use it across Nehalem, Westmere, Sandy Bridge, and Ivy Bridge which
-// covers a huge swath of x86 processors. If there are specific scheduling
-// knobs which need to be tuned differently for AMD chips, we might consider
-// forming a common base for them.
-def : ProcessorModel<"x86-64", SandyBridgeModel,
-                     [FeatureSSE2, Feature64Bit, FeatureSlowBTMem,
-                      FeatureFastUAMem]>;
 
 //===----------------------------------------------------------------------===//
 // Register File Description
@@ -426,10 +362,12 @@ def IntelAsmParserVariant : AsmParserVariant {
 def ATTAsmWriter : AsmWriter {
   string AsmWriterClassName  = "ATTInstPrinter";
   int Variant = 0;
+  bit isMCAsmWriter = 1;
 }
 def IntelAsmWriter : AsmWriter {
   string AsmWriterClassName  = "IntelInstPrinter";
   int Variant = 1;
+  bit isMCAsmWriter = 1;
 }
 
 def X86 : Target {

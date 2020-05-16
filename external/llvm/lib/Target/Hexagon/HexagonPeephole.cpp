@@ -29,12 +29,13 @@
 //
 // Note: The peephole pass makes the instrucstions like
 // %vreg170<def> = SXTW %vreg166 or %vreg16<def> = NOT_p %vreg15<kill>
-// redundant and relies on some form of dead removal instructions, like
+// redundant and relies on some form of dead removal instrucions, like
 // DCE or DIE to actually eliminate them.
 
 
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "hexagon-peephole"
 #include "Hexagon.h"
 #include "HexagonTargetMachine.h"
 #include "llvm/ADT/DenseMap.h"
@@ -55,8 +56,6 @@
 #include <algorithm>
 
 using namespace llvm;
-
-#define DEBUG_TYPE "hexagon-peephole"
 
 static cl::opt<bool> DisableHexagonPeephole("disable-hexagon-peephole",
     cl::Hidden, cl::ZeroOrMore, cl::init(false),
@@ -90,13 +89,13 @@ namespace {
       initializeHexagonPeepholePass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnMachineFunction(MachineFunction &MF) override;
+    bool runOnMachineFunction(MachineFunction &MF);
 
-    const char *getPassName() const override {
+    const char *getPassName() const {
       return "Hexagon optimize redundant zero and size extends";
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    void getAnalysisUsage(AnalysisUsage &AU) const {
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 

@@ -56,16 +56,16 @@ public:
 
   /// @}
 
-  void PrintImpl(raw_ostream &OS) const override;
+  void PrintImpl(raw_ostream &OS) const;
   bool EvaluateAsRelocatableImpl(MCValue &Res,
-                                 const MCAsmLayout *Layout) const override;
-  void visitUsedExpr(MCStreamer &Streamer) const override;
-  const MCSection *FindAssociatedSection() const override {
+                                 const MCAsmLayout *Layout) const;
+  void AddValueSymbols(MCAssembler *) const;
+  const MCSection *FindAssociatedSection() const {
     return getSubExpr()->FindAssociatedSection();
   }
 
   // There are no TLS ARMMCExprs at the moment.
-  void fixELFSymbolsInTLSFixups(MCAssembler &Asm) const override {}
+  void fixELFSymbolsInTLSFixups(MCAssembler &Asm) const {}
 
   static bool classof(const MCExpr *E) {
     return E->getKind() == MCExpr::Target;

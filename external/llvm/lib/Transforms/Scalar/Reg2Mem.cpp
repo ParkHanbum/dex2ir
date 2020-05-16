@@ -16,20 +16,19 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "reg2mem"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/CFG.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include <list>
 using namespace llvm;
-
-#define DEBUG_TYPE "reg2mem"
 
 STATISTIC(NumRegsDemoted, "Number of registers demoted");
 STATISTIC(NumPhisDemoted, "Number of phi-nodes demoted");
@@ -41,22 +40,23 @@ namespace {
       initializeRegToMemPass(*PassRegistry::getPassRegistry());
     }
 
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequiredID(BreakCriticalEdgesID);
       AU.addPreservedID(BreakCriticalEdgesID);
     }
 
-    bool valueEscapes(const Instruction *Inst) const {
-      const BasicBlock *BB = Inst->getParent();
-      for (const User *U : Inst->users()) {
-        const Instruction *UI = cast<Instruction>(U);
-        if (UI->getParent() != BB || isa<PHINode>(UI))
+   bool valueEscapes(const Instruction *Inst) const {
+     const BasicBlock *BB = Inst->getParent();
+      for (Value::const_use_iterator UI = Inst->use_begin(),E = Inst->use_end();
+           UI != E; ++UI) {
+        const Instruction *I = cast<Instruction>(*UI);
+        if (I->getParent() != BB || isa<PHINode>(I))
           return true;
       }
       return false;
     }
 
-    bool runOnFunction(Function &F) override;
+    virtual bool runOnFunction(Function &F);
   };
 }
 

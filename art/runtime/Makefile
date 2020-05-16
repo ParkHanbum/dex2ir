@@ -288,6 +288,10 @@ else # HOST_ARCH != x86
 $(error unsupported HOST_ARCH=$(HOST_ARCH))
 endif # HOST_ARCH != x86
 
+LIBART_ASM_FILES_x86_64  := \
+	arch/x86_64/jni_entrypoints_x86_64.S \
+	arch/x86_64/portable_entrypoints_x86_64.S \
+	arch/x86_64/quick_entrypoints_x86_64.S
 
 LIBART_ENUM_OPERATOR_OUT_HEADER_FILES := \
 	arch/x86_64/registers_x86_64.h \
@@ -337,7 +341,7 @@ TARGET := $(notdir $(LIBRUNTIME_ARCHIVE))
 all: $(GENERATED_SRC) $(TARGET)
 
 $(GENERATED_SRC):
-	$(QUIET_GEN) python $(GENERATOR) $(srcdir) $(OPERATOR_OUT_HEADER_FILES) > $@
+	$(QUIET_GEN) python $(GENERATOR) $(srcdir) $(LIBART_ENUM_OPERATOR_OUT_HEADER_FILES) > $@
 
 #$(LIBART_OBJS): $(GENERATED_SRC)
 #	$(CXX) -c $(@:.o=.cc) -o $@ $(LIBART_CFLAGS)
