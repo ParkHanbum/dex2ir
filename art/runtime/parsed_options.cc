@@ -21,6 +21,7 @@
 
 #include "debugger.h"
 #include "monitor.h"
+#include <unistd.h>
 
 namespace art {
 

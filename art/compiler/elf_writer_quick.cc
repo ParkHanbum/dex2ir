@@ -27,6 +27,9 @@
 #include "oat_writer.h"
 #include "utils.h"
 
+#include <sys/types.h>
+#include <unistd.h>
+
 namespace art {
 
 bool ElfWriterQuick::Create(File* elf_file,

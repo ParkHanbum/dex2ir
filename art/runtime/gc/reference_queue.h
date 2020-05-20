@@ -24,7 +24,7 @@
 #include "atomic.h"
 #include "base/timing_logger.h"
 #include "globals.h"
-#include "gtest/gtest.h"
+// #include "gtest/gtest.h"
 #include "jni.h"
 #include "object_callbacks.h"
 #include "offsets.h"

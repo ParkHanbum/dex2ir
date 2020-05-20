@@ -53,6 +53,7 @@ GTEST_HDRS := $(GTEST_BASE)/include
 VIXL_BASE := $(srcdir)/external/vixl
 VIXL_HDRS := $(VIXL_BASE)/src
 LIBZLIB_BASE := $(srcdir)/external/zlib
+LIBZLIB_HDRS := $(LIBZLIB_BASE)
 
 SYSTEM_CORE_BASE := $(srcdir)/system/core
 SYSTEM_CORE_HDRS := $(SYSTEM_CORE_BASE)/include
@@ -90,7 +91,7 @@ CXXFLAGS += -D_FILE_OFFSET_BITS=64
 CXXFLAGS += $(ART_HOST_CFLAGS)
 CXXFLAGS += -include $(srcdir)/build/core/combo/include/arch/linux-x86/AndroidConfig.h
 
-LDFLAGS := -lz -lpthread -ldl -lm -lstdc++
+LDFLAGS := -lpthread -ldl -lm -lstdc++
 
 
 include $(srcdir)/Makefile.include
@@ -110,6 +111,7 @@ export ANDROID_HDRS LIBZIPARCHIVE_HDRS LIBARTPALETTE_HDRS JNI_HDRS
 export LIBCUTILS_HDRS LIBUTILS_HDRS LIBUTILS_HDRS
 export LIBC_HDRS LIBLOG_HDRS LIBCUTILS_HDRS LIBUTILS_HDRS
 export LIBZIPARCHIVE_BASE LIBARTBASE_BASE LIBNATIVEHELPER_HDRS
+export LIBZLIB_HDRS 
 
 export LIBARTC_ARCHIVE LIBRUNTIME_ARCHIVE
 

@@ -30,7 +30,7 @@
 #include "gc/collector/gc_type.h"
 #include "gc/collector_type.h"
 #include "globals.h"
-#include "gtest/gtest.h"
+// #include "gtest/gtest.h"
 #include "instruction_set.h"
 #include "jni.h"
 #include "object_callbacks.h"

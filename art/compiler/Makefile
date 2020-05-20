@@ -147,9 +147,21 @@ LIBART_COMPILER_SRC_FILES += \
 LIBART_COMPILER_ENUM_OPERATOR_OUT_HEADER_FILES := \
 	dex/compiler_enums.h
 
+LIBART_COMPILER_ENUM_OPERATOR_OUT_HEADER_FILES += \
+	utils/x86/managed_register_x86.h \
+	utils/x86/constants_x86.h \
+	utils/x86_64/managed_register_x86_64.h \
+	utils/x86_64/constants_x86_64.h \
+	utils/arm/managed_register_arm.h \
+	utils/arm/constants_arm.h \
+	utils/arm64/managed_register_arm64.h \
+	utils/arm64/constants_arm64.h \
+	utils/mips/managed_register_mips.h \
+	utils/mips/constants_mips.h \
+
 # ART_USE_PORTABLE_COMPILER indicates whether to use the LLVM compiler.
 LIBARTC_CFLAGS := -I$(srcdir) -I$(LIBLLVM_HDRS) -I$(LLVM_CONFIG) -I$(srcdir)/dex/portable
-LIBARTC_CFLAGS += -I$(LIBRUNTIME_HDRS) -I$(LIBNATIVEHELPER_HDRS) 
+LIBARTC_CFLAGS += -I$(LIBRUNTIME_HDRS) -I$(LIBNATIVEHELPER_HDRS) -I$(LIBZLIB_HDRS)
 LIBARTC_CFLAGS += -I$(srcdir)/dex
 LIBARTC_CFLAGS += $(CXXFLAGS)
 

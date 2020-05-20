@@ -22,6 +22,7 @@
 #include "base/mutex.h"
 #include "thread-inl.h"
 #include <memcheck/memcheck.h>
+#include <iomanip>
 
 namespace art {
 

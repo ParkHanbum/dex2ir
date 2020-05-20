@@ -177,6 +177,7 @@ class LLVMCompiler FINAL : public Compiler {
 
 Compiler* Compiler::Create(CompilerDriver* driver, Compiler::Kind kind) {
   switch (kind) {
+    case kPortable:
       return new LLVMCompiler(driver);
       break;
     default:
