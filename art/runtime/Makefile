@@ -349,7 +349,7 @@ $(GENERATED_SRC):
 #	$(CXX) -c $^ -o $@ $(LIBART_CFLAGS)
 
 $(LIBART_ASM_OBJS):
-	$(CXX) -c $(@:.o=.S) -o $@ -I$(srcdir) -I$(srcdir)/arch/x86_64
+	$(CXX) -fno-integrated-as -c $(@:.o=.S) -o $@ -I$(srcdir) -I$(srcdir)/arch/x86_64
 
 $(LIBART_OBJS):
 	$(CXX) -c $(@:.o=.cc) -o $@ $(LIBART_CFLAGS)

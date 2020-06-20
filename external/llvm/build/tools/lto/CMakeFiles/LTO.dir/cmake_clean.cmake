@@ -1,7 +1,8 @@
 file(REMOVE_RECURSE
-  "LTO.exports"
+  "CMakeFiles/LTO.dir/LTOCodeGenerator.cpp.o"
   "CMakeFiles/LTO.dir/LTODisassembler.cpp.o"
   "CMakeFiles/LTO.dir/lto.cpp.o"
+  "CMakeFiles/LTO.dir/LTOModule.cpp.o"
   "../../lib/libLTO.pdb"
   "../../lib/libLTO.so"
 )

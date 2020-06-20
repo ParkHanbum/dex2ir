@@ -4,38 +4,29 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXAllocaHoisting.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXAllocaHoisting.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXAsmPrinter.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXAsmPrinter.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXAssignValidGlobalNames.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXAssignValidGlobalNames.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXFavorNonGenericAddrSpaces.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXFavorNonGenericAddrSpaces.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXFrameLowering.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXFrameLowering.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXGenericToNVVM.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXGenericToNVVM.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXISelDAGToDAG.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXISelDAGToDAG.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXISelLowering.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXISelLowering.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXImageOptimizer.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXImageOptimizer.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXInferAddressSpaces.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXInferAddressSpaces.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXInstrInfo.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXInstrInfo.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXLowerAggrCopies.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXLowerAggrCopies.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXLowerAlloca.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXLowerAlloca.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXLowerKernelArgs.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXLowerKernelArgs.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXMCExpr.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXMCExpr.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXPeephole.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXPeephole.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXPrologEpilogPass.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXPrologEpilogPass.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXRegisterInfo.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXRegisterInfo.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXReplaceImageHandles.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXReplaceImageHandles.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXSubtarget.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXSubtarget.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXTargetMachine.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXTargetMachine.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXTargetTransformInfo.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXTargetTransformInfo.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVPTXUtilities.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXUtilities.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVVMIntrRange.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVVMIntrRange.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/Target/NVPTX/NVVMReflect.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVVMReflect.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXAllocaHoisting.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXAllocaHoisting.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXAsmPrinter.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXAsmPrinter.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXFrameLowering.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXFrameLowering.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXGenericToNVVM.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXGenericToNVVM.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXISelDAGToDAG.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXISelDAGToDAG.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXISelLowering.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXISelLowering.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXInstrInfo.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXInstrInfo.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXLowerAggrCopies.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXLowerAggrCopies.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXMCExpr.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXMCExpr.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXPrologEpilogPass.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXPrologEpilogPass.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXRegisterInfo.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXRegisterInfo.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXSplitBBatBar.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXSplitBBatBar.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXSubtarget.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXSubtarget.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXTargetMachine.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXTargetMachine.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXUtilities.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXUtilities.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVPTXutil.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVPTXutil.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/NVPTX/NVVMReflect.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/CMakeFiles/LLVMNVPTXCodeGen.dir/NVVMReflect.cpp.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 
 # Preprocessor definitions for this target.
 set(CMAKE_TARGET_DEFINITIONS_CXX
-  "GTEST_HAS_RTTI=0"
-  "_DEBUG"
+  "NDEBUG"
   "_GNU_SOURCE"
   "__STDC_CONSTANT_MACROS"
   "__STDC_FORMAT_MACROS"
@@ -52,6 +43,24 @@ set(CMAKE_CXX_TARGET_INCLUDE_PATH
 
 # Targets to which this target links.
 set(CMAKE_TARGET_LINKED_INFO_FILES
+  "/home/m/dex2ir/external/llvm/build/lib/Analysis/CMakeFiles/LLVMAnalysis.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/CodeGen/AsmPrinter/CMakeFiles/LLVMAsmPrinter.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/CodeGen/CMakeFiles/LLVMCodeGen.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/IR/CMakeFiles/LLVMCore.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/MC/CMakeFiles/LLVMMC.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/MCTargetDesc/CMakeFiles/LLVMNVPTXDesc.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/TargetInfo/CMakeFiles/LLVMNVPTXInfo.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/CodeGen/SelectionDAG/CMakeFiles/LLVMSelectionDAG.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Support/CMakeFiles/LLVMSupport.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Target/CMakeFiles/LLVMTarget.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Transforms/Utils/CMakeFiles/LLVMTransformUtils.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/MC/MCParser/CMakeFiles/LLVMMCParser.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/InstPrinter/CMakeFiles/LLVMNVPTXAsmPrinter.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Transforms/ObjCARC/CMakeFiles/LLVMObjCARCOpts.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Transforms/Scalar/CMakeFiles/LLVMScalarOpts.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Transforms/InstCombine/CMakeFiles/LLVMInstCombine.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Analysis/IPA/CMakeFiles/LLVMipa.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Object/CMakeFiles/LLVMObject.dir/DependInfo.cmake"
   )
 
 # Fortran module output directory.

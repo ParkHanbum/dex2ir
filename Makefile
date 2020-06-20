@@ -10,10 +10,6 @@ include art/build/Android.common.mk
 
 GENERATOR := $(srcdir)/art/tools/generate-operator-out.py
 
-DEX2IR_SRCS := $(srcdir)/dex2oat.cc
-DEX2IR_OBJS := $(patsubst $(srcdir)/%.cc,$(objdir)/%.op,$(DEX2IR_SRCS))
-
-
 ART_C_INCLUDES := \
 	external/gtest/include \
 	external/valgrind/main/include \
@@ -40,9 +36,6 @@ EXTERNAL_BASE := $(srcdir)/external
 LIBLLVM_BASE := $(EXTERNAL_BASE)/llvm
 LIBLLVM_HDRS := $(LIBLLVM_BASE)/include
 
-LIBNATIVEHELPER_BASE := $(srcdir)/libnativehelper
-LIBNATIVEHELPER_HDRS := $(LIBNATIVEHELPER_BASE)/include/nativehelper
-
 LIBVALGRIND_BASE := $(srcdir)/external/valgrind
 LIBVALGRIND_HDRS := $(LIBVALGRIND_BASE)/main/include
 LIBVALGRIND_MAIN := $(LIBVALGRIND_BASE)/main
@@ -68,16 +61,21 @@ LIBSIGCHAIN_HDRS := $(LIBSIGCHAIN_BASE)
 
 GLOBAL_CONFIG := $(srcdir)/build/core/combo/include/arch/linux-x86/
 
-LLVM_CONFIG := $(EXTERNAL_BASE)/llvm/host/include/
+LLVM_CONFIG?=$(srcdir)/external/llvm/build/bin/llvm-config
+#LLVM_CONFIG?=llvm-config
 
-CXX := g++
+LLVM_LDFLAGS+=$(shell $(LLVM_CONFIG) --ldflags --libs)
+LLVM_CXXFLAGS+=$(shell $(LLVM_CONFIG) --cxxflags)
+LLVM_CPPFLAGS+=$(shell $(LLVM_CONFIG) --cppflags) -I$(SRC_DIR)
+
+CXX := clang++
 CXXFLAGS += -I$(LIBVALGRIND_HDRS) -I$(LIBVALGRIND_MAIN) -I$(GTEST_HDRS) -I$(VIXL_HDRS)
 CXXFLAGS += -I$(SYSTEM_CORE_HDRS) -I$(LIBCUTILS_HDRS) -I$(CUTILS_HDRS)
 CXXFLAGS += -I$(MCLINKER_HDRS)
 
 # this flags are come from art_debug_cflags
-CXXFLAGS += -O0 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -UNDEBUG
-CXXFLAGS += -fno-rtti -std=gnu++11 -ggdb3 -Wextra -Wno-sign-promo
+CXXFLAGS += -O0 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -UNDEBUG -fno-integrated-as
+CXXFLAGS += -std=gnu++11 -ggdb3 -Wextra -Wno-sign-promo -w
 CXXFLAGS += -Wno-unused-parameter -Wstrict-aliasing -fstrict-aliasing
 
 CXXFLAGS += -DART_USE_PARTABLE_COMPILER=1 -DIMT_SIZE=64 -DANDROID_SMP=0
@@ -85,7 +83,7 @@ CXXFLAGS += -DUSE_DLMALLOC -DIMT_SIZE=64
 #CXXFLAGS += -DART_SEA_IR_MODE
 # change instruction set to div if target arch is cortext a7,a15,krait,denver
 CXXFLAGS += -DART_DEFAUlT_INSTRUCTION_SET_FEATURES=default
-CXXFLAGS += -Wno-expansion-to-defined -Wframe-larger-than=1728
+CXXFLAGS += -Wframe-larger-than=1728
 CXXFLAGS += -DART_DEFAULT_GC_TYPE_IS_SS -DART_USE_BACKGROUND_COMPACT
 CXXFLAGS += -D_FILE_OFFSET_BITS=64
 CXXFLAGS += $(ART_HOST_CFLAGS)
@@ -93,10 +91,9 @@ CXXFLAGS += -include $(srcdir)/build/core/combo/include/arch/linux-x86/AndroidCo
 
 LDFLAGS := -lpthread -ldl -lm -lstdc++
 
-
 include $(srcdir)/Makefile.include
 
-export CXXFLAGS LLVM_CONFIG
+export CXXFLAGS LLVM_CXXFLAGS
 export LIBNATIVEHELPER_HDRS LIBRUNTIME_HDRS 
 export LIBVALGRIND_HDRS LIBVALGRIND_MAIN GTEST_HDRS VIXL_HDRS
 export SYSTEM_CORE_HDRS LIBCUTILS_HDRS CUTILS_HDRS
@@ -112,14 +109,42 @@ export LIBCUTILS_HDRS LIBUTILS_HDRS LIBUTILS_HDRS
 export LIBC_HDRS LIBLOG_HDRS LIBCUTILS_HDRS LIBUTILS_HDRS
 export LIBZIPARCHIVE_BASE LIBARTBASE_BASE LIBNATIVEHELPER_HDRS
 export LIBZLIB_HDRS 
+export LIBARTC_ARCHIVE LIBRUNTIME_ARCHIVE 
 
-export LIBARTC_ARCHIVE LIBRUNTIME_ARCHIVE
+LIBVIXL_BASE := $(srcdir)/external/vixl
+LIBVIXL_ARCHIVE := $(LIBVIXL_BASE)/libvixl.a
+export LIBVIXL_BASE LIBVIXL_ARCHIVE
 
-DEXIR_CFLAGS := -I$(LIBRUNTIME_HDRS) -I$(LIBNATIVEHELPER_HDRS) -I$(LIBARTC_HDRS)
-DEXIR_CFLAGS += -I$(SYSTEM_CORE_HDRS) -I$(LIBVALGRIND_HDRS) -I$(LIBVALGRIND_SUB_HDRS)
-DEXIR_CFLAGS += -D_FILE_OFFSET_BITS=64
+LIBCORE_BASE := $(srcdir)/libcore
+LIBCORE_HDRS := $(LIBCORE_BASE)
 
-all: $(LIBRUNTIME_ARCHIVE) $(LIBARTC_ARCHIVE) dex2ir
+LIBNATIVEHELPER_BASE := $(srcdir)/libnativehelper
+LIBNATIVEHELPER_HDRS := $(LIBNATIVEHELPER_BASE)/include/nativehelper
+LIBNATIVEHELPER_ARCHIVE := $(LIBNATIVEHELPER_BASE)/libnative.a
+export LIBNATIVEHELPER_BASE LIBNATIVEHELPER_HDRS LIBNATIVEHELPER_ARCHIVE
+export LIBCORE_HDRS
+
+LIBLOG_BASE := $(srcdir)/system/core/liblog
+LIBLOG_ARCHIVE :=  $(LIBLOG_BASE)/liblog.a
+export SYSTEM_CORE_BASE SYSTEM_CORE_HDRS LIBLOG_ARCHIVE
+
+
+DEX2IR_SRCS := $(srcdir)/dex2oat.cc
+DEX2IR_OBJS := $(patsubst $(srcdir)/%.cc,$(objdir)/%.op,$(DEX2IR_SRCS))
+DEX2IR_CXXFLAGS := -I$(LIBRUNTIME_HDRS) -I$(LIBNATIVEHELPER_HDRS) -I$(LIBARTC_HDRS)
+DEX2IR_CXXFLAGS += -I$(SYSTEM_CORE_HDRS) -I$(LIBVALGRIND_HDRS) -I$(LIBVALGRIND_SUB_HDRS)
+DEX2IR_CXXFLAGS += -D_FILE_OFFSET_BITS=64 -std=c++11
+
+all: $(LIBLOG_ARCHIVE) $(LIBNATIVEHELPER_ARCHIVE) $(LIBRUNTIME_ARCHIVE) $(LIBARTC_ARCHIVE) $(LIBVIXL_ARCHIVE) dex2ir
+
+$(LIBLOG_ARCHIVE):
+	@$(MAKE) -C $(LIBLOG_BASE)
+
+$(LIBNATIVEHELPER_ARCHIVE):
+	@$(MAKE) -C $(LIBNATIVEHELPER_BASE)
+
+$(LIBVIXL_ARCHIVE):
+	@$(MAKE) -C $(LIBVIXL_BASE)
 
 $(LIBRUNTIME_ARCHIVE):
 	@$(MAKE) -C $(LIBRUNTIME_BASE)
@@ -128,10 +153,10 @@ $(LIBARTC_ARCHIVE):
 	@$(MAKE) -C $(LIBARTC_BASE)
 
 $(DEX2IR_OBJS):
-	$(CXX) -c $(@:.op=.cc) -o $@ $(DEXIR_CFLAGS) $(CXXFLAGS)
+	$(CXX) -c $(@:.op=.cc) -o $@ $(DEX2IR_CXXFLAGS) $(LLVM_CXXFLAGS)
 
-dex2ir: $(DEX2IR_OBJS) $(LIBRUNTIME_ARCHIVE) $(LIBARTC_ARCHIVE)
-	$(QUIET_CXX)$(CXX) -o $@ $^ $(LDFLAGS)
+dex2ir: $(DEX2IR_OBJS) $(LIBRUNTIME_ARCHIVE) $(LIBARTC_ARCHIVE) $(LIBVIXL_ARCHIVE) $(LIBNATIVEHELPER_ARCHIVE) $(LIBLOG_ARCHIVE)
+	$(QUIET_CXX)$(CXX) -o $@ $^  $(LLVM_CXXFLAGS) $(LDFLAGS) $(LLVM_LDFLAGS)
 
 clean:
 	@$(MAKE) -C $(LIBRUNTIME_BASE) clean

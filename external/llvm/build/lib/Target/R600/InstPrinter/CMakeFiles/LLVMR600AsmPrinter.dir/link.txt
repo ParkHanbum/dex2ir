@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../libLLVMR600AsmPrinter.a  CMakeFiles/LLVMR600AsmPrinter.dir/AMDGPUInstPrinter.cpp.o
+/usr/bin/ranlib ../../../libLLVMR600AsmPrinter.a

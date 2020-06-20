@@ -17,8 +17,6 @@
 #ifndef ART_RUNTIME_MIRROR_STRING_H_
 #define ART_RUNTIME_MIRROR_STRING_H_
 
-#include <gtest/gtest.h>
-
 #include "class.h"
 #include "object_callbacks.h"
 
@@ -154,7 +152,6 @@ class MANAGED String : public Object {
   static Class* java_lang_String_;
 
   friend struct art::StringOffsets;  // for verifying offset information
-  FRIEND_TEST(ObjectTest, StringLength);  // for SetOffset and SetCount
   DISALLOW_IMPLICIT_CONSTRUCTORS(String);
 };
 

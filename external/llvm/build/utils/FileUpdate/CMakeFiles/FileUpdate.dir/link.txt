@@ -1,0 +1,1 @@
+/usr/bin/c++    -fPIC -fvisibility-inlines-hidden -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -Wno-maybe-uninitialized -Wnon-virtual-dtor -fno-rtti   CMakeFiles/FileUpdate.dir/FileUpdate.cpp.o  -o ../../bin/FileUpdate  -lrt -ldl -lcurses -lpthread -lz ../../lib/libLLVMSupport.a -lpthread -lrt -ldl -lcurses -lpthread -lz 

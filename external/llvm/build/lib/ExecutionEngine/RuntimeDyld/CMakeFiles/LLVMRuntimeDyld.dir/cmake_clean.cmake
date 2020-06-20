@@ -1,8 +1,6 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/LLVMRuntimeDyld.dir/RTDyldMemoryManager.cpp.o"
+  "CMakeFiles/LLVMRuntimeDyld.dir/GDBRegistrar.cpp.o"
   "CMakeFiles/LLVMRuntimeDyld.dir/RuntimeDyld.cpp.o"
-  "CMakeFiles/LLVMRuntimeDyld.dir/RuntimeDyldChecker.cpp.o"
-  "CMakeFiles/LLVMRuntimeDyld.dir/RuntimeDyldCOFF.cpp.o"
   "CMakeFiles/LLVMRuntimeDyld.dir/RuntimeDyldELF.cpp.o"
   "CMakeFiles/LLVMRuntimeDyld.dir/RuntimeDyldMachO.cpp.o"
   "../../libLLVMRuntimeDyld.pdb"

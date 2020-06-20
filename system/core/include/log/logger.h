@@ -180,7 +180,7 @@ struct logger_list *android_logger_list_open(log_id_t id,
  * log_id_t helpers
  */
 log_id_t android_name_to_log_id(const char *logName);
-const char *android_log_id_to_name(log_id_t log_id);
+const char *android_log_id_to_name(int log_id);
 
 #ifdef __cplusplus
 }

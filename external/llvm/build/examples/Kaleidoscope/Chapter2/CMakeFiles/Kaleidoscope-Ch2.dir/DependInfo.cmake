@@ -4,14 +4,13 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/m/AOSP5/external/llvm/examples/Kaleidoscope/Chapter2/toy.cpp" "/home/m/AOSP5/external/llvm/build/examples/Kaleidoscope/Chapter2/CMakeFiles/Kaleidoscope-Ch2.dir/toy.cpp.o"
+  "/home/m/dex2ir/external/llvm/examples/Kaleidoscope/Chapter2/toy.cpp" "/home/m/dex2ir/external/llvm/build/examples/Kaleidoscope/Chapter2/CMakeFiles/Kaleidoscope-Ch2.dir/toy.cpp.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 
 # Preprocessor definitions for this target.
 set(CMAKE_TARGET_DEFINITIONS_CXX
-  "GTEST_HAS_RTTI=0"
-  "_DEBUG"
+  "NDEBUG"
   "_GNU_SOURCE"
   "__STDC_CONSTANT_MACROS"
   "__STDC_FORMAT_MACROS"

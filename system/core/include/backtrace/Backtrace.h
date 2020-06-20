@@ -47,8 +47,6 @@ struct backtrace_frame_data_t {
 // Forward declarations.
 class BacktraceImpl;
 
-struct ucontext_t;
-
 class Backtrace {
 public:
   // Create the correct Backtrace object based on what is to be unwound.

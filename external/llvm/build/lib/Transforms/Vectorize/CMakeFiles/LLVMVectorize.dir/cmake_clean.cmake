@@ -1,9 +1,8 @@
 file(REMOVE_RECURSE
   "CMakeFiles/LLVMVectorize.dir/BBVectorize.cpp.o"
-  "CMakeFiles/LLVMVectorize.dir/LoadStoreVectorizer.cpp.o"
+  "CMakeFiles/LLVMVectorize.dir/Vectorize.cpp.o"
   "CMakeFiles/LLVMVectorize.dir/LoopVectorize.cpp.o"
   "CMakeFiles/LLVMVectorize.dir/SLPVectorizer.cpp.o"
-  "CMakeFiles/LLVMVectorize.dir/Vectorize.cpp.o"
   "../../libLLVMVectorize.pdb"
   "../../libLLVMVectorize.a"
 )

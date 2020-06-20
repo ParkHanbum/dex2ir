@@ -1,4 +1,4 @@
-# Install script for directory: /home/m/AOSP5/external/llvm/lib/Target
+# Install script for directory: /home/m/dex2ir/external/llvm/lib/Target
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -12,7 +12,7 @@ if(NOT DEFINED CMAKE_INSTALL_CONFIG_NAME)
     string(REGEX REPLACE "^[^A-Za-z0-9_]+" ""
            CMAKE_INSTALL_CONFIG_NAME "${BUILD_TYPE}")
   else()
-    set(CMAKE_INSTALL_CONFIG_NAME "Debug")
+    set(CMAKE_INSTALL_CONFIG_NAME "")
   endif()
   message(STATUS "Install configuration: \"${CMAKE_INSTALL_CONFIG_NAME}\"")
 endif()
@@ -32,30 +32,25 @@ if(NOT DEFINED CMAKE_INSTALL_SO_NO_EXE)
   set(CMAKE_INSTALL_SO_NO_EXE "1")
 endif()
 
-# Is this installation the result of a crosscompile?
-if(NOT DEFINED CMAKE_CROSSCOMPILING)
-  set(CMAKE_CROSSCOMPILING "FALSE")
-endif()
-
-if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xLLVMTargetx" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/m/AOSP5/external/llvm/build/lib/libLLVMTarget.a")
+if(NOT CMAKE_INSTALL_COMPONENT OR "${CMAKE_INSTALL_COMPONENT}" STREQUAL "Unspecified")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/m/dex2ir/external/llvm/build/lib/libLLVMTarget.a")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/AArch64/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/AMDGPU/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/ARM/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/BPF/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/Hexagon/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/Mips/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/MSP430/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/NVPTX/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/PowerPC/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/Sparc/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/SystemZ/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/X86/cmake_install.cmake")
-  include("/home/m/AOSP5/external/llvm/build/lib/Target/XCore/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/AArch64/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/ARM/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/CppBackend/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/Hexagon/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/Mips/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/MSP430/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/NVPTX/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/PowerPC/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/R600/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/Sparc/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/SystemZ/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/X86/cmake_install.cmake")
+  include("/home/m/dex2ir/external/llvm/build/lib/Target/XCore/cmake_install.cmake")
 
 endif()
 

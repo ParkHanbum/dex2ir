@@ -5,7 +5,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/LLVMPowerPCDesc.dir/PPCMCCodeEmitter.cpp.o"
   "CMakeFiles/LLVMPowerPCDesc.dir/PPCMCExpr.cpp.o"
   "CMakeFiles/LLVMPowerPCDesc.dir/PPCPredicates.cpp.o"
-  "CMakeFiles/LLVMPowerPCDesc.dir/PPCMachObjectWriter.cpp.o"
   "CMakeFiles/LLVMPowerPCDesc.dir/PPCELFObjectWriter.cpp.o"
   "../../../libLLVMPowerPCDesc.pdb"
   "../../../libLLVMPowerPCDesc.a"

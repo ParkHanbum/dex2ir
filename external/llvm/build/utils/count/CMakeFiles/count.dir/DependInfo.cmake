@@ -4,14 +4,13 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_C
-  "/home/m/AOSP5/external/llvm/utils/count/count.c" "/home/m/AOSP5/external/llvm/build/utils/count/CMakeFiles/count.dir/count.c.o"
+  "/home/m/dex2ir/external/llvm/utils/count/count.c" "/home/m/dex2ir/external/llvm/build/utils/count/CMakeFiles/count.dir/count.c.o"
   )
 set(CMAKE_C_COMPILER_ID "GNU")
 
 # Preprocessor definitions for this target.
 set(CMAKE_TARGET_DEFINITIONS_C
-  "GTEST_HAS_RTTI=0"
-  "_DEBUG"
+  "NDEBUG"
   "_GNU_SOURCE"
   "__STDC_CONSTANT_MACROS"
   "__STDC_FORMAT_MACROS"

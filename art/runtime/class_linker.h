@@ -24,7 +24,6 @@
 #include "base/macros.h"
 #include "base/mutex.h"
 #include "dex_file.h"
-#include "gtest/gtest.h"
 #include "jni.h"
 #include "oat_file.h"
 #include "object_callbacks.h"
@@ -667,10 +666,6 @@ class ClassLinker {
   const void* quick_to_interpreter_bridge_trampoline_;
 
   friend class ImageWriter;  // for GetClassRoots
-  FRIEND_TEST(ClassLinkerTest, ClassRootDescriptors);
-  FRIEND_TEST(mirror::DexCacheTest, Open);
-  FRIEND_TEST(ExceptionTest, FindExceptionHandler);
-  FRIEND_TEST(ObjectTest, AllocObjectArray);
   DISALLOW_COPY_AND_ASSIGN(ClassLinker);
 };
 

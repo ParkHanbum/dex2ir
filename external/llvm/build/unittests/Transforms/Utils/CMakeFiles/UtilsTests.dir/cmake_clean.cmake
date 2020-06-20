@@ -1,10 +1,8 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/UtilsTests.dir/ASanStackFrameLayoutTest.cpp.o"
   "CMakeFiles/UtilsTests.dir/Cloning.cpp.o"
   "CMakeFiles/UtilsTests.dir/IntegerDivision.cpp.o"
   "CMakeFiles/UtilsTests.dir/Local.cpp.o"
-  "CMakeFiles/UtilsTests.dir/MemorySSA.cpp.o"
-  "CMakeFiles/UtilsTests.dir/ValueMapperTest.cpp.o"
+  "CMakeFiles/UtilsTests.dir/SpecialCaseList.cpp.o"
   "UtilsTests.pdb"
   "UtilsTests"
 )

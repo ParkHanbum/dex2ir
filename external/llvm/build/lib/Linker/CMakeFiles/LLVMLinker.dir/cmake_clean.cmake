@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/LLVMLinker.dir/IRMover.cpp.o"
   "CMakeFiles/LLVMLinker.dir/LinkModules.cpp.o"
   "../libLLVMLinker.pdb"
   "../libLLVMLinker.a"

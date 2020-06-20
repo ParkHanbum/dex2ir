@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../lib/libLTO.a  CMakeFiles/LTO_static.dir/LTOCodeGenerator.cpp.o CMakeFiles/LTO_static.dir/LTODisassembler.cpp.o CMakeFiles/LTO_static.dir/lto.cpp.o CMakeFiles/LTO_static.dir/LTOModule.cpp.o
+/usr/bin/ranlib ../../lib/libLTO.a

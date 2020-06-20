@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/llvm-symbolizer.dir/LLVMSymbolize.cpp.o"
   "CMakeFiles/llvm-symbolizer.dir/llvm-symbolizer.cpp.o"
   "../../bin/llvm-symbolizer.pdb"
   "../../bin/llvm-symbolizer"

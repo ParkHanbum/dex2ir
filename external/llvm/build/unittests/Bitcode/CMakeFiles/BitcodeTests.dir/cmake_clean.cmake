@@ -1,7 +1,5 @@
 file(REMOVE_RECURSE
   "CMakeFiles/BitcodeTests.dir/BitReaderTest.cpp.o"
-  "CMakeFiles/BitcodeTests.dir/BitstreamReaderTest.cpp.o"
-  "CMakeFiles/BitcodeTests.dir/BitstreamWriterTest.cpp.o"
   "BitcodeTests.pdb"
   "BitcodeTests"
 )

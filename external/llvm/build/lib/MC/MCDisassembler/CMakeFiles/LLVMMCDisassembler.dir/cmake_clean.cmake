@@ -1,9 +1,5 @@
 file(REMOVE_RECURSE
   "CMakeFiles/LLVMMCDisassembler.dir/Disassembler.cpp.o"
-  "CMakeFiles/LLVMMCDisassembler.dir/MCDisassembler.cpp.o"
-  "CMakeFiles/LLVMMCDisassembler.dir/MCExternalSymbolizer.cpp.o"
-  "CMakeFiles/LLVMMCDisassembler.dir/MCRelocationInfo.cpp.o"
-  "CMakeFiles/LLVMMCDisassembler.dir/MCSymbolizer.cpp.o"
   "../../libLLVMMCDisassembler.pdb"
   "../../libLLVMMCDisassembler.a"
 )

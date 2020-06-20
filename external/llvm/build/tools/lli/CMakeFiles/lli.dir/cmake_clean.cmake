@@ -1,6 +1,7 @@
 file(REMOVE_RECURSE
   "CMakeFiles/lli.dir/lli.cpp.o"
-  "CMakeFiles/lli.dir/OrcLazyJIT.cpp.o"
+  "CMakeFiles/lli.dir/RecordingMemoryManager.cpp.o"
+  "CMakeFiles/lli.dir/RemoteTarget.cpp.o"
   "../../bin/lli.pdb"
   "../../bin/lli"
 )

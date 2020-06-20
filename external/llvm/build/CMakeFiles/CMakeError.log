@@ -1,212 +1,193 @@
 Determining if the include file malloc/malloc.h exists failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_3de88/fast"
-/usr/bin/make -f CMakeFiles/cmTC_3de88.dir/build.make CMakeFiles/cmTC_3de88.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_3de88.dir/CheckIncludeFile.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_3de88.dir/CheckIncludeFile.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:27: fatal error: malloc/malloc.h: No such file or directory
- #include <malloc/malloc.h>
-                           ^
+Run Build Command:"/usr/bin/make" "cmTC_b8505/fast"
+/usr/bin/make -f CMakeFiles/cmTC_b8505.dir/build.make CMakeFiles/cmTC_b8505.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:27: fatal error: malloc/malloc.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_3de88.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_3de88.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_3de88.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_3de88/fast' failed
-make: *** [cmTC_3de88/fast] Error 2
+CMakeFiles/cmTC_b8505.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_b8505/fast' failed
+make: *** [cmTC_b8505/fast] Error 2
 
 
 Determining if the include file ndir.h exists failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_dc726/fast"
-/usr/bin/make -f CMakeFiles/cmTC_dc726.dir/build.make CMakeFiles/cmTC_dc726.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_dc726.dir/CheckIncludeFile.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_dc726.dir/CheckIncludeFile.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:18: fatal error: ndir.h: No such file or directory
- #include <ndir.h>
-                  ^
+Run Build Command:"/usr/bin/make" "cmTC_3a5f5/fast"
+/usr/bin/make -f CMakeFiles/cmTC_3a5f5.dir/build.make CMakeFiles/cmTC_3a5f5.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:18: fatal error: ndir.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_dc726.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_dc726.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_dc726.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_dc726/fast' failed
-make: *** [cmTC_dc726/fast] Error 2
+CMakeFiles/cmTC_3a5f5.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_3a5f5/fast' failed
+make: *** [cmTC_3a5f5/fast] Error 2
+
+
+Determining if the include file sanitizer/msan_interface.h exists failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_a6a13/fast"
+/usr/bin/make -f CMakeFiles/cmTC_a6a13.dir/build.make CMakeFiles/cmTC_a6a13.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:38: fatal error: sanitizer/msan_interface.h: No such file or directory
+compilation terminated.
+CMakeFiles/cmTC_a6a13.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_a6a13/fast' failed
+make: *** [cmTC_a6a13/fast] Error 2
 
 
 Determining if the include file sys/ndir.h exists failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_9c8ba/fast"
-/usr/bin/make -f CMakeFiles/cmTC_9c8ba.dir/build.make CMakeFiles/cmTC_9c8ba.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_9c8ba.dir/CheckIncludeFile.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_9c8ba.dir/CheckIncludeFile.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:22: fatal error: sys/ndir.h: No such file or directory
- #include <sys/ndir.h>
-                      ^
+Run Build Command:"/usr/bin/make" "cmTC_7da5c/fast"
+/usr/bin/make -f CMakeFiles/cmTC_7da5c.dir/build.make CMakeFiles/cmTC_7da5c.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:22: fatal error: sys/ndir.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_9c8ba.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_9c8ba.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_9c8ba.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_9c8ba/fast' failed
-make: *** [cmTC_9c8ba/fast] Error 2
+CMakeFiles/cmTC_7da5c.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_7da5c/fast' failed
+make: *** [cmTC_7da5c/fast] Error 2
+
+
+Determining if the include file valgrind/valgrind.h exists failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_838ca/fast"
+/usr/bin/make -f CMakeFiles/cmTC_838ca.dir/build.make CMakeFiles/cmTC_838ca.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:31: fatal error: valgrind/valgrind.h: No such file or directory
+compilation terminated.
+CMakeFiles/cmTC_838ca.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_838ca/fast' failed
+make: *** [cmTC_838ca/fast] Error 2
 
 
 Determining if the include file mach/mach.h exists failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_0d5d2/fast"
-/usr/bin/make -f CMakeFiles/cmTC_0d5d2.dir/build.make CMakeFiles/cmTC_0d5d2.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_0d5d2.dir/CheckIncludeFile.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_0d5d2.dir/CheckIncludeFile.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:23: fatal error: mach/mach.h: No such file or directory
- #include <mach/mach.h>
-                       ^
+Run Build Command:"/usr/bin/make" "cmTC_1c737/fast"
+/usr/bin/make -f CMakeFiles/cmTC_1c737.dir/build.make CMakeFiles/cmTC_1c737.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:23: fatal error: mach/mach.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_0d5d2.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_0d5d2.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_0d5d2.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_0d5d2/fast' failed
-make: *** [cmTC_0d5d2/fast] Error 2
+CMakeFiles/cmTC_1c737.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_1c737/fast' failed
+make: *** [cmTC_1c737/fast] Error 2
 
 
 Determining if the include file mach-o/dyld.h exists failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_f9fd5/fast"
-/usr/bin/make -f CMakeFiles/cmTC_f9fd5.dir/build.make CMakeFiles/cmTC_f9fd5.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_f9fd5.dir/CheckIncludeFile.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_f9fd5.dir/CheckIncludeFile.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:25: fatal error: mach-o/dyld.h: No such file or directory
- #include <mach-o/dyld.h>
-                         ^
+Run Build Command:"/usr/bin/make" "cmTC_1e773/fast"
+/usr/bin/make -f CMakeFiles/cmTC_1e773.dir/build.make CMakeFiles/cmTC_1e773.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:25: fatal error: mach-o/dyld.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_f9fd5.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_f9fd5.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_f9fd5.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_f9fd5/fast' failed
-make: *** [cmTC_f9fd5/fast] Error 2
+CMakeFiles/cmTC_1e773.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_1e773/fast' failed
+make: *** [cmTC_1e773/fast] Error 2
 
 
-Determining if the include file histedit.h exists failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Determining if the include file ncursesw.h exists failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_1cf89/fast"
-/usr/bin/make -f CMakeFiles/cmTC_1cf89.dir/build.make CMakeFiles/cmTC_1cf89.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_1cf89.dir/CheckIncludeFile.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_1cf89.dir/CheckIncludeFile.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:22: fatal error: histedit.h: No such file or directory
- #include <histedit.h>
-                      ^
+Run Build Command:"/usr/bin/make" "cmTC_67761/fast"
+/usr/bin/make -f CMakeFiles/cmTC_67761.dir/build.make CMakeFiles/cmTC_67761.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:22: fatal error: ncursesw.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_1cf89.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1cf89.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_1cf89.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_1cf89/fast' failed
-make: *** [cmTC_1cf89/fast] Error 2
+CMakeFiles/cmTC_67761.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_67761/fast' failed
+make: *** [cmTC_67761/fast] Error 2
 
 
-Determining if the pthread_create exist failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Determining if the include file ncurses/curses.h exists failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_cfe1b/fast"
-/usr/bin/make -f CMakeFiles/cmTC_cfe1b.dir/build.make CMakeFiles/cmTC_cfe1b.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_cfe1b.dir/CheckSymbolExists.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_cfe1b.dir/CheckSymbolExists.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-Linking C executable cmTC_cfe1b
-/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_cfe1b.dir/link.txt --verbose=1
-/usr/bin/cc      CMakeFiles/cmTC_cfe1b.dir/CheckSymbolExists.c.o  -o cmTC_cfe1b -lm 
-CMakeFiles/cmTC_cfe1b.dir/CheckSymbolExists.c.o: In function `main':
-CheckSymbolExists.c:(.text+0x16): undefined reference to `pthread_create'
-collect2: error: ld returned 1 exit status
-CMakeFiles/cmTC_cfe1b.dir/build.make:97: recipe for target 'cmTC_cfe1b' failed
-make[1]: *** [cmTC_cfe1b] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_cfe1b/fast' failed
-make: *** [cmTC_cfe1b/fast] Error 2
-
-File /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
-/* */
-#include <pthread.h>
-
-int main(int argc, char** argv)
-{
-  (void)argv;
-#ifndef pthread_create
-  return ((int*)(&pthread_create))[argc];
-#else
-  (void)argc;
-  return 0;
-#endif
-}
-
-Determining if the function pthread_create exists in the pthreads failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_46d3f/fast"
-/usr/bin/make -f CMakeFiles/cmTC_46d3f.dir/build.make CMakeFiles/cmTC_46d3f.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_46d3f.dir/CheckFunctionExists.c.o
-/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_46d3f.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.10/Modules/CheckFunctionExists.c
-Linking C executable cmTC_46d3f
-/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_46d3f.dir/link.txt --verbose=1
-/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create    CMakeFiles/cmTC_46d3f.dir/CheckFunctionExists.c.o  -o cmTC_46d3f -lpthreads -lm 
-/usr/bin/ld: cannot find -lpthreads
-collect2: error: ld returned 1 exit status
-CMakeFiles/cmTC_46d3f.dir/build.make:97: recipe for target 'cmTC_46d3f' failed
-make[1]: *** [cmTC_46d3f] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_46d3f/fast' failed
-make: *** [cmTC_46d3f/fast] Error 2
+Run Build Command:"/usr/bin/make" "cmTC_7dd69/fast"
+/usr/bin/make -f CMakeFiles/cmTC_7dd69.dir/build.make CMakeFiles/cmTC_7dd69.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:28: fatal error: ncurses/curses.h: No such file or directory
+compilation terminated.
+CMakeFiles/cmTC_7dd69.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_7dd69/fast' failed
+make: *** [cmTC_7dd69/fast] Error 2
 
 
-Determining if the function xar_open exists in the xar failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Determining if the include file ncursesw/curses.h exists failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_2337a/fast"
-/usr/bin/make -f CMakeFiles/cmTC_2337a.dir/build.make CMakeFiles/cmTC_2337a.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_2337a.dir/CheckFunctionExists.c.o
-/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=xar_open   -o CMakeFiles/cmTC_2337a.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.10/Modules/CheckFunctionExists.c
-Linking C executable cmTC_2337a
-/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_2337a.dir/link.txt --verbose=1
-/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=xar_open    CMakeFiles/cmTC_2337a.dir/CheckFunctionExists.c.o  -o cmTC_2337a -lxar -lm 
-/usr/bin/ld: cannot find -lxar
-collect2: error: ld returned 1 exit status
-CMakeFiles/cmTC_2337a.dir/build.make:97: recipe for target 'cmTC_2337a' failed
-make[1]: *** [cmTC_2337a] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_2337a/fast' failed
-make: *** [cmTC_2337a/fast] Error 2
+Run Build Command:"/usr/bin/make" "cmTC_88e6d/fast"
+/usr/bin/make -f CMakeFiles/cmTC_88e6d.dir/build.make CMakeFiles/cmTC_88e6d.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:29: fatal error: ncursesw/curses.h: No such file or directory
+compilation terminated.
+CMakeFiles/cmTC_88e6d.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_88e6d/fast' failed
+make: *** [cmTC_88e6d/fast] Error 2
 
 
 Determining if the arc4random exist failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_45ddd/fast"
-/usr/bin/make -f CMakeFiles/cmTC_45ddd.dir/build.make CMakeFiles/cmTC_45ddd.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_45ddd.dir/CheckSymbolExists.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_45ddd.dir/CheckSymbolExists.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘arc4random’ undeclared (first use in this function)
+Run Build Command:"/usr/bin/make" "cmTC_9668c/fast"
+/usr/bin/make -f CMakeFiles/cmTC_9668c.dir/build.make CMakeFiles/cmTC_9668c.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘arc4random’ undeclared (first use in this function)
    return ((int*)(&arc4random))[argc];
                    ^
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
-CMakeFiles/cmTC_45ddd.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_45ddd.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_45ddd.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_45ddd/fast' failed
-make: *** [cmTC_45ddd/fast] Error 2
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+CMakeFiles/cmTC_9668c.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_9668c/fast' failed
+make: *** [cmTC_9668c/fast] Error 2
 
-File /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <stdlib.h>
 
@@ -221,33 +202,127 @@ int main(int argc, char** argv)
 #endif
 }
 
-Determining if the mallctl exist failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Determining if the isinf exist failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_6625d/fast"
-/usr/bin/make -f CMakeFiles/cmTC_6625d.dir/build.make CMakeFiles/cmTC_6625d.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_6625d.dir/CheckSymbolExists.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_6625d.dir/CheckSymbolExists.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:23: fatal error: malloc_np.h: No such file or directory
- #include <malloc_np.h>
-                       ^
+Run Build Command:"/usr/bin/make" "cmTC_bd59a/fast"
+/usr/bin/make -f CMakeFiles/cmTC_bd59a.dir/build.make CMakeFiles/cmTC_bd59a.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:17: fatal error: cmath: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_6625d.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_6625d.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_6625d.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_6625d/fast' failed
-make: *** [cmTC_6625d/fast] Error 2
+CMakeFiles/cmTC_bd59a.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_bd59a/fast' failed
+make: *** [cmTC_bd59a/fast] Error 2
 
-File /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
-#include <malloc_np.h>
+#include <cmath>
 
 int main(int argc, char** argv)
 {
   (void)argv;
-#ifndef mallctl
-  return ((int*)(&mallctl))[argc];
+#ifndef isinf
+  return ((int*)(&isinf))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the finite exist failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_b5f24/fast"
+/usr/bin/make -f CMakeFiles/cmTC_b5f24.dir/build.make CMakeFiles/cmTC_b5f24.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:20: fatal error: ieeefp.h: No such file or directory
+compilation terminated.
+CMakeFiles/cmTC_b5f24.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_b5f24/fast' failed
+make: *** [cmTC_b5f24/fast] Error 2
+
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <ieeefp.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef finite
+  return ((int*)(&finite))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the isnan exist failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_04238/fast"
+/usr/bin/make -f CMakeFiles/cmTC_04238.dir/build.make CMakeFiles/cmTC_04238.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:17: fatal error: cmath: No such file or directory
+compilation terminated.
+CMakeFiles/cmTC_04238.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_04238/fast' failed
+make: *** [cmTC_04238/fast] Error 2
+
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <cmath>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef isnan
+  return ((int*)(&isnan))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the exp10 exist failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_1e026/fast"
+/usr/bin/make -f CMakeFiles/cmTC_1e026.dir/build.make CMakeFiles/cmTC_1e026.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘exp10’ undeclared (first use in this function)
+   return ((int*)(&exp10))[argc];
+                   ^
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+CMakeFiles/cmTC_1e026.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_1e026/fast' failed
+make: *** [cmTC_1e026/fast] Error 2
+
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <math.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef exp10
+  return ((int*)(&exp10))[argc];
 #else
   (void)argc;
   return 0;
@@ -255,24 +330,22 @@ int main(int argc, char** argv)
 }
 
 Determining if the malloc_zone_statistics exist failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_23f76/fast"
-/usr/bin/make -f CMakeFiles/cmTC_23f76.dir/build.make CMakeFiles/cmTC_23f76.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_23f76.dir/CheckSymbolExists.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_23f76.dir/CheckSymbolExists.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:27: fatal error: malloc/malloc.h: No such file or directory
- #include <malloc/malloc.h>
-                           ^
+Run Build Command:"/usr/bin/make" "cmTC_ae1be/fast"
+/usr/bin/make -f CMakeFiles/cmTC_ae1be.dir/build.make CMakeFiles/cmTC_ae1be.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:27: fatal error: malloc/malloc.h: No such file or directory
 compilation terminated.
-CMakeFiles/cmTC_23f76.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_23f76.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_23f76.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_23f76/fast' failed
-make: *** [cmTC_23f76/fast] Error 2
+CMakeFiles/cmTC_ae1be.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_ae1be/fast' failed
+make: *** [cmTC_ae1be/fast] Error 2
 
-File /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <malloc/malloc.h>
 
@@ -288,25 +361,25 @@ int main(int argc, char** argv)
 }
 
 Determining if the strerror_s exist failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_24429/fast"
-/usr/bin/make -f CMakeFiles/cmTC_24429.dir/build.make CMakeFiles/cmTC_24429.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_24429.dir/CheckSymbolExists.c.o
-/usr/bin/cc    -o CMakeFiles/cmTC_24429.dir/CheckSymbolExists.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘strerror_s’ undeclared (first use in this function)
+Run Build Command:"/usr/bin/make" "cmTC_be1d6/fast"
+/usr/bin/make -f CMakeFiles/cmTC_be1d6.dir/build.make CMakeFiles/cmTC_be1d6.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o
+/usr/bin/cc     -o CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘strerror_s’ undeclared (first use in this function)
    return ((int*)(&strerror_s))[argc];
                    ^
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
-CMakeFiles/cmTC_24429.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_24429.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_24429.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_24429/fast' failed
-make: *** [cmTC_24429/fast] Error 2
+/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+CMakeFiles/cmTC_be1d6.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_be1d6/fast' failed
+make: *** [cmTC_be1d6/fast] Error 2
 
-File /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <string.h>
 
@@ -321,96 +394,37 @@ int main(int argc, char** argv)
 #endif
 }
 
-Performing C SOURCE FILE Test C_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_a9a5b/fast"
-/usr/bin/make -f CMakeFiles/cmTC_a9a5b.dir/build.make CMakeFiles/cmTC_a9a5b.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_a9a5b.dir/src.c.o
-/usr/bin/cc   -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DC_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG   -Werror -Wcovered-switch-default -o CMakeFiles/cmTC_a9a5b.dir/src.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c
-cc: error: unrecognized command line option '-Wcovered-switch-default'
-CMakeFiles/cmTC_a9a5b.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_a9a5b.dir/src.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_a9a5b.dir/src.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_a9a5b/fast' failed
-make: *** [cmTC_a9a5b/fast] Error 2
-
-Source file was:
-int main(void) { return 0; }
 Performing C++ SOURCE FILE Test CXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_c2f72/fast"
-/usr/bin/make -f CMakeFiles/cmTC_c2f72.dir/build.make CMakeFiles/cmTC_c2f72.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building CXX object CMakeFiles/cmTC_c2f72.dir/src.cxx.o
-/usr/bin/c++    -fPIC -fvisibility-inlines-hidden -Wall -W -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wno-missing-field-initializers -pedantic -Wno-long-long -DCXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG   -Werror -Wcovered-switch-default -o CMakeFiles/cmTC_c2f72.dir/src.cxx.o -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.cxx
-c++: error: unrecognized command line option '-Wcovered-switch-default'; did you mean '-Wno-switch-default'?
-CMakeFiles/cmTC_c2f72.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_c2f72.dir/src.cxx.o' failed
-make[1]: *** [CMakeFiles/cmTC_c2f72.dir/src.cxx.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_c2f72/fast' failed
-make: *** [cmTC_c2f72/fast] Error 2
+Run Build Command:"/usr/bin/make" "cmTC_ee533/fast"
+/usr/bin/make -f CMakeFiles/cmTC_ee533.dir/build.make CMakeFiles/cmTC_ee533.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_ee533.dir/src.cxx.o
+/usr/bin/c++     -fPIC -fvisibility-inlines-hidden -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DCXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG   -Werror -Wcovered-switch-default -o CMakeFiles/cmTC_ee533.dir/src.cxx.o -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/src.cxx
+c++: error: unrecognized command line option '-Wcovered-switch-default'
+CMakeFiles/cmTC_ee533.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_ee533.dir/src.cxx.o' failed
+make[1]: *** [CMakeFiles/cmTC_ee533.dir/src.cxx.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_ee533/fast' failed
+make: *** [cmTC_ee533/fast] Error 2
 
 Source file was:
 int main() { return 0; }
-Performing C SOURCE FILE Test C_SUPPORTS_DELETE_NON_VIRTUAL_DTOR_FLAG failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
+Performing C SOURCE FILE Test C_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG failed with the following output:
+Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_17d4d/fast"
-/usr/bin/make -f CMakeFiles/cmTC_17d4d.dir/build.make CMakeFiles/cmTC_17d4d.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_17d4d.dir/src.c.o
-/usr/bin/cc   -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DC_SUPPORTS_DELETE_NON_VIRTUAL_DTOR_FLAG   -Werror -Wdelete-non-virtual-dtor -o CMakeFiles/cmTC_17d4d.dir/src.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c
-cc1: error: command line option '-Wdelete-non-virtual-dtor' is valid for C++/ObjC++ but not for C [-Werror]
-cc1: all warnings being treated as errors
-CMakeFiles/cmTC_17d4d.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_17d4d.dir/src.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_17d4d.dir/src.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_17d4d/fast' failed
-make: *** [cmTC_17d4d/fast] Error 2
-
-Source file was:
-int main(void) { return 0; }
-Performing C SOURCE FILE Test C_WCOMMENT_ALLOWS_LINE_WRAP failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_7801b/fast"
-/usr/bin/make -f CMakeFiles/cmTC_7801b.dir/build.make CMakeFiles/cmTC_7801b.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_7801b.dir/src.c.o
-/usr/bin/cc   -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DC_WCOMMENT_ALLOWS_LINE_WRAP  -Werror -Wcomment   -o CMakeFiles/cmTC_7801b.dir/src.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c:1:1: error: C++ style comments are not allowed in ISO C90 [-Werror]
- // \
- ^
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c:1:1: error: (this will be reported only once per input file) [-Werror]
-/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c:1:1: error: multi-line comment [-Werror=comment]
-cc1: all warnings being treated as errors
-CMakeFiles/cmTC_7801b.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7801b.dir/src.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_7801b.dir/src.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_7801b/fast' failed
-make: *** [cmTC_7801b/fast] Error 2
-
-Source file was:
-// \
-//
-int main() {return 0;}
-Performing C SOURCE FILE Test C_SUPPORTS_WERROR_DATE_TIME failed with the following output:
-Change Dir: /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_9df11/fast"
-/usr/bin/make -f CMakeFiles/cmTC_9df11.dir/build.make CMakeFiles/cmTC_9df11.dir/build
-make[1]: Entering directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_9df11.dir/src.c.o
-/usr/bin/cc   -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -Wno-comment -DC_SUPPORTS_WERROR_DATE_TIME   -Werror -Werror=date-time -o CMakeFiles/cmTC_9df11.dir/src.c.o   -c /home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp/src.c
-cc1: error: -Werror=date-time: no option -Wdate-time
-CMakeFiles/cmTC_9df11.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_9df11.dir/src.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_9df11.dir/src.c.o] Error 1
-make[1]: Leaving directory '/home/m/AOSP5/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_9df11/fast' failed
-make: *** [cmTC_9df11/fast] Error 2
+Run Build Command:"/usr/bin/make" "cmTC_7e80d/fast"
+/usr/bin/make -f CMakeFiles/cmTC_7e80d.dir/build.make CMakeFiles/cmTC_7e80d.dir/build
+make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7e80d.dir/src.c.o
+/usr/bin/cc    -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DC_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG   -Werror -Wcovered-switch-default -o CMakeFiles/cmTC_7e80d.dir/src.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/src.c
+cc: error: unrecognized command line option '-Wcovered-switch-default'
+CMakeFiles/cmTC_7e80d.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7e80d.dir/src.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_7e80d.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_7e80d/fast' failed
+make: *** [cmTC_7e80d/fast] Error 2
 
 Source file was:
 int main(void) { return 0; }

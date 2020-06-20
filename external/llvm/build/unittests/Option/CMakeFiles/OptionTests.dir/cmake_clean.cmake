@@ -1,6 +1,8 @@
 file(REMOVE_RECURSE
   "Opts.inc.tmp"
   "Opts.inc"
+  "Opts.inc"
+  "Opts.inc.tmp"
   "CMakeFiles/OptionTests.dir/OptionParsingTest.cpp.o"
   "OptionTests.pdb"
   "OptionTests"

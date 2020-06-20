@@ -1,23 +1,37 @@
+/* include/llvm/Config/config.h.cmake corresponding to config.h.in. */
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* Exported configuration */
-#include "llvm/Config/llvm-config.h"
-
 /* Bug report URL. */
-#define BUG_REPORT_URL "http://llvm.org/bugs/"
+#define BUG_REPORT_URL ""
+
+/* Define if we have libxml2 */
+/* #undef CLANG_HAVE_LIBXML */
+
+/* Relative directory for resource files */
+#define CLANG_RESOURCE_DIR ""
+
+/* Directories clang will search for headers */
+#define C_INCLUDE_DIRS ""
+
+/* Default <path> to all compiler invocations for --sysroot=<path>. */
+#undef DEFAULT_SYSROOT
 
 /* Define if you want backtraces on crash */
 #define ENABLE_BACKTRACES
 
-/* Define to enable crash overrides */
-#define ENABLE_CRASH_OVERRIDES
-
 /* Define if position independent code is enabled */
 #define ENABLE_PIC
 
+/* Define if timestamp information (e.g., __DATE__) is allowed */
+#define ENABLE_TIMESTAMPS 1
+
+/* Directory where gcc is installed. */
+#undef GCC_INSTALL_PREFIX
+
 /* Define to 1 if you have the `arc4random' function. */
-/* #undef HAVE_DECL_ARC4RANDOM */
+/* #undef HAVE_ARC4RANDOM */
 
 /* Define to 1 if you have the `backtrace' function. */
 #define HAVE_BACKTRACE 1
@@ -25,8 +39,20 @@
 /* Define to 1 if you have the `bcopy' function. */
 #undef HAVE_BCOPY
 
+/* Define to 1 if you have the `ceilf' function. */
+#define HAVE_CEILF 1
+
+/* Define if the neat program is available */
+/* #undef HAVE_CIRCO */
+
 /* Define to 1 if you have the `closedir' function. */
 #define HAVE_CLOSEDIR 1
+
+/* Define if curses provides the has_color() function on this platform. */
+#define HAVE_CURSES
+
+/* Define to 1 if you have the <curses.h> header file. */
+#define HAVE_CURSES_H
 
 /* Define to 1 if you have the <cxxabi.h> header file. */
 #define HAVE_CXXABI_H 1
@@ -40,9 +66,6 @@
 /* Define to 1 if you have the declaration of `strerror_s', and to 0 if you
    don't. */
 #define HAVE_DECL_STRERROR_S 0
-
-/* Define to 1 if you have the DIA SDK installed, and to 0 if you don't. */
-/* #undef HAVE_DIA_SDK */
 
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
@@ -60,6 +83,12 @@
 /* Define if dlopen() is available on this platform. */
 #define HAVE_DLOPEN 1
 
+/* Define if the dot program is available */
+/* #undef HAVE_DOT */
+
+/* Define if the dotty program is available */
+/* #undef HAVE_DOTTY */
+
 /* Define if you have the _dyld_func_lookup function. */
 #undef HAVE_DYLD
 
@@ -72,6 +101,9 @@
 /* Define to 1 if you have the <fcntl.h> header file. */
 #define HAVE_FCNTL_H 1
 
+/* Define if the neat program is available */
+/* #undef HAVE_FDP */
+
 /* Define to 1 if you have the <fenv.h> header file. */
 #define HAVE_FENV_H 1
 
@@ -83,6 +115,33 @@
 
 /* Define to 1 if you have the <ffi.h> header file. */
 /* #undef HAVE_FFI_H */
+
+/* Set to 1 if the finite function is found in <ieeefp.h> */
+/* #undef HAVE_FINITE_IN_IEEEFP_H */
+
+/* Define to 1 if you have the `floorf' function. */
+#define HAVE_FLOORF 1
+
+/* Define to 1 if you have the `log' function. */
+#define HAVE_LOG 1
+
+/* Define to 1 if you have the `log2' function. */
+#define HAVE_LOG2 1
+
+/* Define to 1 if you have the `log10' function. */
+#define HAVE_LOG10 1
+
+/* Define to 1 if you have the `exp' function. */
+#define HAVE_EXP 1
+
+/* Define to 1 if you have the `exp2' function. */
+#define HAVE_EXP2 1
+
+/* Define to 1 if you have the `exp10' function. */
+/* #undef HAVE_EXP10 */
+
+/* Define to 1 if you have the `fmodf' function. */
+#define HAVE_FMODF 1
 
 /* Define to 1 if you have the `futimes' function. */
 #define HAVE_FUTIMES 1
@@ -105,6 +164,12 @@
 /* Define to 1 if you have the `gettimeofday' function. */
 #define HAVE_GETTIMEOFDAY 1
 
+/* Define if the Graphviz program is available */
+/* #undef HAVE_GRAPHVIZ */
+
+/* Define if the gv program is available */
+/* #undef HAVE_GV */
+
 /* Define to 1 if the system has the type `int64_t'. */
 #define HAVE_INT64_T 1
 
@@ -114,14 +179,26 @@
 /* Define to 1 if you have the `isatty' function. */
 #define HAVE_ISATTY 1
 
+/* Set to 1 if the isinf function is found in <cmath> */
+/* #undef HAVE_ISINF_IN_CMATH */
+
+/* Set to 1 if the isinf function is found in <math.h> */
+#define HAVE_ISINF_IN_MATH_H 1
+
+/* Set to 1 if the isnan function is found in <cmath> */
+/* #undef HAVE_ISNAN_IN_CMATH */
+
+/* Set to 1 if the isnan function is found in <math.h> */
+#define HAVE_ISNAN_IN_MATH_H 1
+
 /* Define if you have the libdl library or equivalent. */
 #define HAVE_LIBDL 1
 
+/* Define to 1 if you have the `imagehlp' library (-limagehlp). */
+/* #undef HAVE_LIBIMAGEHLP */
+
 /* Define to 1 if you have the `m' library (-lm). */
 #undef HAVE_LIBM
-
-/* Define to 1 if you have the `ole32' library (-lole32). */
-#undef HAVE_LIBOLE32
 
 /* Define to 1 if you have the `psapi' library (-lpsapi). */
 /* #undef HAVE_LIBPSAPI */
@@ -129,20 +206,14 @@
 /* Define to 1 if you have the `pthread' library (-lpthread). */
 #define HAVE_LIBPTHREAD 1
 
-/* Define to 1 if you have the `shell32' library (-lshell32). */
-/* #undef HAVE_LIBSHELL32 */
+/* Define to 1 if you have the `udis86' library (-ludis86). */
+#undef HAVE_LIBUDIS86
 
 /* Define to 1 if you have the 'z' library (-lz). */
 #define HAVE_LIBZ 1
 
-/* Define to 1 if you have the 'edit' library (-ledit). */
-/* #undef HAVE_LIBEDIT */
-
 /* Define to 1 if you have the <limits.h> header file. */
 #define HAVE_LIMITS_H 1
-
-/* Define to 1 if you have the <link.h> header file. */
-#define HAVE_LINK_H 1
 
 /* Define if you can use -rdynamic. */
 #define HAVE_LINK_EXPORT_DYNAMIC 1
@@ -172,9 +243,6 @@
 /* Define to 1 if you have the `malloc_zone_statistics' function. */
 /* #undef HAVE_MALLOC_ZONE_STATISTICS */
 
-/* Define to 1 if you have the `mallctl` function. */
-/* #undef HAVE_MALLCTL */
-
 /* Define to 1 if you have the `mkdtemp' function. */
 #define HAVE_MKDTEMP 1
 
@@ -194,14 +262,35 @@
 /* Define if mmap() can map files into memory */
 #undef HAVE_MMAP_FILE
 
+/* Define to 1 if you have the <ncursesw/curses.h> header file. */
+/* #undef HAVE_NCURSESW_CURSES_H */
+
+/* Define to 1 if you have the <ncursesw.h> header file. */
+/* #undef HAVE_NCURSESW_H */
+
+/* Define to 1 if you have the <ncurses/curses.h> header file. */
+/* #undef HAVE_NCURSES_CURSES_H */
+
+/* Define to 1 if you have the <ncurses.h> header file. */
+#define HAVE_NCURSES_H
+
 /* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
 /* #undef HAVE_NDIR_H */
+
+/* Define to 1 if you have the `nearbyintf' function. */
+#define HAVE_NEARBYINTF 1
+
+/* Define if the neat program is available */
+/* #undef HAVE_NEATO */
 
 /* Define to 1 if you have the `opendir' function. */
 #define HAVE_OPENDIR 1
 
 /* Define to 1 if you have the `posix_spawn' function. */
 #define HAVE_POSIX_SPAWN 1
+
+/* Define to 1 if you have the `powf' function. */
+/* #undef HAVE_POWF */
 
 /* Define to 1 if you have the `pread' function. */
 #define HAVE_PREAD 1
@@ -231,7 +320,16 @@
 #define HAVE_READDIR 1
 
 /* Define to 1 if you have the `realpath' function. */
-#define HAVE_REALPATH 1
+#undef HAVE_REALPATH
+
+/* Define to 1 if you have the `rintf' function. */
+#undef HAVE_RINTF
+
+/* Define to 1 if you have the `round' function. */
+/* #undef HAVE_ROUND */
+
+/* Define to 1 if you have the `roundf' function. */
+#undef HAVE_ROUNDF
 
 /* Define to 1 if you have the `sbrk' function. */
 #define HAVE_SBRK 1
@@ -247,9 +345,6 @@
 
 /* Define if you have the shl_load function. */
 #undef HAVE_SHL_LOAD
-
-/* Define to 1 if you have the `sigaltstack' function. */
-#define HAVE_SIGALTSTACK 1
 
 /* Define to 1 if you have the `siglongjmp' function. */
 /* #undef HAVE_SIGLONGJMP */
@@ -277,6 +372,9 @@
 
 /* Define to 1 if you have the `strerror_r' function. */
 #define HAVE_STRERROR_R 1
+
+/* Define to 1 if you have the `strtof' function. */
+/* #undef HAVE_STRTOF */
 
 /* Define to 1 if you have the `strtoll' function. */
 #define HAVE_STRTOLL 1
@@ -314,28 +412,25 @@
 #define HAVE_SYS_TIME_H 1
 
 /* Define to 1 if you have the <sys/types.h> header file. */
-#define HAVE_SYS_TYPES_H 1
+/* #undef HAVE_SYS_TYPES_H */
 
 /* Define to 1 if you have the <sys/uio.h> header file. */
 #define HAVE_SYS_UIO_H 1
 
-/* Define if the setupterm() function is supported this platform. */
-#define HAVE_TERMINFO 1
-
-/* Define if the xar_open() function is supported this platform. */
-/* #undef HAVE_LIBXAR */
+/* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
+#define HAVE_SYS_WAIT_H 1
 
 /* Define to 1 if you have the <termios.h> header file. */
 #define HAVE_TERMIOS_H 1
+
+/* Define if the neat program is available */
+/* #undef HAVE_TWOPI */
 
 /* Define to 1 if the system has the type `uint64_t'. */
 #define HAVE_UINT64_T 1
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #define HAVE_UNISTD_H 1
-
-/* Define to 1 if you have the `_Unwind_Backtrace' function. */
-#define HAVE_UNWIND_BACKTRACE 1
 
 /* Define to 1 if you have the <utime.h> header file. */
 #define HAVE_UTIME_H 1
@@ -344,10 +439,13 @@
 #define HAVE_U_INT64_T 1
 
 /* Define to 1 if you have the <valgrind/valgrind.h> header file. */
-#define HAVE_VALGRIND_VALGRIND_H 1
+/* #undef HAVE_VALGRIND_VALGRIND_H */
 
 /* Define to 1 if you have the `writev' function. */
 #define HAVE_WRITEV 1
+
+/* Define if the xdot.py program is available */
+/* #undef HAVE_XDOT */
 
 /* Define to 1 if you have the <zlib.h> header file. */
 #define HAVE_ZLIB_H 1
@@ -366,9 +464,6 @@
 
 /* Have host's __chkstk */
 /* #undef HAVE___CHKSTK */
-
-/* Have host's __chkstk_ms */
-/* #undef HAVE___CHKSTK_MS */
 
 /* Have host's __cmpdi2 */
 /* #undef HAVE___CMPDI2 */
@@ -406,9 +501,6 @@
 /* Have host's ___chkstk */
 /* #undef HAVE____CHKSTK */
 
-/* Have host's ___chkstk_ms */
-/* #undef HAVE____CHKSTK_MS */
-
 /* Linker version detected at compile time. */
 #undef HOST_LINK_VERSION
 
@@ -421,17 +513,11 @@
 /* Installation directory for data files */
 /* #undef LLVM_DATADIR */
 
-/* Target triple LLVM will generate code for by default
- * Doesn't use `cmakedefine` because it is allowed to be empty.
- */
+/* Target triple LLVM will generate code for by default */
 #define LLVM_DEFAULT_TARGET_TRIPLE "x86_64-unknown-linux-gnu"
 
 /* Installation directory for documentation */
 /* #undef LLVM_DOCSDIR */
-
-/* Define if LLVM is built with asserts and checks that change the layout of
-   client-visible data structures.  */
-#define LLVM_ENABLE_ABI_BREAKING_CHECKS
 
 /* Define if threads enabled */
 #define LLVM_ENABLE_THREADS 1
@@ -484,6 +570,33 @@
 /* Define if this is Win32ish platform */
 /* #undef LLVM_ON_WIN32 */
 
+/* Define to path to circo program if found or 'echo circo' otherwise */
+/* #undef LLVM_PATH_CIRCO */
+
+/* Define to path to dot program if found or 'echo dot' otherwise */
+/* #undef LLVM_PATH_DOT */
+
+/* Define to path to dotty program if found or 'echo dotty' otherwise */
+/* #undef LLVM_PATH_DOTTY */
+
+/* Define to path to fdp program if found or 'echo fdp' otherwise */
+/* #undef LLVM_PATH_FDP */
+
+/* Define to path to Graphviz program if found or 'echo Graphviz' otherwise */
+/* #undef LLVM_PATH_GRAPHVIZ */
+
+/* Define to path to gv program if found or 'echo gv' otherwise */
+/* #undef LLVM_PATH_GV */
+
+/* Define to path to neato program if found or 'echo neato' otherwise */
+/* #undef LLVM_PATH_NEATO */
+
+/* Define to path to twopi program if found or 'echo twopi' otherwise */
+/* #undef LLVM_PATH_TWOPI */
+
+/* Define to path to xdot.py program if found or 'echo xdot' otherwise */
+/* #undef LLVM_PATH_XDOT */
+
 /* Installation prefix directory */
 #define LLVM_PREFIX "/usr/local"
 
@@ -497,19 +610,7 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 9
-
-/* Patch version of the LLVM API */
-#define LLVM_VERSION_PATCH 0
-
-/* LLVM version string */
-#define LLVM_VERSION_STRING "3.9.0svn"
-
-/* LLVM version information */
-/* #undef LLVM_VERSION_INFO */
-
-/* Define if we link Polly to the tools */
-/* #undef LINK_POLLY_INTO_TOOLS */
+#define LLVM_VERSION_MINOR 4
 
 /* Define if the OS needs help to load dependent libraries for dlopen(). */
 /* #undef LTDL_DLOPEN_DEPLIBS */
@@ -538,16 +639,13 @@
 #define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LLVM 3.9.0svn"
+#define PACKAGE_STRING "LLVM 3.4svn"
 
 /* Define to the one symbol short name of this package. */
 #undef PACKAGE_TARNAME
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "3.9.0svn"
-
-/* Define to the vendor of this package. */
-/* #undef PACKAGE_VENDOR */
+#define PACKAGE_VERSION "3.4svn"
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #define RETSIGTYPE void
@@ -563,6 +661,15 @@
 
 /* Define to 1 if your <sys/time.h> declares `struct tm'. */
 #undef TM_IN_SYS_TIME
+
+/* Define if use udis86 library */
+#undef USE_UDIS86
+
+/* Type of 1st arg on ELM Callback */
+/* #undef WIN32_ELMCB_PCSTR */
+
+/* Define to empty if `const' does not conform to ANSI C. */
+#undef const
 
 /* Define to `int' if <sys/types.h> does not define. */
 #undef pid_t
@@ -584,5 +691,8 @@
 
 /* Define to 1 if you have the `_chsize_s' function. */
 /* #undef HAVE__CHSIZE_S */
+
+/* Added by Kevin -- Maximum path length */
+#define MAXPATHLEN 2024
 
 #endif

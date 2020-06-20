@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "LLVMHello.exports"
   "CMakeFiles/LLVMHello.dir/Hello.cpp.o"
   "../../LLVMHello.pdb"
   "../../LLVMHello.so"

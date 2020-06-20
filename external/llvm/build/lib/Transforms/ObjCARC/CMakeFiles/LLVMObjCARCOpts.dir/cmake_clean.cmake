@@ -3,11 +3,11 @@ file(REMOVE_RECURSE
   "CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCOpts.cpp.o"
   "CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCExpand.cpp.o"
   "CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCAPElim.cpp.o"
+  "CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCAliasAnalysis.cpp.o"
+  "CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCUtil.cpp.o"
   "CMakeFiles/LLVMObjCARCOpts.dir/ObjCARCContract.cpp.o"
   "CMakeFiles/LLVMObjCARCOpts.dir/DependencyAnalysis.cpp.o"
   "CMakeFiles/LLVMObjCARCOpts.dir/ProvenanceAnalysis.cpp.o"
-  "CMakeFiles/LLVMObjCARCOpts.dir/ProvenanceAnalysisEvaluator.cpp.o"
-  "CMakeFiles/LLVMObjCARCOpts.dir/PtrState.cpp.o"
   "../../libLLVMObjCARCOpts.pdb"
   "../../libLLVMObjCARCOpts.a"
 )

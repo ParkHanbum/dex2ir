@@ -1,5 +1,6 @@
 file(REMOVE_RECURSE
   "CMakeFiles/LLVMMCJIT.dir/MCJIT.cpp.o"
+  "CMakeFiles/LLVMMCJIT.dir/SectionMemoryManager.cpp.o"
   "../../libLLVMMCJIT.pdb"
   "../../libLLVMMCJIT.a"
 )

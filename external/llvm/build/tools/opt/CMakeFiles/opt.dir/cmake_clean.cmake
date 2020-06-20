@@ -1,9 +1,6 @@
 file(REMOVE_RECURSE
   "CMakeFiles/opt.dir/AnalysisWrappers.cpp.o"
-  "CMakeFiles/opt.dir/BreakpointPrinter.cpp.o"
   "CMakeFiles/opt.dir/GraphPrinters.cpp.o"
-  "CMakeFiles/opt.dir/NewPMDriver.cpp.o"
-  "CMakeFiles/opt.dir/PassPrinters.cpp.o"
   "CMakeFiles/opt.dir/PrintSCC.cpp.o"
   "CMakeFiles/opt.dir/opt.cpp.o"
   "../../bin/opt.pdb"

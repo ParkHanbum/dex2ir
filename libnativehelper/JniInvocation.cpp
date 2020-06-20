@@ -23,7 +23,6 @@
 #include <cstddef>
 
 #define LOG_TAG "JniInvocation"
-#include "cutils/log.h"
 
 #ifdef HAVE_ANDROID_OS
 #include "cutils/properties.h"
@@ -37,7 +36,6 @@ JniInvocation::JniInvocation() :
     JNI_CreateJavaVM_(NULL),
     JNI_GetCreatedJavaVMs_(NULL) {
 
-  LOG_ALWAYS_FATAL_IF(jni_invocation_ != NULL, "JniInvocation instance already initialized");
   jni_invocation_ = this;
 }
 
@@ -106,7 +104,6 @@ bool JniInvocation::Init(const char* library) {
   if (handle_ == NULL) {
     if (strcmp(library, kLibraryFallback) == 0) {
       // Nothing else to try.
-      ALOGE("Failed to dlopen %s: %s", library, dlerror());
       return false;
     }
     // Note that this is enough to get something like the zygote
@@ -114,12 +111,9 @@ bool JniInvocation::Init(const char* library) {
     // because we are root and not the system user. See
     // RuntimeInit.commonInit for where we fix up the property to
     // avoid future fallbacks. http://b/11463182
-    ALOGW("Falling back from %s to %s after dlopen error: %s",
-          library, kLibraryFallback, dlerror());
     library = kLibraryFallback;
     handle_ = dlopen(library, RTLD_NOW);
     if (handle_ == NULL) {
-      ALOGE("Failed to dlopen %s: %s", library, dlerror());
       return false;
     }
   }
@@ -153,7 +147,6 @@ jint JniInvocation::JNI_GetCreatedJavaVMs(JavaVM** vms, jsize size, jsize* vm_co
 bool JniInvocation::FindSymbol(void** pointer, const char* symbol) {
   *pointer = dlsym(handle_, symbol);
   if (*pointer == NULL) {
-    ALOGE("Failed to find symbol %s: %s\n", symbol, dlerror());
     dlclose(handle_);
     handle_ = NULL;
     return false;
@@ -162,8 +155,6 @@ bool JniInvocation::FindSymbol(void** pointer, const char* symbol) {
 }
 
 JniInvocation& JniInvocation::GetJniInvocation() {
-  LOG_ALWAYS_FATAL_IF(jni_invocation_ == NULL,
-                      "Failed to create JniInvocation instance before using JNI invocation API");
   return *jni_invocation_;
 }
 

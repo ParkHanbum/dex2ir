@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMAMDGPUAsmPrinter.a  CMakeFiles/LLVMAMDGPUAsmPrinter.dir/AMDGPUInstPrinter.cpp.o
-/usr/bin/ranlib ../../../libLLVMAMDGPUAsmPrinter.a

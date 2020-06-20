@@ -27,6 +27,7 @@
 #ifndef SUPPORT_DATATYPES_H
 #define SUPPORT_DATATYPES_H
 
+#define HAVE_SYS_TYPES_H 1
 #define HAVE_INTTYPES_H 1
 #define HAVE_STDINT_H 1
 #define HAVE_UINT64_T 1
@@ -54,7 +55,9 @@
 #endif
 
 /* Note that <inttypes.h> includes <stdint.h>, if this is a C99 system. */
+#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
+#endif
 
 #ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
@@ -77,6 +80,18 @@ typedef u_int64_t uint64_t;
 #endif
 #endif
 
+#ifdef _OpenBSD_
+#define INT8_MAX 127
+#define INT8_MIN -128
+#define UINT8_MAX 255
+#define INT16_MAX 32767
+#define INT16_MIN -32768
+#define UINT16_MAX 65535
+#define INT32_MAX 2147483647
+#define INT32_MIN -2147483648
+#define UINT32_MAX 4294967295U
+#endif
+
 #else /* _MSC_VER */
 /* Visual C++ doesn't provide standard integer headers, but it does provide
    built-in data types. */
@@ -96,12 +111,7 @@ typedef short int16_t;
 typedef unsigned short uint16_t;
 typedef signed char int8_t;
 typedef unsigned char uint8_t;
-#if defined(_WIN64)
-  typedef signed __int64 ssize_t;
-#else
-  typedef signed int ssize_t;
-#endif
-
+typedef signed int ssize_t;
 #ifndef INT8_MAX
 # define INT8_MAX 127
 #endif

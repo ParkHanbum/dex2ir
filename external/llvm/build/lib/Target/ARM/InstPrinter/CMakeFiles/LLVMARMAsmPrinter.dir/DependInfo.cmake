@@ -4,14 +4,13 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/m/AOSP5/external/llvm/lib/Target/ARM/InstPrinter/ARMInstPrinter.cpp" "/home/m/AOSP5/external/llvm/build/lib/Target/ARM/InstPrinter/CMakeFiles/LLVMARMAsmPrinter.dir/ARMInstPrinter.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/Target/ARM/InstPrinter/ARMInstPrinter.cpp" "/home/m/dex2ir/external/llvm/build/lib/Target/ARM/InstPrinter/CMakeFiles/LLVMARMAsmPrinter.dir/ARMInstPrinter.cpp.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 
 # Preprocessor definitions for this target.
 set(CMAKE_TARGET_DEFINITIONS_CXX
-  "GTEST_HAS_RTTI=0"
-  "_DEBUG"
+  "NDEBUG"
   "_GNU_SOURCE"
   "__STDC_CONSTANT_MACROS"
   "__STDC_FORMAT_MACROS"
@@ -26,10 +25,15 @@ set(CMAKE_CXX_TARGET_INCLUDE_PATH
   "lib/Target/ARM"
   "include"
   "../include"
+  "lib/Target/ARM/InstPrinter/.."
+  "../lib/Target/ARM/InstPrinter/.."
   )
 
 # Targets to which this target links.
 set(CMAKE_TARGET_LINKED_INFO_FILES
+  "/home/m/dex2ir/external/llvm/build/lib/MC/CMakeFiles/LLVMMC.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Support/CMakeFiles/LLVMSupport.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Object/CMakeFiles/LLVMObject.dir/DependInfo.cmake"
   )
 
 # Fortran module output directory.

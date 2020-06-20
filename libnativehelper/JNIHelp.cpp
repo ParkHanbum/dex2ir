@@ -18,7 +18,6 @@
 
 #include "JniConstants.h"
 #include "JNIHelp.h"
-#include "ALog-priv.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -71,8 +70,6 @@ extern "C" int jniRegisterNativeMethods(C_JNIEnv* env, const char* className,
     const JNINativeMethod* gMethods, int numMethods)
 {
     JNIEnv* e = reinterpret_cast<JNIEnv*>(env);
-
-    ALOGV("Registering %s's %d native methods...", className, numMethods);
 
     scoped_local_ref<jclass> c(env, findClass(env, className));
     if (c.get() == NULL) {
@@ -215,19 +212,16 @@ extern "C" int jniThrowException(C_JNIEnv* env, const char* className, const cha
         if (exception.get() != NULL) {
             std::string text;
             getExceptionSummary(env, exception.get(), text);
-            ALOGW("Discarding pending exception (%s) to throw %s", text.c_str(), className);
         }
     }
 
     scoped_local_ref<jclass> exceptionClass(env, findClass(env, className));
     if (exceptionClass.get() == NULL) {
-        ALOGE("Unable to find exception class %s", className);
         /* ClassNotFoundException now pending */
         return -1;
     }
 
     if ((*env)->ThrowNew(e, exceptionClass.get(), msg) != JNI_OK) {
-        ALOGE("Failed throwing '%s' '%s'", className, msg);
         /* an exception, most likely OOM, will now be pending */
         return -1;
     }
@@ -285,7 +279,6 @@ static std::string jniGetStackTrace(C_JNIEnv* env, jthrowable exception) {
 
 void jniLogException(C_JNIEnv* env, int priority, const char* tag, jthrowable exception) {
     std::string trace(jniGetStackTrace(env, exception));
-    __android_log_write(priority, tag, trace.c_str());
 }
 
 const char* jniStrError(int errnum, char* buf, size_t buflen) {

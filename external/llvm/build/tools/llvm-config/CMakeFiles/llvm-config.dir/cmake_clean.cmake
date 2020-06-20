@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "BuildVariables.inc"
   "CMakeFiles/llvm-config.dir/llvm-config.cpp.o"
   "../../bin/llvm-config.pdb"
   "../../bin/llvm-config"

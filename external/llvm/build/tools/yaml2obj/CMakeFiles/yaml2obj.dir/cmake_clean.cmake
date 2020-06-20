@@ -2,7 +2,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/yaml2obj.dir/yaml2obj.cpp.o"
   "CMakeFiles/yaml2obj.dir/yaml2coff.cpp.o"
   "CMakeFiles/yaml2obj.dir/yaml2elf.cpp.o"
-  "CMakeFiles/yaml2obj.dir/yaml2macho.cpp.o"
   "../../bin/yaml2obj.pdb"
   "../../bin/yaml2obj"
 )

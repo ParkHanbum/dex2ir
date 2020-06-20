@@ -2,7 +2,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/MCJITTests.dir/MCJITTest.cpp.o"
   "CMakeFiles/MCJITTests.dir/MCJITCAPITest.cpp.o"
   "CMakeFiles/MCJITTests.dir/MCJITMemoryManagerTest.cpp.o"
-  "CMakeFiles/MCJITTests.dir/MCJITMultipleModuleTest.cpp.o"
   "CMakeFiles/MCJITTests.dir/MCJITObjectCacheTest.cpp.o"
   "MCJITTests.pdb"
   "MCJITTests"

@@ -19,6 +19,7 @@
 #include <fstream>
 #include <sys/uio.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 
 #include "base/stl_util.h"
 #include "base/unix_file/fd_file.h"

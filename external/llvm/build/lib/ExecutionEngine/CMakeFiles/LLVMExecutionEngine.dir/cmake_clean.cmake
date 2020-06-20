@@ -1,8 +1,7 @@
 file(REMOVE_RECURSE
   "CMakeFiles/LLVMExecutionEngine.dir/ExecutionEngine.cpp.o"
   "CMakeFiles/LLVMExecutionEngine.dir/ExecutionEngineBindings.cpp.o"
-  "CMakeFiles/LLVMExecutionEngine.dir/GDBRegistrationListener.cpp.o"
-  "CMakeFiles/LLVMExecutionEngine.dir/SectionMemoryManager.cpp.o"
+  "CMakeFiles/LLVMExecutionEngine.dir/RTDyldMemoryManager.cpp.o"
   "CMakeFiles/LLVMExecutionEngine.dir/TargetSelect.cpp.o"
   "../libLLVMExecutionEngine.pdb"
   "../libLLVMExecutionEngine.a"

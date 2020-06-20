@@ -16,7 +16,6 @@
 
 #define LOG_TAG "JniConstants"
 
-#include "ALog-priv.h"
 #include "JniConstants.h"
 #include "ScopedLocalRef.h"
 
@@ -79,7 +78,6 @@ static jclass findClass(JNIEnv* env, const char* name) {
     ScopedLocalRef<jclass> localClass(env, env->FindClass(name));
     jclass result = reinterpret_cast<jclass>(env->NewGlobalRef(localClass.get()));
     if (result == NULL) {
-        ALOGE("failed to find class '%s'", name);
         abort();
     }
     return result;

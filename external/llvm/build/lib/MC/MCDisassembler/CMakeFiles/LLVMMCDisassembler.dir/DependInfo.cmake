@@ -4,18 +4,13 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
-  "/home/m/AOSP5/external/llvm/lib/MC/MCDisassembler/Disassembler.cpp" "/home/m/AOSP5/external/llvm/build/lib/MC/MCDisassembler/CMakeFiles/LLVMMCDisassembler.dir/Disassembler.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/MC/MCDisassembler/MCDisassembler.cpp" "/home/m/AOSP5/external/llvm/build/lib/MC/MCDisassembler/CMakeFiles/LLVMMCDisassembler.dir/MCDisassembler.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/MC/MCDisassembler/MCExternalSymbolizer.cpp" "/home/m/AOSP5/external/llvm/build/lib/MC/MCDisassembler/CMakeFiles/LLVMMCDisassembler.dir/MCExternalSymbolizer.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/MC/MCDisassembler/MCRelocationInfo.cpp" "/home/m/AOSP5/external/llvm/build/lib/MC/MCDisassembler/CMakeFiles/LLVMMCDisassembler.dir/MCRelocationInfo.cpp.o"
-  "/home/m/AOSP5/external/llvm/lib/MC/MCDisassembler/MCSymbolizer.cpp" "/home/m/AOSP5/external/llvm/build/lib/MC/MCDisassembler/CMakeFiles/LLVMMCDisassembler.dir/MCSymbolizer.cpp.o"
+  "/home/m/dex2ir/external/llvm/lib/MC/MCDisassembler/Disassembler.cpp" "/home/m/dex2ir/external/llvm/build/lib/MC/MCDisassembler/CMakeFiles/LLVMMCDisassembler.dir/Disassembler.cpp.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 
 # Preprocessor definitions for this target.
 set(CMAKE_TARGET_DEFINITIONS_CXX
-  "GTEST_HAS_RTTI=0"
-  "_DEBUG"
+  "NDEBUG"
   "_GNU_SOURCE"
   "__STDC_CONSTANT_MACROS"
   "__STDC_FORMAT_MACROS"
@@ -32,6 +27,10 @@ set(CMAKE_CXX_TARGET_INCLUDE_PATH
 
 # Targets to which this target links.
 set(CMAKE_TARGET_LINKED_INFO_FILES
+  "/home/m/dex2ir/external/llvm/build/lib/MC/CMakeFiles/LLVMMC.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/MC/MCParser/CMakeFiles/LLVMMCParser.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Support/CMakeFiles/LLVMSupport.dir/DependInfo.cmake"
+  "/home/m/dex2ir/external/llvm/build/lib/Object/CMakeFiles/LLVMObject.dir/DependInfo.cmake"
   )
 
 # Fortran module output directory.

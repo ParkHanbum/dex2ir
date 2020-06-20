@@ -1,5 +1,4 @@
 file(REMOVE_RECURSE
-  "BugpointPasses.exports"
   "CMakeFiles/BugpointPasses.dir/TestPasses.cpp.o"
   "../../lib/BugpointPasses.pdb"
   "../../lib/BugpointPasses.so"
