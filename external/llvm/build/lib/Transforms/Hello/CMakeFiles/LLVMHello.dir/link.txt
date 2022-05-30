@@ -1,1 +1,0 @@
-/usr/bin/c++  -fPIC  -fPIC -fvisibility-inlines-hidden -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -Wno-maybe-uninitialized -Wnon-virtual-dtor -fno-rtti  -shared -Wl,-soname,LLVMHello.so -o ../../LLVMHello.so CMakeFiles/LLVMHello.dir/Hello.cpp.o -lrt -ldl -lcurses -lpthread -lz 

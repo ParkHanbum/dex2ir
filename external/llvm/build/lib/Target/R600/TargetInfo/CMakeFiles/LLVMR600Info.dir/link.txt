@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMR600Info.a  CMakeFiles/LLVMR600Info.dir/AMDGPUTargetInfo.cpp.o
-/usr/bin/ranlib ../../../libLLVMR600Info.a

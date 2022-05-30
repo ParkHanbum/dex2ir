@@ -21,6 +21,7 @@
 #include <string>
 #include "base/unix_file/random_access_file.h"
 #include "base/macros.h"
+#include "base/unix_file/portability.h"
 
 namespace unix_file {
 

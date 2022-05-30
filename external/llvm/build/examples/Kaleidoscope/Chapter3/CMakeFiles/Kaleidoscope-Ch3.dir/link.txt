@@ -1,1 +1,0 @@
-/usr/bin/c++    -fPIC -fvisibility-inlines-hidden -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -Wno-maybe-uninitialized -Wnon-virtual-dtor -fno-rtti   CMakeFiles/Kaleidoscope-Ch3.dir/toy.cpp.o  -o ../../../bin/Kaleidoscope-Ch3  ../../../lib/libLLVMCore.a ../../../lib/libLLVMSupport.a -lrt -ldl -lcurses -lpthread -lz 

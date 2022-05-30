@@ -1,224 +1,161 @@
-Determining if the include file malloc/malloc.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Compiling the C compiler identification source file "CMakeCCompilerId.c" failed.
+Compiler: /Library/Developer/CommandLineTools/usr/bin/cc 
+Build flags: 
+Id flags:  
 
-Run Build Command:"/usr/bin/make" "cmTC_b8505/fast"
-/usr/bin/make -f CMakeFiles/cmTC_b8505.dir/build.make CMakeFiles/cmTC_b8505.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:27: fatal error: malloc/malloc.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_b8505.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_b8505.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_b8505/fast' failed
-make: *** [cmTC_b8505/fast] Error 2
+The output was:
+1
+ld: library not found for -lSystem
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /Library/Developer/CommandLineTools/usr/bin/c++ 
+Build flags: 
+Id flags:  
+
+The output was:
+1
+ld: library not found for -lc++
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+
+Determining if the include file malloc.h exists failed with the following output:
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_f833d/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_f833d.dir/build.make CMakeFiles/cmTC_f833d.dir/build
+Building C object CMakeFiles/cmTC_f833d.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_f833d.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_f833d.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_f833d.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'malloc.h' file not found
+#include <malloc.h>
+         ^~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_f833d.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_f833d/fast] Error 2
+
 
 
 Determining if the include file ndir.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_3a5f5/fast"
-/usr/bin/make -f CMakeFiles/cmTC_3a5f5.dir/build.make CMakeFiles/cmTC_3a5f5.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:18: fatal error: ndir.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_3a5f5.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_3a5f5.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_3a5f5/fast' failed
-make: *** [cmTC_3a5f5/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_63f30/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_63f30.dir/build.make CMakeFiles/cmTC_63f30.dir/build
+Building C object CMakeFiles/cmTC_63f30.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_63f30.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_63f30.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_63f30.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'ndir.h' file not found
+#include <ndir.h>
+         ^~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_63f30.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_63f30/fast] Error 2
 
-
-Determining if the include file sanitizer/msan_interface.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_a6a13/fast"
-/usr/bin/make -f CMakeFiles/cmTC_a6a13.dir/build.make CMakeFiles/cmTC_a6a13.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:38: fatal error: sanitizer/msan_interface.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_a6a13.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_a6a13.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_a6a13/fast' failed
-make: *** [cmTC_a6a13/fast] Error 2
 
 
 Determining if the include file sys/ndir.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_7da5c/fast"
-/usr/bin/make -f CMakeFiles/cmTC_7da5c.dir/build.make CMakeFiles/cmTC_7da5c.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:22: fatal error: sys/ndir.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_7da5c.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_7da5c.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_7da5c/fast' failed
-make: *** [cmTC_7da5c/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_05341/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_05341.dir/build.make CMakeFiles/cmTC_05341.dir/build
+Building C object CMakeFiles/cmTC_05341.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_05341.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_05341.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_05341.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'sys/ndir.h' file not found
+#include <sys/ndir.h>
+         ^~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_05341.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_05341/fast] Error 2
+
 
 
 Determining if the include file valgrind/valgrind.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_838ca/fast"
-/usr/bin/make -f CMakeFiles/cmTC_838ca.dir/build.make CMakeFiles/cmTC_838ca.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:31: fatal error: valgrind/valgrind.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_838ca.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_838ca.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_838ca/fast' failed
-make: *** [cmTC_838ca/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_69afb/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_69afb.dir/build.make CMakeFiles/cmTC_69afb.dir/build
+Building C object CMakeFiles/cmTC_69afb.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_69afb.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_69afb.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_69afb.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'valgrind/valgrind.h' file not found
+#include <valgrind/valgrind.h>
+         ^~~~~~~~~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_69afb.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_69afb/fast] Error 2
 
-
-Determining if the include file mach/mach.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_1c737/fast"
-/usr/bin/make -f CMakeFiles/cmTC_1c737.dir/build.make CMakeFiles/cmTC_1c737.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:23: fatal error: mach/mach.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_1c737.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_1c737.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_1c737/fast' failed
-make: *** [cmTC_1c737/fast] Error 2
-
-
-Determining if the include file mach-o/dyld.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
-
-Run Build Command:"/usr/bin/make" "cmTC_1e773/fast"
-/usr/bin/make -f CMakeFiles/cmTC_1e773.dir/build.make CMakeFiles/cmTC_1e773.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:25: fatal error: mach-o/dyld.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_1e773.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_1e773.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_1e773/fast' failed
-make: *** [cmTC_1e773/fast] Error 2
 
 
 Determining if the include file ncursesw.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_67761/fast"
-/usr/bin/make -f CMakeFiles/cmTC_67761.dir/build.make CMakeFiles/cmTC_67761.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:22: fatal error: ncursesw.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_67761.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_67761.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_67761/fast' failed
-make: *** [cmTC_67761/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_67083/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_67083.dir/build.make CMakeFiles/cmTC_67083.dir/build
+Building C object CMakeFiles/cmTC_67083.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_67083.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_67083.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_67083.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'ncursesw.h' file not found
+#include <ncursesw.h>
+         ^~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_67083.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_67083/fast] Error 2
+
 
 
 Determining if the include file ncurses/curses.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_7dd69/fast"
-/usr/bin/make -f CMakeFiles/cmTC_7dd69.dir/build.make CMakeFiles/cmTC_7dd69.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:28: fatal error: ncurses/curses.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_7dd69.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_7dd69.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_7dd69/fast' failed
-make: *** [cmTC_7dd69/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_e8bac/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_e8bac.dir/build.make CMakeFiles/cmTC_e8bac.dir/build
+Building C object CMakeFiles/cmTC_e8bac.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_e8bac.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_e8bac.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_e8bac.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'ncurses/curses.h' file not found
+#include <ncurses/curses.h>
+         ^~~~~~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_e8bac.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_e8bac/fast] Error 2
+
 
 
 Determining if the include file ncursesw/curses.h exists failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_88e6d/fast"
-/usr/bin/make -f CMakeFiles/cmTC_88e6d.dir/build.make CMakeFiles/cmTC_88e6d.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:29: fatal error: ncursesw/curses.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_88e6d.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_88e6d.dir/CheckIncludeFile.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_88e6d/fast' failed
-make: *** [cmTC_88e6d/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_139cc/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_139cc.dir/build.make CMakeFiles/cmTC_139cc.dir/build
+Building C object CMakeFiles/cmTC_139cc.dir/CheckIncludeFile.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_139cc.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_139cc.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_139cc.dir/CheckIncludeFile.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: 'ncursesw/curses.h' file not found
+#include <ncursesw/curses.h>
+         ^~~~~~~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_139cc.dir/CheckIncludeFile.c.o] Error 1
+make: *** [cmTC_139cc/fast] Error 2
 
 
-Determining if the arc4random exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_9668c/fast"
-/usr/bin/make -f CMakeFiles/cmTC_9668c.dir/build.make CMakeFiles/cmTC_9668c.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘arc4random’ undeclared (first use in this function)
-   return ((int*)(&arc4random))[argc];
-                   ^
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
-CMakeFiles/cmTC_9668c.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_9668c.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_9668c/fast' failed
-make: *** [cmTC_9668c/fast] Error 2
+Determining if the function clock_gettime exists in the rt failed with the following output:
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
-/* */
-#include <stdlib.h>
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_6f7c0/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_6f7c0.dir/build.make CMakeFiles/cmTC_6f7c0.dir/build
+Building C object CMakeFiles/cmTC_6f7c0.dir/CheckFunctionExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=clock_gettime -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_6f7c0.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_6f7c0.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_6f7c0.dir/CheckFunctionExists.c.o -c /usr/local/share/cmake-3.23/Modules/CheckFunctionExists.c
+Linking C executable cmTC_6f7c0
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6f7c0.dir/link.txt --verbose=1
+/Library/Developer/CommandLineTools/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=clock_gettime -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/cmTC_6f7c0.dir/CheckFunctionExists.c.o -o cmTC_6f7c0  -lrt -lm 
+ld: library not found for -lrt
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [cmTC_6f7c0] Error 1
+make: *** [cmTC_6f7c0/fast] Error 2
 
-int main(int argc, char** argv)
-{
-  (void)argv;
-#ifndef arc4random
-  return ((int*)(&arc4random))[argc];
-#else
-  (void)argc;
-  return 0;
-#endif
-}
+
 
 Determining if the isinf exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_bd59a/fast"
-/usr/bin/make -f CMakeFiles/cmTC_bd59a.dir/build.make CMakeFiles/cmTC_bd59a.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:17: fatal error: cmath: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_bd59a.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_bd59a.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_bd59a/fast' failed
-make: *** [cmTC_bd59a/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_6140e/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_6140e.dir/build.make CMakeFiles/cmTC_6140e.dir/build
+Building C object CMakeFiles/cmTC_6140e.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_6140e.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_6140e.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_6140e.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:10: fatal error: 'cmath' file not found
+#include <cmath>
+         ^~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_6140e.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_6140e/fast] Error 2
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <cmath>
 
@@ -232,24 +169,21 @@ int main(int argc, char** argv)
   return 0;
 #endif
 }
-
 Determining if the finite exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_b5f24/fast"
-/usr/bin/make -f CMakeFiles/cmTC_b5f24.dir/build.make CMakeFiles/cmTC_b5f24.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:20: fatal error: ieeefp.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_b5f24.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_b5f24.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_b5f24/fast' failed
-make: *** [cmTC_b5f24/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_ff12c/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_ff12c.dir/build.make CMakeFiles/cmTC_ff12c.dir/build
+Building C object CMakeFiles/cmTC_ff12c.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_ff12c.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_ff12c.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_ff12c.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:10: fatal error: 'ieeefp.h' file not found
+#include <ieeefp.h>
+         ^~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_ff12c.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_ff12c/fast] Error 2
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <ieeefp.h>
 
@@ -263,24 +197,21 @@ int main(int argc, char** argv)
   return 0;
 #endif
 }
-
 Determining if the isnan exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_04238/fast"
-/usr/bin/make -f CMakeFiles/cmTC_04238.dir/build.make CMakeFiles/cmTC_04238.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:17: fatal error: cmath: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_04238.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_04238.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_04238/fast' failed
-make: *** [cmTC_04238/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_9e03b/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_9e03b.dir/build.make CMakeFiles/cmTC_9e03b.dir/build
+Building C object CMakeFiles/cmTC_9e03b.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_9e03b.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_9e03b.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_9e03b.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:10: fatal error: 'cmath' file not found
+#include <cmath>
+         ^~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_9e03b.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_9e03b/fast] Error 2
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <cmath>
 
@@ -294,27 +225,21 @@ int main(int argc, char** argv)
   return 0;
 #endif
 }
-
 Determining if the exp10 exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_1e026/fast"
-/usr/bin/make -f CMakeFiles/cmTC_1e026.dir/build.make CMakeFiles/cmTC_1e026.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘exp10’ undeclared (first use in this function)
-   return ((int*)(&exp10))[argc];
-                   ^
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
-CMakeFiles/cmTC_1e026.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_1e026.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_1e026/fast' failed
-make: *** [cmTC_1e026/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_c6710/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_c6710.dir/build.make CMakeFiles/cmTC_c6710.dir/build
+Building C object CMakeFiles/cmTC_c6710.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_c6710.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_c6710.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_c6710.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: use of undeclared identifier 'exp10'
+  return ((int*)(&exp10))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_c6710.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_c6710/fast] Error 2
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <math.h>
 
@@ -328,58 +253,53 @@ int main(int argc, char** argv)
   return 0;
 #endif
 }
+Determining if the mallinfo exist failed with the following output:
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Determining if the malloc_zone_statistics exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_3f99a/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_3f99a.dir/build.make CMakeFiles/cmTC_3f99a.dir/build
+Building C object CMakeFiles/cmTC_3f99a.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_3f99a.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_3f99a.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_3f99a.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:10: fatal error: 'malloc.h' file not found
+#include <malloc.h>
+         ^~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_3f99a.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_3f99a/fast] Error 2
 
-Run Build Command:"/usr/bin/make" "cmTC_ae1be/fast"
-/usr/bin/make -f CMakeFiles/cmTC_ae1be.dir/build.make CMakeFiles/cmTC_ae1be.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:2:27: fatal error: malloc/malloc.h: No such file or directory
-compilation terminated.
-CMakeFiles/cmTC_ae1be.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_ae1be.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_ae1be/fast' failed
-make: *** [cmTC_ae1be/fast] Error 2
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
-#include <malloc/malloc.h>
+#include <malloc.h>
 
 int main(int argc, char** argv)
 {
   (void)argv;
-#ifndef malloc_zone_statistics
-  return ((int*)(&malloc_zone_statistics))[argc];
+#ifndef mallinfo
+  return ((int*)(&mallinfo))[argc];
 #else
   (void)argc;
   return 0;
 #endif
 }
-
 Determining if the strerror_s exist failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Run Build Command:"/usr/bin/make" "cmTC_be1d6/fast"
-/usr/bin/make -f CMakeFiles/cmTC_be1d6.dir/build.make CMakeFiles/cmTC_be1d6.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o
-/usr/bin/cc     -o CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘strerror_s’ undeclared (first use in this function)
-   return ((int*)(&strerror_s))[argc];
-                   ^
-/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
-CMakeFiles/cmTC_be1d6.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_be1d6.dir/CheckSymbolExists.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_be1d6/fast' failed
-make: *** [cmTC_be1d6/fast] Error 2
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_49dbc/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_49dbc.dir/build.make CMakeFiles/cmTC_49dbc.dir/build
+Building C object CMakeFiles/cmTC_49dbc.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_49dbc.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_49dbc.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_49dbc.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: use of undeclared identifier 'strerror_s'; did you mean 'strerror_r'?
+  return ((int*)(&strerror_s))[argc];
+                  ^~~~~~~~~~
+                  strerror_r
+/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include/string.h:116:6: note: 'strerror_r' declared here
+int      strerror_r(int __errnum, char *__strerrbuf, size_t __buflen);
+         ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_49dbc.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_49dbc/fast] Error 2
 
-File /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
 /* */
 #include <string.h>
 
@@ -393,38 +313,31 @@ int main(int argc, char** argv)
   return 0;
 #endif
 }
+Determining if the __GLIBC__ exist failed with the following output:
+Change Dir: /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
 
-Performing C++ SOURCE FILE Test CXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+Run Build Command(s):/usr/bin/make -f Makefile cmTC_614cf/fast && /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_614cf.dir/build.make CMakeFiles/cmTC_614cf.dir/build
+Building C object CMakeFiles/cmTC_614cf.dir/CheckSymbolExists.c.o
+/Library/Developer/CommandLineTools/usr/bin/cc   -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk -mmacosx-version-min=12.2 -MD -MT CMakeFiles/cmTC_614cf.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_614cf.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_614cf.dir/CheckSymbolExists.c.o -c /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: use of undeclared identifier '__GLIBC__'
+  return ((int*)(&__GLIBC__))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_614cf.dir/CheckSymbolExists.c.o] Error 1
+make: *** [cmTC_614cf/fast] Error 2
 
-Run Build Command:"/usr/bin/make" "cmTC_ee533/fast"
-/usr/bin/make -f CMakeFiles/cmTC_ee533.dir/build.make CMakeFiles/cmTC_ee533.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building CXX object CMakeFiles/cmTC_ee533.dir/src.cxx.o
-/usr/bin/c++     -fPIC -fvisibility-inlines-hidden -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DCXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG   -Werror -Wcovered-switch-default -o CMakeFiles/cmTC_ee533.dir/src.cxx.o -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/src.cxx
-c++: error: unrecognized command line option '-Wcovered-switch-default'
-CMakeFiles/cmTC_ee533.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_ee533.dir/src.cxx.o' failed
-make[1]: *** [CMakeFiles/cmTC_ee533.dir/src.cxx.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_ee533/fast' failed
-make: *** [cmTC_ee533/fast] Error 2
 
-Source file was:
-int main() { return 0; }
-Performing C SOURCE FILE Test C_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG failed with the following output:
-Change Dir: /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp
+File /Users/neverb2sy/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
 
-Run Build Command:"/usr/bin/make" "cmTC_7e80d/fast"
-/usr/bin/make -f CMakeFiles/cmTC_7e80d.dir/build.make CMakeFiles/cmTC_7e80d.dir/build
-make[1]: Entering directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_7e80d.dir/src.c.o
-/usr/bin/cc    -fPIC -Wall -W -Wno-unused-parameter -Wwrite-strings -Wno-missing-field-initializers -pedantic -Wno-long-long -DC_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG   -Werror -Wcovered-switch-default -o CMakeFiles/cmTC_7e80d.dir/src.c.o   -c /home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp/src.c
-cc: error: unrecognized command line option '-Wcovered-switch-default'
-CMakeFiles/cmTC_7e80d.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_7e80d.dir/src.c.o' failed
-make[1]: *** [CMakeFiles/cmTC_7e80d.dir/src.c.o] Error 1
-make[1]: Leaving directory '/home/m/dex2ir/external/llvm/build/CMakeFiles/CMakeTmp'
-Makefile:126: recipe for target 'cmTC_7e80d/fast' failed
-make: *** [cmTC_7e80d/fast] Error 2
-
-Source file was:
-int main(void) { return 0; }
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef __GLIBC__
+  return ((int*)(&__GLIBC__))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}

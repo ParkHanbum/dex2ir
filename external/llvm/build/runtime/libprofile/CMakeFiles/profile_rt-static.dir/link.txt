@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../lib/libprofile_rt.a  CMakeFiles/profile_rt-static.dir/BasicBlockTracing.c.o CMakeFiles/profile_rt-static.dir/CommonProfiling.c.o CMakeFiles/profile_rt-static.dir/PathProfiling.c.o CMakeFiles/profile_rt-static.dir/EdgeProfiling.c.o CMakeFiles/profile_rt-static.dir/OptimalEdgeProfiling.c.o
-/usr/bin/ranlib ../../lib/libprofile_rt.a

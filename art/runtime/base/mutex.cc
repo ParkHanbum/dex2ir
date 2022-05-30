@@ -649,13 +649,7 @@ ConditionVariable::ConditionVariable(const char* name, Mutex& guard)
   sequence_ = 0;
   num_waiters_ = 0;
 #else
-  pthread_condattr_t cond_attrs;
-  CHECK_MUTEX_CALL(pthread_condattr_init(&cond_attrs));
-#if !defined(__APPLE__)
-  // Apple doesn't have CLOCK_MONOTONIC or pthread_condattr_setclock.
-  CHECK_MUTEX_CALL(pthread_condattr_setclock(&cond_attrs, CLOCK_MONOTONIC));
-#endif
-  CHECK_MUTEX_CALL(pthread_cond_init, (&cond_, &cond_attrs));
+  CHECK_MUTEX_CALL(pthread_cond_init, (&cond_, NULL));
 #endif
 }
 

@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMPowerPCInfo.a  CMakeFiles/LLVMPowerPCInfo.dir/PowerPCTargetInfo.cpp.o
-/usr/bin/ranlib ../../../libLLVMPowerPCInfo.a

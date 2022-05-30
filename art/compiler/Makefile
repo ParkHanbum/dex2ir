@@ -24,39 +24,6 @@ objdir := $(CURDIR)
 LIBART_COMPILER_SRC_FILES := \
 	compiled_method.cc \
 	dex/local_value_numbering.cc \
-	dex/quick/arm/assemble_arm.cc \
-	dex/quick/arm/call_arm.cc \
-	dex/quick/arm/fp_arm.cc \
-	dex/quick/arm/int_arm.cc \
-	dex/quick/arm/target_arm.cc \
-	dex/quick/arm/utility_arm.cc \
-	dex/quick/arm64/assemble_arm64.cc \
-	dex/quick/arm64/call_arm64.cc \
-	dex/quick/arm64/fp_arm64.cc \
-	dex/quick/arm64/int_arm64.cc \
-	dex/quick/arm64/target_arm64.cc \
-	dex/quick/arm64/utility_arm64.cc \
-	dex/quick/codegen_util.cc \
-	dex/quick/dex_file_method_inliner.cc \
-	dex/quick/dex_file_to_method_inliner_map.cc \
-	dex/quick/gen_common.cc \
-	dex/quick/gen_invoke.cc \
-	dex/quick/gen_loadstore.cc \
-	dex/quick/local_optimizations.cc \
-	dex/quick/mips/assemble_mips.cc \
-	dex/quick/mips/call_mips.cc \
-	dex/quick/mips/fp_mips.cc \
-	dex/quick/mips/int_mips.cc \
-	dex/quick/mips/target_mips.cc \
-	dex/quick/mips/utility_mips.cc \
-	dex/quick/mir_to_lir.cc \
-	dex/quick/ralloc_util.cc \
-	dex/quick/x86/assemble_x86.cc \
-	dex/quick/x86/call_x86.cc \
-	dex/quick/x86/fp_x86.cc \
-	dex/quick/x86/int_x86.cc \
-	dex/quick/x86/target_x86.cc \
-	dex/quick/x86/utility_x86.cc \
 	dex/dex_to_dex_compiler.cc \
 	dex/mir_dataflow.cc \
 	dex/mir_field_info.cc \
@@ -74,13 +41,6 @@ LIBART_COMPILER_SRC_FILES := \
 	dex/ssa_transformation.cc \
 	driver/compiler_driver.cc \
 	driver/dex_compilation_unit.cc \
-	jni/quick/arm/calling_convention_arm.cc \
-	jni/quick/arm64/calling_convention_arm64.cc \
-	jni/quick/mips/calling_convention_mips.cc \
-	jni/quick/x86/calling_convention_x86.cc \
-	jni/quick/x86_64/calling_convention_x86_64.cc \
-	jni/quick/calling_convention.cc \
-	jni/quick/jni_compiler.cc \
 	optimizing/builder.cc \
 	optimizing/code_generator.cc \
 	optimizing/code_generator_arm.cc \
@@ -106,7 +66,6 @@ LIBART_COMPILER_SRC_FILES := \
 	utils/x86_64/managed_register_x86_64.cc \
 	utils/scoped_arena_allocator.cc \
 	buffered_output_stream.cc \
-	compilers.cc \
 	compiler.cc \
 	elf_fixup.cc \
 	elf_stripper.cc \
@@ -116,18 +75,6 @@ LIBART_COMPILER_SRC_FILES := \
 	image_writer.cc \
 	oat_writer.cc \
 	vector_output_stream.cc
-
-ifeq ($(ART_SEA_IR_MODE),true)
-LIBART_COMPILER_SRC_FILES += \
-	sea_ir/frontend.cc \
-	sea_ir/ir/instruction_tools.cc \
-	sea_ir/ir/sea.cc \
-	sea_ir/code_gen/code_gen.cc \
-	sea_ir/code_gen/code_gen_data.cc \
-	sea_ir/types/type_inference.cc \
-	sea_ir/types/type_inference_visitor.cc \
-	sea_ir/debug/dot_gen.cc
-endif
 
 LIBART_COMPILER_SRC_FILES += \
 	dex/portable/mir_to_gbc.cc \

@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMXCoreDisassembler.a  CMakeFiles/LLVMXCoreDisassembler.dir/XCoreDisassembler.cpp.o
-/usr/bin/ranlib ../../../libLLVMXCoreDisassembler.a

@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMAArch64Disassembler.a  CMakeFiles/LLVMAArch64Disassembler.dir/AArch64Disassembler.cpp.o
-/usr/bin/ranlib ../../../libLLVMAArch64Disassembler.a

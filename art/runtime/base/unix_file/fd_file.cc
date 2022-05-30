@@ -16,6 +16,7 @@
 
 #include "base/logging.h"
 #include "base/unix_file/fd_file.h"
+#include "base/unix_file/portability.h"
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>

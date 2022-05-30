@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-#ifndef ART_LIBARTBASE_BASE_SAFE_MAP_H_
-#define ART_LIBARTBASE_BASE_SAFE_MAP_H_
-
-#include <map>
 #include <memory>
 #include <type_traits>
 

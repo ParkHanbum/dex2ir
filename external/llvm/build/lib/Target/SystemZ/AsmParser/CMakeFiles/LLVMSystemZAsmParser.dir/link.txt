@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMSystemZAsmParser.a  CMakeFiles/LLVMSystemZAsmParser.dir/SystemZAsmParser.cpp.o
-/usr/bin/ranlib ../../../libLLVMSystemZAsmParser.a

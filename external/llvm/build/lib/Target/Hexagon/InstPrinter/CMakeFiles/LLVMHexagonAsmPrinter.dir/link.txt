@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMHexagonAsmPrinter.a  CMakeFiles/LLVMHexagonAsmPrinter.dir/HexagonInstPrinter.cpp.o
-/usr/bin/ranlib ../../../libLLVMHexagonAsmPrinter.a

@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMARMInfo.a  CMakeFiles/LLVMARMInfo.dir/ARMTargetInfo.cpp.o
-/usr/bin/ranlib ../../../libLLVMARMInfo.a

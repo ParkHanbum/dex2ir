@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../libLLVMJIT.a  CMakeFiles/LLVMJIT.dir/JIT.cpp.o CMakeFiles/LLVMJIT.dir/JITEmitter.cpp.o CMakeFiles/LLVMJIT.dir/JITMemoryManager.cpp.o
-/usr/bin/ranlib ../../libLLVMJIT.a

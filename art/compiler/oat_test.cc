@@ -85,9 +85,7 @@ TEST_F(OatTest, WriteRead) {
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
   // TODO: make selectable.
-  Compiler::Kind compiler_kind = kUsePortableCompiler
-      ? Compiler::kPortable
-      : Compiler::kQuick;
+  Compiler::Kind compiler_kind = Compiler::kPortable;
   InstructionSet insn_set = kIsTargetBuild ? kThumb2 : kX86;
 
   InstructionSetFeatures insn_features;

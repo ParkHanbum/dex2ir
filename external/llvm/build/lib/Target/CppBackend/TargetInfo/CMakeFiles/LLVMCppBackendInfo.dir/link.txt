@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMCppBackendInfo.a  CMakeFiles/LLVMCppBackendInfo.dir/CppBackendTargetInfo.cpp.o
-/usr/bin/ranlib ../../../libLLVMCppBackendInfo.a

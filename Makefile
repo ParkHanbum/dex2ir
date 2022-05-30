@@ -61,20 +61,20 @@ LIBSIGCHAIN_HDRS := $(LIBSIGCHAIN_BASE)
 
 GLOBAL_CONFIG := $(srcdir)/build/core/combo/include/arch/linux-x86/
 
-LLVM_CONFIG?=$(srcdir)/external/llvm/build/bin/llvm-config
-#LLVM_CONFIG?=llvm-config
+#LLVM_CONFIG?=$(srcdir)/external/llvm/build/bin/llvm-config
+LLVM_CONFIG?=llvm-config
 
 LLVM_LDFLAGS+=$(shell $(LLVM_CONFIG) --ldflags --libs)
 LLVM_CXXFLAGS+=$(shell $(LLVM_CONFIG) --cxxflags)
 LLVM_CPPFLAGS+=$(shell $(LLVM_CONFIG) --cppflags) -I$(SRC_DIR)
 
-CXX := clang++
+CXX := clang
 CXXFLAGS += -I$(LIBVALGRIND_HDRS) -I$(LIBVALGRIND_MAIN) -I$(GTEST_HDRS) -I$(VIXL_HDRS)
 CXXFLAGS += -I$(SYSTEM_CORE_HDRS) -I$(LIBCUTILS_HDRS) -I$(CUTILS_HDRS)
 CXXFLAGS += -I$(MCLINKER_HDRS)
 
 # this flags are come from art_debug_cflags
-CXXFLAGS += -O0 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -UNDEBUG -fno-integrated-as
+CXXFLAGS += -O0 -DDYNAMIC_ANNOTATIONS_ENABLED=1 -UNDEBUG 
 CXXFLAGS += -std=gnu++11 -ggdb3 -Wextra -Wno-sign-promo -w
 CXXFLAGS += -Wno-unused-parameter -Wstrict-aliasing -fstrict-aliasing
 

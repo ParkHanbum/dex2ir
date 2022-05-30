@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMHexagonDesc.a  CMakeFiles/LLVMHexagonDesc.dir/HexagonMCAsmInfo.cpp.o CMakeFiles/LLVMHexagonDesc.dir/HexagonMCInst.cpp.o CMakeFiles/LLVMHexagonDesc.dir/HexagonMCTargetDesc.cpp.o
-/usr/bin/ranlib ../../../libLLVMHexagonDesc.a

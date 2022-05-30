@@ -17,50 +17,10 @@
 #include "compiler.h"
 #include "driver/compiler_driver.h"
 #include "mirror/art_method-inl.h"
-
-#ifdef ART_USE_PORTABLE_COMPILER
 #include "dex/portable/mir_to_gbc.h"
 #include "elf_writer_mclinker.h"
-#endif
 
 namespace art {
-
-#ifdef ART_SEA_IR_MODE
-extern "C" art::CompiledMethod* SeaIrCompileMethod(const art::DexFile::CodeItem* code_item,
-                                                   uint32_t access_flags,
-                                                   art::InvokeType invoke_type,
-                                                   uint16_t class_def_idx,
-                                                   uint32_t method_idx,
-                                                   jobject class_loader,
-                                                   const art::DexFile& dex_file);
-#endif
-
-
-CompiledMethod* Compiler::TryCompileWithSeaIR(const art::DexFile::CodeItem* code_item,
-                                              uint32_t access_flags,
-                                              art::InvokeType invoke_type,
-                                              uint16_t class_def_idx,
-                                              uint32_t method_idx,
-                                              jobject class_loader,
-                                              const art::DexFile& dex_file) {
-#ifdef ART_SEA_IR_MODE
-    bool use_sea = (std::string::npos != PrettyMethod(method_idx, dex_file).find("fibonacci"));
-    if (use_sea) {
-      LOG(INFO) << "Using SEA IR to compile..." << std::endl;
-      return SeaIrCompileMethod(code_item,
-                                access_flags,
-                                invoke_type,
-                                class_def_idx,
-                                method_idx,
-                                class_loader,
-                                dex_file);
-  }
-#endif
-  return nullptr;
-}
-
-
-#ifdef ART_USE_PORTABLE_COMPILER
 
 extern "C" void ArtInitCompilerContext(art::CompilerDriver* driver);
 
@@ -102,17 +62,6 @@ class LLVMCompiler FINAL : public Compiler {
                           uint32_t method_idx,
                           jobject class_loader,
                           const DexFile& dex_file) const OVERRIDE {
-    CompiledMethod* method = TryCompileWithSeaIR(code_item,
-                                                 access_flags,
-                                                 invoke_type,
-                                                 class_def_idx,
-                                                 method_idx,
-                                                 class_loader,
-                                                 dex_file);
-    if (method != nullptr) {
-      return method;
-    }
-
     return ArtCompileMethod(GetCompilerDriver(),
                             code_item,
                             access_flags,
@@ -173,7 +122,6 @@ class LLVMCompiler FINAL : public Compiler {
  private:
   DISALLOW_COPY_AND_ASSIGN(LLVMCompiler);
 };
-#endif
 
 Compiler* Compiler::Create(CompilerDriver* driver, Compiler::Kind kind) {
   switch (kind) {

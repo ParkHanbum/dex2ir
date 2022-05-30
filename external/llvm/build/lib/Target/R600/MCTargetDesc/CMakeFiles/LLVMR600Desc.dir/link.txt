@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMR600Desc.a  CMakeFiles/LLVMR600Desc.dir/AMDGPUAsmBackend.cpp.o CMakeFiles/LLVMR600Desc.dir/AMDGPUELFObjectWriter.cpp.o CMakeFiles/LLVMR600Desc.dir/AMDGPUMCTargetDesc.cpp.o CMakeFiles/LLVMR600Desc.dir/AMDGPUMCAsmInfo.cpp.o CMakeFiles/LLVMR600Desc.dir/R600MCCodeEmitter.cpp.o CMakeFiles/LLVMR600Desc.dir/SIMCCodeEmitter.cpp.o
-/usr/bin/ranlib ../../../libLLVMR600Desc.a

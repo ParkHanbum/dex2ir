@@ -288,6 +288,11 @@ else # HOST_ARCH != x86
 $(error unsupported HOST_ARCH=$(HOST_ARCH))
 endif # HOST_ARCH != x86
 
+LIBART_ASM_FILES_arm64  := \
+	arch/arm64/jni_entrypoints_arm64.S \
+	arch/arm64/portable_entrypoints_arm64.S \
+	arch/arm64/quick_entrypoints_arm64.S
+
 LIBART_ASM_FILES_x86_64  := \
 	arch/x86_64/jni_entrypoints_x86_64.S \
 	arch/x86_64/portable_entrypoints_x86_64.S \
@@ -295,6 +300,7 @@ LIBART_ASM_FILES_x86_64  := \
 
 LIBART_ENUM_OPERATOR_OUT_HEADER_FILES := \
 	arch/x86_64/registers_x86_64.h \
+	arch/arm64/registers_arm64.h \
 	base/mutex.h \
 	dex_file.h \
 	dex_instruction.h \
@@ -333,7 +339,9 @@ LIBART_SRC_FILES += $(GENERATED_SRC)
 LIBART_OBJS := $(patsubst %.cc,%.o,$(LIBART_SRC_FILES))
 LIBART_OBJS := $(addprefix $(objdir)/,$(LIBART_OBJS))
 
-LIBART_ASM_OBJS := $(patsubst %.S,%.o,$(LIBART_ASM_FILES_x86_64))
+
+LIBART_ASM_OBJS := $(patsubst %.S,%.o,$(LIBART_ASM_FILES_arm64))
+# LIBART_ASM_OBJS := $(patsubst %.S,%.o,$(LIBART_ASM_FILES_x86_64))
 LIBART_ASM_OBJS := $(addprefix $(objdir)/,$(LIBART_ASM_OBJS))
 
 TARGET := $(notdir $(LIBRUNTIME_ARCHIVE))
@@ -349,7 +357,7 @@ $(GENERATED_SRC):
 #	$(CXX) -c $^ -o $@ $(LIBART_CFLAGS)
 
 $(LIBART_ASM_OBJS):
-	$(CXX) -fno-integrated-as -c $(@:.o=.S) -o $@ -I$(srcdir) -I$(srcdir)/arch/x86_64
+	$(CXX)  -c $(@:.o=.S) -o $@ -I$(srcdir) -I$(srcdir)/arch/x86_64
 
 $(LIBART_OBJS):
 	$(CXX) -c $(@:.o=.cc) -o $@ $(LIBART_CFLAGS)

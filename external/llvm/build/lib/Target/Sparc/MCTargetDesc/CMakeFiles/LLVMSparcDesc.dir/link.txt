@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMSparcDesc.a  CMakeFiles/LLVMSparcDesc.dir/SparcMCTargetDesc.cpp.o CMakeFiles/LLVMSparcDesc.dir/SparcMCAsmInfo.cpp.o
-/usr/bin/ranlib ../../../libLLVMSparcDesc.a

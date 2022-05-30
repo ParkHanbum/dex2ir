@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../libLLVMMipsAsmPrinter.a  CMakeFiles/LLVMMipsAsmPrinter.dir/MipsInstPrinter.cpp.o
-/usr/bin/ranlib ../../../libLLVMMipsAsmPrinter.a
